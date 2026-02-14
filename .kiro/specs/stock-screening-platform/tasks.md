@@ -33,7 +33,7 @@
     - 实现 toDict / fromDict 序列化方法
     - _Requirements: 1.5, 3.4_
 
-  - [~] 1.5 创建 ScoredStock、WatchedStock、ScreeningResult 值对象
+  - [x] 1.5 创建 ScoredStock、WatchedStock、ScreeningResult 值对象
     - 创建 `src/server/domain/screening/value-objects/scored-stock.ts`：包含 stockCode、stockName、score、scoreBreakdown、indicatorValues、matchedConditions
     - 创建 `src/server/domain/screening/value-objects/watched-stock.ts`：包含 stockCode、stockName、addedAt、note、tags
     - 创建 `src/server/domain/screening/value-objects/screening-result.ts`：包含 matchedStocks、totalScanned、executionTime
