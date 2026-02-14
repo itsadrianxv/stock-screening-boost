@@ -40,7 +40,7 @@
     - 创建 `src/server/domain/screening/value-objects/index.ts` 统一导出
     - _Requirements: 3.1, 3.6, 5.2_
 
-  - [~] 1.6 创建 Stock 实体
+  - [x] 1.6 创建 Stock 实体
     - 创建 `src/server/domain/screening/entities/stock.ts`
     - 定义 Stock 接口和类，包含 code、name、industry、sector 及各指标字段
     - 实现 getValue(indicator: IndicatorField) 方法返回对应指标值或 null
