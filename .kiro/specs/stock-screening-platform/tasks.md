@@ -15,13 +15,13 @@
     - 创建 `src/server/domain/screening/enums/index.ts` 统一导出
     - _Requirements: 2.2, 2.3_
 
-  - [-] 1.2 创建 StockCode 共享内核值对象
+  - [x] 1.2 创建 StockCode 共享内核值对象
     - 创建 `src/server/domain/screening/value-objects/stock-code.ts`
     - 实现 A 股代码规范验证（6 位数字，以 0/3/6 开头）
     - 实现 equals、toString 方法
     - _Requirements: 5.2_
 
-  - [~] 1.3 创建 IndicatorValue Tagged Union 值对象
+  - [-] 1.3 创建 IndicatorValue Tagged Union 值对象
     - 创建 `src/server/domain/screening/value-objects/indicator-value.ts`
     - 定义 NumericValue、TextValue、ListValue、RangeValue、TimeSeriesValue 类型
     - 实现类型守卫函数（isNumericValue、isTextValue 等）
