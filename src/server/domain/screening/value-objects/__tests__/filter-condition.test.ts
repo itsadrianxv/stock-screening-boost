@@ -11,12 +11,13 @@
 
 import { describe, it, expect } from "vitest";
 import { FilterCondition } from "../filter-condition";
-import { IndicatorField } from "../../enums/indicator-field";
+import { IndicatorField, getIndicatorValueType, IndicatorValueType } from "../../enums/indicator-field";
 import { ComparisonOperator } from "../../enums/comparison-operator";
 import { Stock } from "../../entities/stock";
 import { StockCode } from "../stock-code";
 import { InvalidFilterConditionError } from "../../errors";
 import type { IIndicatorCalculationService } from "../filter-condition";
+import type { IndicatorValue } from "../indicator-value";
 
 // Mock 指标计算服务
 class MockIndicatorCalculationService implements IIndicatorCalculationService {
@@ -600,5 +601,378 @@ describe("FilterCondition", () => {
 
       expect(condition.toString()).toBe("PE BETWEEN [10, 30]");
     });
+  });
+});
+
+/**
+ * Property-Based Tests for FilterCondition
+ *
+ * Feature: stock-screening-platform
+ * Property 3: FilterCondition 构造验证
+ *
+ * 验证 FilterCondition 构造成功当且仅当：
+ * (a) field 的 valueType 与 value 的类型匹配
+ * (b) operator 与 value 类型兼容
+ *
+ * **Validates: Requirements 2.2, 2.3**
+ */
+
+import * as fc from "fast-check";
+
+describe("Property-Based Tests: FilterCondition 构造验证", () => {
+  /**
+   * 生成器：数值型指标字段
+   */
+  const arbNumericIndicatorField = fc.constantFrom(
+    IndicatorField.ROE,
+    IndicatorField.PE,
+    IndicatorField.PB,
+    IndicatorField.EPS,
+    IndicatorField.REVENUE,
+    IndicatorField.NET_PROFIT,
+    IndicatorField.DEBT_RATIO,
+    IndicatorField.MARKET_CAP,
+    IndicatorField.FLOAT_MARKET_CAP,
+    IndicatorField.REVENUE_CAGR_3Y,
+    IndicatorField.NET_PROFIT_CAGR_3Y,
+    IndicatorField.ROE_AVG_3Y,
+    IndicatorField.PEG,
+    IndicatorField.ROE_MINUS_DEBT
+  );
+
+  /**
+   * 生成器：文本型指标字段
+   */
+  const arbTextIndicatorField = fc.constantFrom(
+    IndicatorField.INDUSTRY,
+    IndicatorField.SECTOR
+  );
+
+  /**
+   * 生成器：NumericValue
+   */
+  const arbNumericValue = fc.record({
+    type: fc.constant("numeric" as const),
+    value: fc.double({ min: -1000, max: 10000, noNaN: true }),
+    unit: fc.option(fc.constantFrom("%", "元", "亿元"), { nil: undefined }),
+  });
+
+  /**
+   * 生成器：TextValue
+   */
+  const arbTextValue = fc.record({
+    type: fc.constant("text" as const),
+    value: fc.string({ minLength: 1, maxLength: 20 }),
+  });
+
+  /**
+   * 生成器：ListValue
+   */
+  const arbListValue = fc.record({
+    type: fc.constant("list" as const),
+    values: fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+      minLength: 1,
+      maxLength: 5,
+    }),
+  });
+
+  /**
+   * 生成器：RangeValue
+   */
+  const arbRangeValue = fc
+    .tuple(
+      fc.double({ min: -1000, max: 10000, noNaN: true }),
+      fc.double({ min: -1000, max: 10000, noNaN: true })
+    )
+    .map(([a, b]) => ({
+      type: "range" as const,
+      min: Math.min(a, b),
+      max: Math.max(a, b),
+    }));
+
+  /**
+   * 生成器：TimeSeriesValue
+   */
+  const arbTimeSeriesValue = fc.record({
+    type: fc.constant("timeSeries" as const),
+    years: fc.constantFrom(1, 3, 5),
+    threshold: fc.option(fc.double({ min: 0, max: 1, noNaN: true }), {
+      nil: undefined,
+    }),
+  });
+
+  /**
+   * 生成器：所有 ComparisonOperator
+   */
+  const arbComparisonOperator = fc.constantFrom(
+    ComparisonOperator.GREATER_THAN,
+    ComparisonOperator.LESS_THAN,
+    ComparisonOperator.EQUAL,
+    ComparisonOperator.NOT_EQUAL,
+    ComparisonOperator.IN,
+    ComparisonOperator.NOT_IN,
+    ComparisonOperator.BETWEEN,
+    ComparisonOperator.CONTAINS
+  );
+
+  /**
+   * 辅助函数：判断类型是否匹配
+   */
+  function isTypeMatch(field: IndicatorField, value: IndicatorValue): boolean {
+    const fieldValueType = getIndicatorValueType(field);
+
+    if (fieldValueType === IndicatorValueType.NUMERIC) {
+      return (
+        value.type === "numeric" ||
+        value.type === "range" ||
+        value.type === "timeSeries"
+      );
+    } else {
+      // TEXT
+      return value.type === "text" || value.type === "list";
+    }
+  }
+
+  /**
+   * 辅助函数：判断运算符是否兼容
+   */
+  function isOperatorCompatible(
+    operator: ComparisonOperator,
+    value: IndicatorValue
+  ): boolean {
+    switch (operator) {
+      case ComparisonOperator.GREATER_THAN:
+      case ComparisonOperator.LESS_THAN:
+        return value.type === "numeric" || value.type === "timeSeries";
+
+      case ComparisonOperator.EQUAL:
+      case ComparisonOperator.NOT_EQUAL:
+        return value.type === "numeric" || value.type === "text";
+
+      case ComparisonOperator.IN:
+      case ComparisonOperator.NOT_IN:
+        return value.type === "list";
+
+      case ComparisonOperator.BETWEEN:
+        return value.type === "range";
+
+      case ComparisonOperator.CONTAINS:
+        return value.type === "text";
+
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Property 3: FilterCondition 构造验证
+   *
+   * 对于任意 IndicatorField、ComparisonOperator 和 IndicatorValue 的组合，
+   * FilterCondition 的构造应当且仅当满足以下条件时成功：
+   * (a) field 的 valueType 与 value 的类型匹配
+   * (b) operator 与 value 类型兼容
+   *
+   * **Validates: Requirements 2.2, 2.3**
+   */
+  it("Property 3: 构造成功当且仅当类型匹配且运算符兼容", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(arbNumericIndicatorField, arbTextIndicatorField),
+        arbComparisonOperator,
+        fc.oneof(
+          arbNumericValue,
+          arbTextValue,
+          arbListValue,
+          arbRangeValue,
+          arbTimeSeriesValue
+        ),
+        (field, operator, value) => {
+          const typeMatches = isTypeMatch(field, value);
+          const operatorCompatible = isOperatorCompatible(operator, value);
+          const shouldSucceed = typeMatches && operatorCompatible;
+
+          if (shouldSucceed) {
+            // 应该构造成功
+            expect(() => FilterCondition.create(field, operator, value)).not.toThrow();
+          } else {
+            // 应该抛出 InvalidFilterConditionError
+            expect(() => FilterCondition.create(field, operator, value)).toThrow(
+              InvalidFilterConditionError
+            );
+          }
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 3.1: 有效组合应构造成功
+   *
+   * 生成已知有效的组合，验证构造成功
+   */
+  it("Property 3.1: 有效组合应构造成功", () => {
+    // 数值型指标 + numeric + 数值比较运算符
+    const arbValidNumericComparison = fc
+      .tuple(
+        arbNumericIndicatorField,
+        fc.constantFrom(
+          ComparisonOperator.GREATER_THAN,
+          ComparisonOperator.LESS_THAN,
+          ComparisonOperator.EQUAL,
+          ComparisonOperator.NOT_EQUAL
+        ),
+        arbNumericValue
+      )
+      .map(([field, operator, value]) => ({ field, operator, value }));
+
+    // 数值型指标 + range + BETWEEN
+    const arbValidRangeComparison = fc
+      .tuple(arbNumericIndicatorField, arbRangeValue)
+      .map(([field, value]) => ({
+        field,
+        operator: ComparisonOperator.BETWEEN,
+        value,
+      }));
+
+    // 数值型指标 + timeSeries + 数值比较运算符
+    const arbValidTimeSeriesComparison = fc
+      .tuple(
+        arbNumericIndicatorField,
+        fc.constantFrom(ComparisonOperator.GREATER_THAN, ComparisonOperator.LESS_THAN),
+        arbTimeSeriesValue
+      )
+      .map(([field, operator, value]) => ({ field, operator, value }));
+
+    // 文本型指标 + text + 文本运算符
+    const arbValidTextComparison = fc
+      .tuple(
+        arbTextIndicatorField,
+        fc.constantFrom(
+          ComparisonOperator.EQUAL,
+          ComparisonOperator.NOT_EQUAL,
+          ComparisonOperator.CONTAINS
+        ),
+        arbTextValue
+      )
+      .map(([field, operator, value]) => ({ field, operator, value }));
+
+    // 文本型指标 + list + IN/NOT_IN
+    const arbValidListComparison = fc
+      .tuple(
+        arbTextIndicatorField,
+        fc.constantFrom(ComparisonOperator.IN, ComparisonOperator.NOT_IN),
+        arbListValue
+      )
+      .map(([field, operator, value]) => ({ field, operator, value }));
+
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          arbValidNumericComparison,
+          arbValidRangeComparison,
+          arbValidTimeSeriesComparison,
+          arbValidTextComparison,
+          arbValidListComparison
+        ),
+        ({ field, operator, value }) => {
+          // 所有有效组合都应构造成功
+          expect(() => FilterCondition.create(field, operator, value)).not.toThrow();
+
+          // 构造的对象应包含正确的字段
+          const condition = FilterCondition.create(field, operator, value);
+          expect(condition.field).toBe(field);
+          expect(condition.operator).toBe(operator);
+          expect(condition.value).toEqual(value);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 3.2: 类型不匹配应失败
+   *
+   * 生成类型不匹配的组合，验证构造失败
+   */
+  it("Property 3.2: 类型不匹配应失败", () => {
+    // 数值型指标 + text 值（类型不匹配）
+    const arbNumericFieldTextValue = fc
+      .tuple(arbNumericIndicatorField, arbTextValue, arbComparisonOperator)
+      .map(([field, value, operator]) => ({ field, value, operator }));
+
+    // 文本型指标 + numeric 值（类型不匹配）
+    const arbTextFieldNumericValue = fc
+      .tuple(arbTextIndicatorField, arbNumericValue, arbComparisonOperator)
+      .map(([field, value, operator]) => ({ field, value, operator }));
+
+    fc.assert(
+      fc.property(
+        fc.oneof(arbNumericFieldTextValue, arbTextFieldNumericValue),
+        ({ field, value, operator }) => {
+          // 类型不匹配应抛出错误
+          expect(() => FilterCondition.create(field, operator, value)).toThrow(
+            InvalidFilterConditionError
+          );
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 3.3: 运算符不兼容应失败
+   *
+   * 生成运算符不兼容的组合，验证构造失败
+   */
+  it("Property 3.3: 运算符不兼容应失败", () => {
+    // GREATER_THAN + text（运算符不兼容）
+    const arbGreaterThanText = fc
+      .tuple(arbTextIndicatorField, arbTextValue)
+      .map(([field, value]) => ({
+        field,
+        operator: ComparisonOperator.GREATER_THAN,
+        value,
+      }));
+
+    // IN + numeric（运算符不兼容）
+    const arbInNumeric = fc
+      .tuple(arbNumericIndicatorField, arbNumericValue)
+      .map(([field, value]) => ({
+        field,
+        operator: ComparisonOperator.IN,
+        value,
+      }));
+
+    // BETWEEN + numeric（应该用 range）
+    const arbBetweenNumeric = fc
+      .tuple(arbNumericIndicatorField, arbNumericValue)
+      .map(([field, value]) => ({
+        field,
+        operator: ComparisonOperator.BETWEEN,
+        value,
+      }));
+
+    // CONTAINS + numeric（运算符不兼容）
+    const arbContainsNumeric = fc
+      .tuple(arbNumericIndicatorField, arbNumericValue)
+      .map(([field, value]) => ({
+        field,
+        operator: ComparisonOperator.CONTAINS,
+        value,
+      }));
+
+    fc.assert(
+      fc.property(
+        fc.oneof(arbGreaterThanText, arbInNumeric, arbBetweenNumeric, arbContainsNumeric),
+        ({ field, operator, value }) => {
+          // 运算符不兼容应抛出错误
+          expect(() => FilterCondition.create(field, operator, value)).toThrow(
+            InvalidFilterConditionError
+          );
+        }
+      ),
+      { numRuns: 100 }
+    );
   });
 });

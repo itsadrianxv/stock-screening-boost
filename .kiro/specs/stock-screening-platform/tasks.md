@@ -60,7 +60,7 @@
     - 实现 toDict / fromDict 序列化方法
     - _Requirements: 2.2, 2.3, 2.6, 3.3_
 
-  - [~] 2.2 编写 FilterCondition 构造验证属性基测试
+  - [x] 2.2 编写 FilterCondition 构造验证属性基测试
     - **Property 3: FilterCondition 构造验证**
     - 使用 fast-check 生成随机 IndicatorField、ComparisonOperator、IndicatorValue 组合
     - 验证构造成功当且仅当类型匹配且运算符兼容
