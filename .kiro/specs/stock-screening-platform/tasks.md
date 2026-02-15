@@ -96,7 +96,7 @@
   - 确保所有已编写的测试通过，如有问题请向用户确认。
 
 - [ ] 4. 领域层：聚合根
-  - [~] 4.1 实现 ScreeningStrategy 聚合根
+  - [x] 4.1 实现 ScreeningStrategy 聚合根
     - 创建 `src/server/domain/screening/aggregates/screening-strategy.ts`
     - 实现 create 静态工厂方法，包含不变量验证（name 非空、filters 有条件、权重和为 1.0）
     - 实现 update 方法，修改后重新验证不变量
