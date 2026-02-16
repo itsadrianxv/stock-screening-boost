@@ -248,7 +248,7 @@
 - [ ] 10. Checkpoint - 基础设施层与数据服务测试通过
   - 确保所有基础设施层测试和 Python 服务测试通过，如有问题请向用户确认。
 
-- [-] 11. 应用层：tRPC Router
+- [x] 11. 应用层：tRPC Router
   - [x] 11.1 实现 screening tRPC Router
     - 创建 `src/server/api/routers/screening.ts`
     - 实现策略 CRUD 端点：createStrategy、updateStrategy、deleteStrategy、getStrategy、listStrategies
@@ -269,7 +269,7 @@
     - 在 `src/server/api/root.ts` 中注册 screeningRouter 和 watchlistRouter
     - _Requirements: 7.1, 7.4_
 
-  - [ ] 11.4 编写 tRPC Router 集成测试
+  - [x] 11.4 编写 tRPC Router 集成测试
     - 使用 Vitest 测试 screening 和 watchlist router 的关键端点
     - 验证 Zod 输入验证、领域异常映射、正常流程
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
