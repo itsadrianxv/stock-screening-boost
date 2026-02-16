@@ -20,7 +20,7 @@
  * );
  */
 
-import type { StockCode } from "./stock-code";
+import { StockCode } from "./stock-code.js";
 
 /**
  * WatchedStock 值对象
@@ -181,9 +181,6 @@ export class WatchedStock {
     if (tags !== undefined && !Array.isArray(tags)) {
       throw new Error("tags 必须为数组");
     }
-
-    // 导入 StockCode
-    const { StockCode } = require("./stock-code") as typeof import("./stock-code");
 
     return WatchedStock.create(
       StockCode.create(stockCode),

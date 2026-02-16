@@ -126,7 +126,7 @@
     - 生成随机 ScreeningResult，验证 topStocks ≤ 50 且总数一致
     - **Validates: Requirements 3.6**
 
-  - [~] 4.6 实现 WatchList 聚合根
+  - [x] 4.6 实现 WatchList 聚合根
     - 创建 `src/server/domain/screening/aggregates/watch-list.ts`
     - 实现 addStock（重复检查抛 DuplicateStockError）、removeStock、updateStockNote、updateStockTags
     - 实现 contains、getStocksByTag 方法
