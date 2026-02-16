@@ -219,7 +219,7 @@
     - 实现 get_available_industries()：获取行业列表
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [~] 8.3 实现 FastAPI 股票数据路由
+  - [x] 8.3 实现 FastAPI 股票数据路由
     - 创建 `python_services/app/routers/stock_data.py`
     - 实现 GET /stocks/codes、POST /stocks/batch、GET /stocks/{code}/history、GET /stocks/industries
     - 使用 Pydantic 模型定义请求/响应 schema（StockData、IndicatorDataPoint）

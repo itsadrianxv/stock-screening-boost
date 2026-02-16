@@ -6,7 +6,7 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 
 # Financial data source
-akshare==1.12.92
+akshare>=1.18.0
 
 # HTTP client (for potential external API calls)
 httpx==0.26.0

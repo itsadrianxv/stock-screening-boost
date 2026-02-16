@@ -41,6 +41,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# TODO: Register routers here
-# from app.routers import stock_data
-# app.include_router(stock_data.router, prefix="/api", tags=["stocks"])
+# Register routers
+from app.routers import stock_data
+
+app.include_router(stock_data.router, prefix="/api", tags=["stocks"])
