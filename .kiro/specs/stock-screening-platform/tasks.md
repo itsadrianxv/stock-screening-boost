@@ -240,7 +240,7 @@
     - 实现超时处理和错误转换（DataNotAvailableError）
     - _Requirements: 6.4, 6.5_
 
-  - [~] 9.2 编写 HTTP 响应映射属性基测试
+  - [x] 9.2 编写 HTTP 响应映射属性基测试
     - **Property 12: HTTP 响应到领域对象映射正确性**
     - 使用 fast-check 生成随机有效 StockData JSON，验证映射后 Stock 实体字段正确
     - **Validates: Requirements 6.4**
