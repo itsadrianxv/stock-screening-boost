@@ -226,7 +226,7 @@
     - 添加错误处理和超时保护
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [~] 8.4 编写 Python 数据服务单元测试
+  - [x] 8.4 编写 Python 数据服务单元测试
     - 创建 `python_services/tests/test_stock_data.py`
     - 使用 pytest + httpx 测试 FastAPI 路由
     - Mock AkShare 调用，验证响应格式和错误处理
