@@ -152,7 +152,7 @@
     - 创建 `src/server/domain/screening/repositories/index.ts` 统一导出
     - _Requirements: 6.4_
 
-  - [~] 5.2 实现 IIndicatorCalculationService 领域服务
+  - [x] 5.2 实现 IIndicatorCalculationService 领域服务
     - 创建 `src/server/domain/screening/services/indicator-calculation-service.ts`
     - 定义接口和实现类
     - 实现路由逻辑：BASIC → stock.getValue、TIME_SERIES → IHistoricalDataProvider、DERIVED → 硬编码公式
