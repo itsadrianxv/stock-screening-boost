@@ -13,10 +13,10 @@
  * Requirements: 5.1
  */
 
-import type { PrismaClient } from "../../../../generated/prisma/index.js";
-import type { IWatchListRepository } from "../../domain/screening/repositories/watch-list-repository.js";
-import { WatchList } from "../../domain/screening/aggregates/watch-list.js";
-import { WatchedStock } from "../../domain/screening/value-objects/watched-stock.js";
+import type { PrismaClient } from "~/generated/prisma/index.js";
+import type { IWatchListRepository } from "~/server/domain/screening/repositories/watch-list-repository";
+import { WatchList } from "~/server/domain/screening/aggregates/watch-list";
+import { WatchedStock } from "~/server/domain/screening/value-objects/watched-stock";
 
 /**
  * Prisma 实现的自选股列表仓储

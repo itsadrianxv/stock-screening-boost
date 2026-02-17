@@ -12,15 +12,15 @@
  * Requirements: 6.4, 6.5
  */
 
-import type { IMarketDataRepository } from "~/server/domain/screening/repositories/market-data-repository.js";
+import type { IMarketDataRepository } from "~/server/domain/screening/repositories/market-data-repository";
 import type {
   IHistoricalDataProvider,
   IndicatorDataPoint,
-} from "~/server/domain/screening/repositories/historical-data-provider.js";
-import { StockCode } from "~/server/domain/screening/value-objects/stock-code.js";
-import { Stock } from "~/server/domain/screening/entities/stock.js";
-import { DataNotAvailableError } from "~/server/domain/screening/errors.js";
-import type { IndicatorField } from "~/server/domain/screening/enums/indicator-field.js";
+} from "~/server/domain/screening/repositories/historical-data-provider";
+import { StockCode } from "~/server/domain/screening/value-objects/stock-code";
+import { Stock } from "~/server/domain/screening/entities/stock";
+import { DataNotAvailableError } from "~/server/domain/screening/errors";
+import type { IndicatorField } from "~/server/domain/screening/enums/indicator-field";
 
 /**
  * Python 服务的 StockData 响应接口

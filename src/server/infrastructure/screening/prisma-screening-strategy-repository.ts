@@ -13,11 +13,11 @@
  * Requirements: 1.1, 1.7
  */
 
-import type { PrismaClient } from "../../../../generated/prisma/index.js";
-import type { IScreeningStrategyRepository } from "../../domain/screening/repositories/screening-strategy-repository.js";
-import { ScreeningStrategy } from "../../domain/screening/aggregates/screening-strategy.js";
-import { FilterGroup } from "../../domain/screening/entities/filter-group.js";
-import { ScoringConfig } from "../../domain/screening/value-objects/scoring-config.js";
+import type { PrismaClient } from "~/generated/prisma/index.js";
+import type { IScreeningStrategyRepository } from "~/server/domain/screening/repositories/screening-strategy-repository";
+import { ScreeningStrategy } from "~/server/domain/screening/aggregates/screening-strategy";
+import { FilterGroup } from "~/server/domain/screening/entities/filter-group";
+import { ScoringConfig } from "~/server/domain/screening/value-objects/scoring-config";
 
 /**
  * Prisma 实现的筛选策略仓储

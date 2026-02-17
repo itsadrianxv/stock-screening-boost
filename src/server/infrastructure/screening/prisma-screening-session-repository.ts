@@ -13,13 +13,13 @@
  * Requirements: 4.1, 4.2, 4.3, 4.4
  */
 
-import type { PrismaClient } from "../../../../generated/prisma/index.js";
-import type { IScreeningSessionRepository } from "../../domain/screening/repositories/screening-session-repository.js";
-import { ScreeningSession } from "../../domain/screening/aggregates/screening-session.js";
-import { ScoredStock } from "../../domain/screening/value-objects/scored-stock.js";
-import { StockCode } from "../../domain/screening/value-objects/stock-code.js";
-import { FilterGroup } from "../../domain/screening/entities/filter-group.js";
-import { ScoringConfig } from "../../domain/screening/value-objects/scoring-config.js";
+import type { PrismaClient } from "~/generated/prisma/index.js";
+import type { IScreeningSessionRepository } from "~/server/domain/screening/repositories/screening-session-repository";
+import { ScreeningSession } from "~/server/domain/screening/aggregates/screening-session";
+import { ScoredStock } from "~/server/domain/screening/value-objects/scored-stock";
+import { StockCode } from "~/server/domain/screening/value-objects/stock-code";
+import { FilterGroup } from "~/server/domain/screening/entities/filter-group";
+import { ScoringConfig } from "~/server/domain/screening/value-objects/scoring-config";
 
 /**
  * Prisma 实现的筛选会话仓储
