@@ -2,8 +2,8 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 
-# Data validation
-pydantic==2.5.3
+# Data validation (using newer version with precompiled wheels for Python 3.13)
+pydantic==2.10.5
 
 # Financial data source
 akshare>=1.18.0
