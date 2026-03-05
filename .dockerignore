@@ -1,0 +1,17 @@
+.git
+.next
+.runlogs
+node_modules
+npm-debug.log*
+
+.env
+.env.local
+.env.*.local
+deploy/.env
+
+python_services/.venv
+python_services/venv
+python_services/.pytest_cache
+python_services/__pycache__
+**/__pycache__
+**/.pytest_cache

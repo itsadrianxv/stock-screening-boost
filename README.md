@@ -110,6 +110,15 @@ npm run dev
 
 访问 http://localhost:3000
 
+### Docker 部署（WSL + Docker Desktop）
+
+```bash
+cp deploy/.env.example deploy/.env
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
+```
+
+详细说明见 [deploy/README.md](./deploy/README.md)。
+
 ## 可用脚本
 
 ### 开发
