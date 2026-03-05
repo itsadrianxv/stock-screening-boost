@@ -34,8 +34,10 @@ const arbStockDataResponse = fc.record({
   debtRatio: fc.option(fc.double({ min: 0, max: 1.0, noNaN: true }), { nil: null }),
   marketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true }), { nil: null }),
   floatMarketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true }), { nil: null }),
-  dataDate: fc.date({ min: new Date("2020-01-01"), max: new Date("2024-12-31") })
-    .map(d => d.toISOString().split('T')[0]!), // 格式化为 YYYY-MM-DD
+  dataDate: fc
+    .date({ min: new Date("2020-01-01"), max: new Date("2024-12-31") })
+    .filter((d) => !Number.isNaN(d.getTime()))
+    .map((d) => d.toISOString().split("T")[0]!), // 格式化为 YYYY-MM-DD
 });
 
 describe("PythonDataServiceClient - Property 12: HTTP 响应映射正确性", () => {
@@ -193,7 +195,9 @@ describe("PythonDataServiceClient - Property 12: HTTP 响应映射正确性", ()
         fc.double({ min: 0, max: 1.0, noNaN: true }),
         fc.double({ min: 10, max: 100000, noNaN: true }),
         fc.double({ min: 10, max: 100000, noNaN: true }),
-        fc.date({ min: new Date("2020-01-01"), max: new Date("2024-12-31") }),
+        fc
+          .date({ min: new Date("2020-01-01"), max: new Date("2024-12-31") })
+          .filter((d) => !Number.isNaN(d.getTime())),
         (code, name, industry, sector, roe, pe, pb, eps, revenue, netProfit, debtRatio, marketCap, floatMarketCap, dataDate) => {
           const stockDataJson = {
             code,

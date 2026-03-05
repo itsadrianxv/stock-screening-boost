@@ -341,7 +341,7 @@ describe("PythonDataServiceClient", () => {
 
       expect(result).toHaveLength(2);
       expect(result[0]?.value).toBe(100.0);
-      expect(result[1]?.value).toBe(0); // null 映射为 0
+      expect(result[1]?.value).toBeNull();
       expect(result[1]?.isEstimated).toBe(true);
     });
   });

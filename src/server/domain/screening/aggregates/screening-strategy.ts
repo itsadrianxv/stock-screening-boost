@@ -38,7 +38,7 @@ export interface IScoringService {
     stocks: Stock[],
     config: ScoringConfig,
     calcService: IIndicatorCalculationService
-  ): ScoredStock[];
+  ): Promise<ScoredStock[]>;
 }
 
 /**
@@ -210,18 +210,24 @@ export class ScreeningStrategy {
     });
   }
 
-  execute(
+  async execute(
     candidateStocks: Stock[],
     scoringService: IScoringService,
     calcService: IIndicatorCalculationService
-  ): ScreeningResult {
+  ): Promise<ScreeningResult> {
     const startTime = performance.now();
 
-    const matchedStocks = candidateStocks.filter((stock) =>
-      this._filters.match(stock, calcService)
+    const matchResults = await Promise.all(
+      candidateStocks.map(async (stock) => ({
+        stock,
+        matched: await this._filters.matchAsync(stock, calcService),
+      }))
     );
+    const matchedStocks = matchResults
+      .filter((result) => result.matched)
+      .map((result) => result.stock);
 
-    const scoredStocks = scoringService.scoreStocks(
+    const scoredStocks = await scoringService.scoreStocks(
       matchedStocks,
       this._scoringConfig,
       calcService

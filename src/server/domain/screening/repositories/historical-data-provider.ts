@@ -18,7 +18,7 @@ export interface IndicatorDataPoint {
   /** 数据日期 */
   date: Date;
   /** 指标值 */
-  value: number;
+  value: number | null;
   /** 是否为预估值 */
   isEstimated: boolean;
 }

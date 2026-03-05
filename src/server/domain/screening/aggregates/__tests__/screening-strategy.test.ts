@@ -71,7 +71,7 @@ describe("ScreeningStrategy", () => {
   };
 
   const mockScoringService: IScoringService = {
-    scoreStocks: (stocks, config, calcService) => {
+    scoreStocks: async (stocks, config, calcService) => {
       // 简单的 mock 实现：返回固定评分
       return stocks.map((stock) =>
         ScoredStock.create(
@@ -315,7 +315,7 @@ describe("ScreeningStrategy", () => {
   });
 
   describe("execute", () => {
-    it("应该成功执行筛选流程", () => {
+    it("应该成功执行筛选流程", async () => {
       const strategy = ScreeningStrategy.create({
         name: "高ROE策略",
         filters: createValidFilterGroup(),
@@ -350,7 +350,7 @@ describe("ScreeningStrategy", () => {
         }),
       ];
 
-      const result = strategy.execute(
+      const result = await strategy.execute(
         candidateStocks,
         mockScoringService,
         mockCalcService
@@ -361,7 +361,7 @@ describe("ScreeningStrategy", () => {
       expect(result.executionTime).toBeGreaterThan(0);
     });
 
-    it("执行结果应该按评分降序排列", () => {
+    it("执行结果应该按评分降序排列", async () => {
       const strategy = ScreeningStrategy.create({
         name: "测试策略",
         filters: createValidFilterGroup(),
@@ -371,7 +371,7 @@ describe("ScreeningStrategy", () => {
 
       // Mock 评分服务返回不同评分
       const customScoringService: IScoringService = {
-        scoreStocks: (stocks) => {
+        scoreStocks: async (stocks) => {
           return stocks.map((stock, index) =>
             ScoredStock.create(
               stock.code,
@@ -402,7 +402,7 @@ describe("ScreeningStrategy", () => {
         }),
       ];
 
-      const result = strategy.execute(
+      const result = await strategy.execute(
         candidateStocks,
         customScoringService,
         mockCalcService

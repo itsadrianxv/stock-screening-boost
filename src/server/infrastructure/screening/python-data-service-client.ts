@@ -196,7 +196,7 @@ export class PythonDataServiceClient
   ): IndicatorDataPoint {
     return {
       date: new Date(data.date),
-      value: data.value ?? 0,
+      value: data.value,
       isEstimated: data.isEstimated,
     };
   }
