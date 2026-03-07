@@ -1,10 +1,13 @@
-"""
+﻿"""
 Intelligence data router
 Provides theme news and evidence endpoints for workflow agents.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+
 from app.services.intelligence_data_adapter import IntelligenceDataAdapter
 
 router = APIRouter()
@@ -19,6 +22,44 @@ class ThemeNewsItem(BaseModel):
     sentiment: str
     relevanceScore: float
     relatedStocks: list[str]
+
+
+class CandidateStock(BaseModel):
+    stockCode: str
+    stockName: str
+    reason: str
+    heat: float = Field(..., ge=0, le=100)
+    concept: str
+
+
+class ConceptMatchItem(BaseModel):
+    name: str
+    code: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    confidence: float = Field(..., ge=0, le=1)
+    reason: str
+    source: str
+
+
+class ConceptMatchResponse(BaseModel):
+    theme: str
+    matchedBy: Literal["whitelist", "zhipu", "auto"]
+    concepts: list[ConceptMatchItem]
+
+
+class ConceptRuleRecord(BaseModel):
+    theme: str
+    whitelist: list[str] = Field(default_factory=list)
+    blacklist: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    updatedAt: str | None = None
+
+
+class ConceptRuleUpdateRequest(BaseModel):
+    theme: str = Field(..., min_length=1)
+    whitelist: list[str] = Field(default_factory=list)
+    blacklist: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
 
 
 class CompanyEvidence(BaseModel):
@@ -49,8 +90,69 @@ async def get_theme_news(
 ):
     try:
         return IntelligenceDataAdapter.get_theme_news(theme=theme, days=days, limit=limit)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"获取主题资讯失败: {exc}") from exc
+
+
+@router.get(
+    "/intelligence/candidates",
+    response_model=list[CandidateStock],
+    summary="Get candidate stocks by theme",
+)
+async def get_candidates(
+    theme: str = Query(..., min_length=1),
+    limit: int = Query(6, ge=1, le=30),
+):
+    try:
+        return IntelligenceDataAdapter.get_candidates(theme=theme, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"获取候选股失败: {exc}") from exc
+
+
+@router.get(
+    "/intelligence/concepts/match",
+    response_model=ConceptMatchResponse,
+    summary="Match concept boards by theme",
+)
+async def match_theme_concepts(
+    theme: str = Query(..., min_length=1),
+    limit: int = Query(5, ge=1, le=20),
+):
+    try:
+        return IntelligenceDataAdapter.match_theme_concepts(theme=theme, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"概念匹配失败: {exc}") from exc
+
+
+@router.get(
+    "/intelligence/concepts/rules",
+    response_model=ConceptRuleRecord,
+    summary="Get concept rules by theme",
+)
+async def get_concept_rules(theme: str = Query(..., min_length=1)):
+    try:
+        return IntelligenceDataAdapter.get_concept_rules(theme=theme)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"读取概念规则失败: {exc}") from exc
+
+
+@router.put(
+    "/intelligence/concepts/rules",
+    response_model=ConceptRuleRecord,
+    summary="Upsert concept rules",
+)
+async def put_concept_rules(request: ConceptRuleUpdateRequest):
+    try:
+        return IntelligenceDataAdapter.update_concept_rules(
+            theme=request.theme,
+            whitelist=request.whitelist,
+            blacklist=request.blacklist,
+            aliases=request.aliases,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"更新概念规则失败: {exc}") from exc
 
 
 @router.get(
@@ -64,7 +166,7 @@ async def get_company_evidence(stock_code: str, concept: str | None = Query(None
 
     try:
         return IntelligenceDataAdapter.get_company_evidence(stock_code, concept)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"获取公司证据失败: {exc}") from exc
 
 
@@ -89,5 +191,5 @@ async def get_company_evidence_batch(request: EvidenceBatchRequest):
             stock_codes=request.stockCodes,
             concept=request.concept,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"批量获取公司证据失败: {exc}") from exc

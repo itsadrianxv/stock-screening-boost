@@ -1,75 +1,153 @@
-# Stock Screening Data Service
+﻿# Stock Screening Python Service
 
-Python FastAPI 微服务，为股票筛选平台提供金融数据接口（基于 AkShare）。
+Python FastAPI 微服务，向主应用提供 AkShare 数据接口。
 
-## 技术栈
+## 能力概览
 
-- **FastAPI**: 现代、高性能的 Web 框架
-- **Uvicorn**: ASGI 服务器
-- **AkShare**: 金融数据获取库
-- **Pydantic**: 数据验证
+- 股票基础数据：代码列表、批量行情、历史指标、行业列表
+- Workflow 情报数据：主题资讯、候选股、公司证据（含批量）
+- 主题词 -> A 股概念映射：白名单/黑名单 + 智谱 Web Search + 本地自动匹配
+- 智能降级：AkShare 请求失败时优先读缓存，再走兜底数据
 
-## 项目结构
+## 目录结构
 
-```
+```text
 python_services/
-├── app/
-│   ├── __init__.py
-│   ├── main.py              # FastAPI 入口
-│   ├── routers/             # API 路由
-│   │   ├── __init__.py
-│   │   └── stock_data.py    # 股票数据路由（待实现）
-│   └── services/            # 业务逻辑
-│       ├── __init__.py
-│       └── akshare_adapter.py  # AkShare 数据适配器（待实现）
-├── tests/                   # 测试文件（待创建）
-├── requirements.txt         # 依赖列表
-└── README.md
+  app/
+    main.py
+    routers/
+      stock_data.py
+      intelligence_data.py
+    services/
+      akshare_adapter.py
+      intelligence_data_adapter.py
+      zhipu_search_client.py
+      theme_concept_rules_registry.py
+  tests/
+  requirements.txt
 ```
 
-## 安装
+## 启动
 
-1. 创建虚拟环境（推荐）：
 ```bash
 cd python_services
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
-```
-
-2. 安装依赖：
-```bash
+python -m venv .venv
+.venv\Scripts\activate  # Windows
 pip install -r requirements.txt
-```
-
-## 运行
-
-开发模式（热重载）：
-```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-生产模式：
+## 关键接口
+
+保留兼容：
+
+- `GET /api/intelligence/news?theme&days&limit`
+- `GET /api/intelligence/candidates?theme&limit`
+- `GET /api/intelligence/evidence/{stock_code}?concept`
+- `POST /api/intelligence/evidence/batch`
+
+新增：
+
+- `GET /api/intelligence/concepts/match?theme=...&limit=...`
+- `GET /api/intelligence/concepts/rules?theme=...`
+- `PUT /api/intelligence/concepts/rules`
+
+## 概念匹配优先级
+
+1. 白名单优先（命中即优先返回）
+2. 黑名单强过滤（对白名单、智谱、本地匹配都生效）
+3. 无白名单命中时，调用智谱 Web Search
+4. 智谱失败或无结果时，回退本地自动匹配
+
+## 环境变量
+
+缓存与降级：
+
+- `INTELLIGENCE_CACHE_TTL_SECONDS`：新鲜缓存 TTL（默认 `300`）
+- `INTELLIGENCE_CACHE_STALE_SECONDS`：过期后可继续回退的 stale 窗口（默认 `1800`）
+- `INTELLIGENCE_SPOT_CACHE_TTL_SECONDS`：股票快照缓存 TTL（默认 `120`）
+- `INTELLIGENCE_ENABLE_MOCK_FALLBACK`：是否启用兜底数据（默认 `true`）
+
+智谱 Web Search：
+
+- `ZHIPU_API_KEY`：智谱 API Key（启用外部搜索时必需）
+- `ZHIPU_WEB_SEARCH_MODEL`：模型名（可选，默认 `glm-4-plus`）
+- `ZHIPU_WEB_SEARCH_TIMEOUT_SECONDS`：请求超时秒数（可选，默认 `8`）
+- `ZHIPU_WEB_SEARCH_RETRIES`：失败重试次数（可选，默认 `2`）
+
+规则存储：
+
+- `INTELLIGENCE_THEME_CONCEPT_RULES_FILE`：规则 JSON 文件路径（可选，默认 `app/services/data/theme_concept_rules.json`）
+
+## 接口示例
+
+### 1) 主题匹配
+
+请求：
+
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+curl "http://localhost:8000/api/intelligence/concepts/match?theme=算力&limit=3"
 ```
 
-## API 文档
+响应：
 
-启动服务后访问：
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+```json
+{
+  "theme": "算力",
+  "matchedBy": "whitelist",
+  "concepts": [
+    {
+      "name": "算力租赁",
+      "code": "BK1234",
+      "aliases": ["算力服务"],
+      "confidence": 0.99,
+      "reason": "命中白名单概念：算力租赁",
+      "source": "whitelist"
+    }
+  ]
+}
+```
+
+### 2) 查询规则
+
+请求：
+
+```bash
+curl "http://localhost:8000/api/intelligence/concepts/rules?theme=算力"
+```
+
+响应：
+
+```json
+{
+  "theme": "算力",
+  "whitelist": ["算力租赁"],
+  "blacklist": ["云计算"],
+  "aliases": ["算力基础设施"],
+  "updatedAt": "2026-03-07T10:00:00+00:00"
+}
+```
+
+### 3) 更新规则
+
+请求：
+
+```bash
+curl -X PUT "http://localhost:8000/api/intelligence/concepts/rules" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "theme": "算力",
+    "whitelist": ["算力租赁", "液冷服务器"],
+    "blacklist": ["泛云服务"],
+    "aliases": ["算力基础设施"]
+  }'
+```
+
+响应结构与查询规则一致。
 
 ## 测试
 
 ```bash
+cd python_services
 pytest
 ```
-
-## 与 T3 Stack 集成
-
-本服务通过 HTTP API 与 T3 Stack 主应用通信：
-- T3 侧通过 `src/server/infrastructure/screening/python-data-service-client.ts` 调用本服务
-- CORS 已配置允许 `localhost:3000` 和 `localhost:3001`
-- 领域层通过接口反转（IMarketDataRepository、IHistoricalDataProvider）解耦
