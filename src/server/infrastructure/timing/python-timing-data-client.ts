@@ -26,16 +26,53 @@ export type PythonTimingDataClientConfig = {
   timeoutMs?: number;
 };
 
+function resolveTimingServiceBasePath(rawBaseUrl: string) {
+  const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, "");
+
+  if (normalizedBaseUrl.endsWith("/api/v1/timing")) {
+    return {
+      baseUrl: normalizedBaseUrl,
+      timingBasePath: "",
+    };
+  }
+
+  if (normalizedBaseUrl.endsWith("/api/v1")) {
+    return {
+      baseUrl: normalizedBaseUrl,
+      timingBasePath: "/timing",
+    };
+  }
+
+  if (normalizedBaseUrl.endsWith("/api")) {
+    return {
+      baseUrl: normalizedBaseUrl,
+      timingBasePath: "/v1/timing",
+    };
+  }
+
+  return {
+    baseUrl: normalizedBaseUrl,
+    timingBasePath: "/api/v1/timing",
+  };
+}
+
 export class PythonTimingDataClient {
   private readonly baseUrl: string;
+  private readonly timingBasePath: string;
   private readonly timeoutMs: number;
 
   constructor(config?: PythonTimingDataClientConfig) {
-    this.baseUrl = (config?.baseUrl ?? env.PYTHON_SERVICE_URL).replace(
-      /\/$/,
-      "",
+    const resolvedBaseUrl = resolveTimingServiceBasePath(
+      config?.baseUrl ?? env.PYTHON_SERVICE_URL,
     );
+
+    this.baseUrl = resolvedBaseUrl.baseUrl;
+    this.timingBasePath = resolvedBaseUrl.timingBasePath;
     this.timeoutMs = config?.timeoutMs ?? 10_000;
+  }
+
+  private timingPath(path: string) {
+    return `${this.timingBasePath}${path}`;
   }
 
   async getBars(params: {
@@ -56,7 +93,9 @@ export class PythonTimingDataClient {
     search.set("adjust", params.adjust ?? "qfq");
 
     return this.request<TimingBarsData>(
-      `/api/v1/timing/stocks/${params.stockCode}/bars?${search.toString()}`,
+      this.timingPath(
+        `/stocks/${params.stockCode}/bars?${search.toString()}`,
+      ),
     );
   }
 
@@ -75,7 +114,9 @@ export class PythonTimingDataClient {
 
     const query = search.toString();
     return this.request<TimingSignalData>(
-      `/api/v1/timing/stocks/${params.stockCode}/signals${query ? `?${query}` : ""}`,
+      this.timingPath(
+        `/stocks/${params.stockCode}/signals${query ? `?${query}` : ""}`,
+      ),
     );
   }
 
@@ -85,7 +126,7 @@ export class PythonTimingDataClient {
     lookbackDays?: number;
   }) {
     return this.request<TimingSignalBatchData>(
-      "/api/v1/timing/stocks/signals/batch",
+      this.timingPath("/stocks/signals/batch"),
       {
         method: "POST",
         body: JSON.stringify(params),
@@ -101,7 +142,9 @@ export class PythonTimingDataClient {
 
     const query = search.toString();
     return this.request<MarketRegimeSnapshot>(
-      `/api/v1/timing/market/regime-snapshot${query ? `?${query}` : ""}`,
+      this.timingPath(
+        `/market/regime-snapshot${query ? `?${query}` : ""}`,
+      ),
     );
   }
 

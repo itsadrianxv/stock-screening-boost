@@ -91,7 +91,7 @@
       AUTH_CREDENTIALS_PASSWORD: ${AUTH_CREDENTIALS_PASSWORD:-admin123456}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-stock-screening-boost}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000/api}
+      PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000}
       PYTHON_INTELLIGENCE_SERVICE_URL: ${PYTHON_INTELLIGENCE_SERVICE_URL:-http://python-service:8000}
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
       FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-https://api.firecrawl.dev}
@@ -123,6 +123,7 @@
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-stock-screening-boost}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000}
       PYTHON_INTELLIGENCE_SERVICE_URL: ${PYTHON_INTELLIGENCE_SERVICE_URL:-http://python-service:8000}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
@@ -155,7 +156,7 @@
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-stock-screening-boost}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000/api}
+      PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000}
       SCREENING_WORKER_POLL_INTERVAL_MS: ${SCREENING_WORKER_POLL_INTERVAL_MS:-2000}
     command: ["npm", "run", "worker:screening"]
 

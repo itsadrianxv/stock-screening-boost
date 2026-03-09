@@ -64,6 +64,56 @@ describe("PythonTimingDataClient", () => {
     expect(payload.ruleSummary.direction).toBe("bullish");
   });
 
+  it("supports base URLs that already include /api", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          stockCode: "600519",
+          stockName: "贵州茅台",
+          asOfDate: "2026-03-06",
+          barsCount: 120,
+          indicators: {
+            close: 1500,
+            macd: { dif: 1, dea: 0.8, histogram: 0.4 },
+            rsi: { value: 61 },
+            bollinger: {
+              upper: 1520,
+              middle: 1490,
+              lower: 1460,
+              closePosition: 0.68,
+            },
+            obv: { value: 1000, slope: 15 },
+            ema20: 1480,
+            ema60: 1420,
+            atr14: 32,
+            volumeRatio20: 1.24,
+          },
+          ruleSummary: {
+            direction: "bullish",
+            signalStrength: 76,
+            warnings: [],
+          },
+        },
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const PythonTimingDataClient = await loadClient();
+    const client = new PythonTimingDataClient({
+      baseUrl: "http://127.0.0.1:8000/api",
+      timeoutMs: 500,
+    });
+
+    await client.getSignal({ stockCode: "600519" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/timing/stocks/600519/signals",
+      expect.anything(),
+    );
+  });
+
   it("throws workflow domain error when gateway fails", async () => {
     vi.stubGlobal(
       "fetch",
