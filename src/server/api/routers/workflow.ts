@@ -8,7 +8,13 @@ import {
   isWorkflowDomainError,
   WORKFLOW_ERROR_CODES,
 } from "~/server/domain/workflow/errors";
-import { QUICK_RESEARCH_TEMPLATE_CODE } from "~/server/domain/workflow/types";
+import {
+  QUICK_RESEARCH_TEMPLATE_CODE,
+  SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE,
+  TIMING_SIGNAL_PIPELINE_TEMPLATE_CODE,
+  WATCHLIST_TIMING_CARDS_PIPELINE_TEMPLATE_CODE,
+  WATCHLIST_TIMING_PIPELINE_TEMPLATE_CODE,
+} from "~/server/domain/workflow/types";
 import { PrismaWorkflowRunRepository } from "~/server/infrastructure/workflow/prisma/workflow-run-repository";
 
 function mapWorkflowError(error: unknown): TRPCError {
@@ -29,7 +35,10 @@ function mapWorkflowError(error: unknown): TRPCError {
       return new TRPCError({ code: "BAD_REQUEST", message: error.message });
     }
 
-    return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+    return new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: error.message,
+    });
   }
 
   if (error instanceof TRPCError) {
@@ -37,7 +46,10 @@ function mapWorkflowError(error: unknown): TRPCError {
   }
 
   if (error instanceof Error) {
-    return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+    return new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: error.message,
+    });
   }
 
   return new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "未知错误" });
@@ -50,6 +62,62 @@ const startQuickResearchInput = z.object({
   idempotencyKey: z.string().min(8).max(128).optional(),
 });
 
+const startCompanyResearchInput = z.object({
+  companyName: z.string().min(1, "companyName 不能为空"),
+  stockCode: z.string().trim().min(1).optional(),
+  officialWebsite: z.string().url().optional(),
+  focusConcepts: z.array(z.string().min(1)).max(8).optional(),
+  keyQuestion: z.string().trim().min(1).optional(),
+  supplementalUrls: z.array(z.string().url()).max(8).optional(),
+  templateVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+const startScreeningInsightPipelineInput = z.object({
+  screeningSessionId: z.string().cuid(),
+  strategyName: z.string().trim().min(1).optional(),
+  maxInsightsPerSession: z.number().int().min(1).max(50).optional(),
+  templateCode: z.string().default(SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE),
+  templateVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+const startTimingSignalPipelineInput = z.object({
+  stockCode: z.string().regex(/^\d{6}$/, "stockCode 必须是 6 位数字"),
+  asOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  templateCode: z.string().default(TIMING_SIGNAL_PIPELINE_TEMPLATE_CODE),
+  templateVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+const startWatchlistTimingCardsPipelineInput = z.object({
+  watchListId: z.string().cuid(),
+  asOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  templateCode: z
+    .string()
+    .default(WATCHLIST_TIMING_CARDS_PIPELINE_TEMPLATE_CODE),
+  templateVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
+const startWatchlistTimingPipelineInput = z.object({
+  watchListId: z.string().cuid(),
+  portfolioSnapshotId: z.string().cuid(),
+  asOfDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  templateCode: z.string().default(WATCHLIST_TIMING_PIPELINE_TEMPLATE_CODE),
+  templateVersion: z.number().int().positive().optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
+});
+
 const getRunInput = z.object({
   runId: z.string().cuid(),
 });
@@ -58,6 +126,7 @@ const listRunsInput = z.object({
   limit: z.number().int().min(1).max(50).default(20),
   cursor: z.string().cuid().optional(),
   status: z.nativeEnum(WorkflowRunStatus).optional(),
+  templateCode: z.string().optional(),
 });
 
 const cancelRunInput = z.object({
@@ -84,16 +153,207 @@ export const workflowRouter = createTRPCRouter({
       }
     }),
 
-  getRun: protectedProcedure.input(getRunInput).query(async ({ ctx, input }) => {
-    try {
-      const repository = new PrismaWorkflowRunRepository(ctx.db);
-      const queryService = new WorkflowQueryService(repository);
+  startCompanyResearch: protectedProcedure
+    .input(startCompanyResearchInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const commandService = new WorkflowCommandService(repository);
 
-      return await queryService.getRun(ctx.session.user.id, input.runId);
-    } catch (error) {
-      throw mapWorkflowError(error);
-    }
-  }),
+        return await commandService.startCompanyResearch({
+          userId: ctx.session.user.id,
+          companyName: input.companyName,
+          stockCode: input.stockCode,
+          officialWebsite: input.officialWebsite,
+          focusConcepts: input.focusConcepts,
+          keyQuestion: input.keyQuestion,
+          supplementalUrls: input.supplementalUrls,
+          templateVersion: input.templateVersion,
+          idempotencyKey: input.idempotencyKey,
+        });
+      } catch (error) {
+        throw mapWorkflowError(error);
+      }
+    }),
+
+  startScreeningInsightPipeline: protectedProcedure
+    .input(startScreeningInsightPipelineInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const session = await ctx.db.screeningSession.findFirst({
+          where: {
+            id: input.screeningSessionId,
+            userId: ctx.session.user.id,
+          },
+          select: {
+            id: true,
+            strategyName: true,
+          },
+        });
+
+        if (!session) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "筛选会话不存在",
+          });
+        }
+
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const commandService = new WorkflowCommandService(repository);
+
+        return await commandService.startScreeningInsightPipeline({
+          userId: ctx.session.user.id,
+          screeningSessionId: input.screeningSessionId,
+          strategyName: input.strategyName ?? session.strategyName ?? undefined,
+          maxInsightsPerSession: input.maxInsightsPerSession,
+          templateVersion: input.templateVersion,
+          idempotencyKey: input.idempotencyKey,
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        throw mapWorkflowError(error);
+      }
+    }),
+
+  startTimingSignalPipeline: protectedProcedure
+    .input(startTimingSignalPipelineInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const commandService = new WorkflowCommandService(repository);
+
+        return await commandService.startTimingSignalPipeline({
+          userId: ctx.session.user.id,
+          stockCode: input.stockCode,
+          asOfDate: input.asOfDate,
+          templateVersion: input.templateVersion,
+          idempotencyKey: input.idempotencyKey,
+        });
+      } catch (error) {
+        throw mapWorkflowError(error);
+      }
+    }),
+
+  startWatchlistTimingCardsPipeline: protectedProcedure
+    .input(startWatchlistTimingCardsPipelineInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const watchList = await ctx.db.watchList.findFirst({
+          where: {
+            id: input.watchListId,
+            userId: ctx.session.user.id,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+        if (!watchList) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "自选股列表不存在",
+          });
+        }
+
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const commandService = new WorkflowCommandService(repository);
+
+        return await commandService.startWatchlistTimingCardsPipeline({
+          userId: ctx.session.user.id,
+          watchListId: input.watchListId,
+          asOfDate: input.asOfDate,
+          watchListName: watchList.name,
+          templateVersion: input.templateVersion,
+          idempotencyKey: input.idempotencyKey,
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        throw mapWorkflowError(error);
+      }
+    }),
+
+  startWatchlistTimingPipeline: protectedProcedure
+    .input(startWatchlistTimingPipelineInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const [watchList, portfolioSnapshot] = await Promise.all([
+          ctx.db.watchList.findFirst({
+            where: {
+              id: input.watchListId,
+              userId: ctx.session.user.id,
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          }),
+          ctx.db.portfolioSnapshot.findFirst({
+            where: {
+              id: input.portfolioSnapshotId,
+              userId: ctx.session.user.id,
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          }),
+        ]);
+
+        if (!watchList) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "自选股列表不存在",
+          });
+        }
+
+        if (!portfolioSnapshot) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "组合快照不存在",
+          });
+        }
+
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const commandService = new WorkflowCommandService(repository);
+
+        return await commandService.startWatchlistTimingPipeline({
+          userId: ctx.session.user.id,
+          watchListId: input.watchListId,
+          portfolioSnapshotId: input.portfolioSnapshotId,
+          asOfDate: input.asOfDate,
+          watchListName: watchList.name,
+          portfolioSnapshotName: portfolioSnapshot.name,
+          templateVersion: input.templateVersion,
+          idempotencyKey: input.idempotencyKey,
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        throw mapWorkflowError(error);
+      }
+    }),
+
+  getRun: protectedProcedure
+    .input(getRunInput)
+    .query(async ({ ctx, input }) => {
+      try {
+        const repository = new PrismaWorkflowRunRepository(ctx.db);
+        const queryService = new WorkflowQueryService(repository);
+
+        return await queryService.getRun(ctx.session.user.id, input.runId);
+      } catch (error) {
+        throw mapWorkflowError(error);
+      }
+    }),
 
   listRuns: protectedProcedure
     .input(listRunsInput)
@@ -107,6 +367,7 @@ export const workflowRouter = createTRPCRouter({
           limit: input.limit,
           cursor: input.cursor,
           status: input.status,
+          templateCode: input.templateCode,
         });
       } catch (error) {
         throw mapWorkflowError(error);

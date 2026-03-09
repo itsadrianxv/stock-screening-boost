@@ -1,5 +1,7 @@
+import { intelligenceRouter } from "~/server/api/routers/intelligence";
 import { postRouter } from "~/server/api/routers/post";
 import { screeningRouter } from "~/server/api/routers/screening";
+import { timingRouter } from "~/server/api/routers/timing";
 import { watchlistRouter } from "~/server/api/routers/watchlist";
 import { workflowRouter } from "~/server/api/routers/workflow";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
@@ -10,8 +12,10 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  * All routers added in /api/routers should be manually added here.
  */
 export const appRouter = createTRPCRouter({
+  intelligence: intelligenceRouter,
   post: postRouter,
   screening: screeningRouter,
+  timing: timingRouter,
   watchlist: watchlistRouter,
   workflow: workflowRouter,
 });
