@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 
 from app.gateway.common import build_cache_key, gateway_cache
+from app.infrastructure.metrics.recorder import metrics_recorder
 from app.main import app
 from app.policies.cache_policy import CachePolicy
 
@@ -14,6 +15,7 @@ client = TestClient(app)
 
 def setup_function() -> None:
     gateway_cache.clear()
+    metrics_recorder.clear()
 
 
 def test_get_v1_market_stock_success() -> None:
