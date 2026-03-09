@@ -93,6 +93,9 @@
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       PYTHON_SERVICE_URL: ${PYTHON_SERVICE_URL:-http://python-service:8000/api}
       PYTHON_INTELLIGENCE_SERVICE_URL: ${PYTHON_INTELLIGENCE_SERVICE_URL:-http://python-service:8000}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-https://api.firecrawl.dev}
+      FIRECRAWL_TIMEOUT_MS: ${FIRECRAWL_TIMEOUT_MS:-15000}
     ports:
       - "${WEB_PORT:-3000}:3000"
     command: ["sh", "-c", "npm run db:push && npm run start"]
@@ -123,6 +126,9 @@
       PYTHON_INTELLIGENCE_SERVICE_URL: ${PYTHON_INTELLIGENCE_SERVICE_URL:-http://python-service:8000}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      FIRECRAWL_BASE_URL: ${FIRECRAWL_BASE_URL:-https://api.firecrawl.dev}
+      FIRECRAWL_TIMEOUT_MS: ${FIRECRAWL_TIMEOUT_MS:-15000}
       WORKFLOW_WORKER_POLL_INTERVAL_MS: ${WORKFLOW_WORKER_POLL_INTERVAL_MS:-2000}
     command: ["npm", "run", "worker:workflow"]
 
