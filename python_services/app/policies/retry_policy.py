@@ -23,6 +23,7 @@ def retry_sync(
     operation: Callable[[], _T],
     policy: RetryPolicy,
     should_retry: Callable[[Exception], bool] | None = None,
+    on_retry: Callable[[int, Exception, float], None] | None = None,
 ) -> _T:
     last_error: Exception | None = None
 
@@ -43,10 +44,11 @@ def retry_sync(
             )
             jitter = delay_ms * policy.jitter_ratio
             sleep_ms = max(0, delay_ms + random.uniform(-jitter, jitter))
+            if on_retry is not None:
+                on_retry(attempt, exc, sleep_ms)
             time.sleep(sleep_ms / 1000)
 
     if last_error is not None:
         raise last_error
 
     raise RuntimeError("retry_sync ended unexpectedly")
-
