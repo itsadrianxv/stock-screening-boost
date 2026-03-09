@@ -2,6 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+import {
+  EmptyState,
+  KpiCard,
+  Panel,
+  ProgressBar,
+  StatusPill,
+  statusTone,
+  WorkspaceShell,
+} from "~/app/_components/ui";
+import {
+  COMPANY_RESEARCH_TEMPLATE_CODE,
+  type CompanyResearchResultDto,
+} from "~/server/domain/workflow/types";
 import { api } from "~/trpc/react";
 
 type RunDetailClientProps = {
@@ -24,6 +38,7 @@ function formatDate(value?: Date | string | null) {
   }
 
   const date = value instanceof Date ? value : new Date(value);
+
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "2-digit",
@@ -68,13 +83,34 @@ function buildResultHighlights(
     });
 }
 
-const statusStyles: Record<string, string> = {
-  PENDING: "text-[#ffd180]",
-  RUNNING: "text-[#71dcff]",
-  SUCCEEDED: "text-[#63f2c1]",
-  FAILED: "text-[#ff93a2]",
-  CANCELLED: "text-[#b3c5d7]",
-};
+function isCompanyResearchResult(
+  value: unknown,
+): value is CompanyResearchResultDto {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    !!candidate.brief &&
+    !!candidate.verdict &&
+    Array.isArray(candidate.conceptInsights) &&
+    Array.isArray(candidate.findings) &&
+    Array.isArray(candidate.evidence)
+  );
+}
+
+function getBackLink(templateCode?: string) {
+  return templateCode === COMPANY_RESEARCH_TEMPLATE_CODE
+    ? "/company-research"
+    : "/workflows";
+}
+
+function getSection(templateCode?: string) {
+  return templateCode === COMPANY_RESEARCH_TEMPLATE_CODE
+    ? "companyResearch"
+    : "workflows";
+}
 
 const statusLabels: Record<string, string> = {
   PENDING: "排队中",
@@ -94,6 +130,7 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
     {
       refetchInterval: (query) => {
         const status = query.state.data?.status;
+
         if (
           status === "SUCCEEDED" ||
           status === "FAILED" ||
@@ -187,213 +224,461 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
   ]);
 
   const run = runQuery.data;
+  const companyResult = isCompanyResearchResult(run?.result)
+    ? run.result
+    : null;
   const resultHighlights = useMemo(
     () => buildResultHighlights(run?.result),
     [run?.result],
   );
+  const backLink = getBackLink(run?.template.code);
+  const section = getSection(run?.template.code);
 
   return (
-    <main className="market-shell px-6 py-10 text-[var(--market-text)]">
-      <div className="market-frame flex w-full max-w-6xl flex-col gap-6">
-        <header className="market-panel rounded-3xl p-6 md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-[family-name:var(--font-display)] text-xs tracking-[0.35em] text-[#8cd9cd]">
-                RESEARCH TASK
-              </p>
-              <h1 className="mt-3 font-[family-name:var(--font-display)] text-2xl font-semibold text-[#eef7f3] md:text-3xl">
-                研究任务详情
-              </h1>
-              <p className="mt-2 text-xs text-[#8fa8a4]">
-                实时状态与结果会自动刷新
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link
-                href="/workflows"
-                className="rounded-full border border-[#4d6867] px-4 py-2 text-sm text-[#c8dedd] transition hover:border-[#73d8c4] hover:text-[#e4faf6]"
-              >
-                返回任务列表
-              </Link>
-              {run && (run.status === "RUNNING" || run.status === "PENDING") ? (
-                <button
-                  type="button"
-                  onClick={() => cancelMutation.mutate({ runId })}
-                  className="rounded-full border border-[#f8bf64]/72 px-4 py-2 text-sm text-[#ffd697] transition hover:bg-[#5f4520]/35"
-                >
-                  取消任务
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </header>
+    <WorkspaceShell
+      section={section}
+      eyebrow="Research Run Detail"
+      title="研究任务详情"
+      description="以运行视角查看状态、进度、节点、时间线和结果摘要。对进行中的任务，页面会自动接收事件并刷新。"
+      actions={
+        <>
+          <Link href={backLink} className="app-button">
+            返回任务列表
+          </Link>
+          {run && (run.status === "RUNNING" || run.status === "PENDING") ? (
+            <button
+              type="button"
+              onClick={() => cancelMutation.mutate({ runId })}
+              className="app-button app-button-danger"
+            >
+              取消任务
+            </button>
+          ) : null}
+        </>
+      }
+      summary={
+        <>
+          <KpiCard
+            label="状态"
+            value={run ? (statusLabels[run.status] ?? run.status) : "加载中"}
+            hint="当前运行状态"
+            tone={statusTone(run?.status)}
+          />
+          <KpiCard
+            label="进度"
+            value={run ? `${run.progressPercent}%` : "-"}
+            hint="按节点事件自动刷新"
+            tone={statusTone(run?.status)}
+          />
+          <KpiCard
+            label="当前阶段"
+            value={run?.currentNodeKey ?? "准备中"}
+            hint="显示当前执行节点"
+            tone="info"
+          />
+          <KpiCard
+            label="发起时间"
+            value={run ? formatDate(run.createdAt) : "-"}
+            hint="用于回溯本轮研究上下文"
+            tone="neutral"
+          />
+        </>
+      }
+    >
+      {!run ? (
+        <Panel>
+          <EmptyState
+            title={runQuery.isLoading ? "正在加载任务详情" : "未找到该任务"}
+            description={
+              runQuery.isLoading
+                ? "任务数据获取完成后，这里会出现运行状态与结果面板。"
+                : (runQuery.error?.message ??
+                  "该任务可能不存在，或当前账号无权访问。")
+            }
+          />
+        </Panel>
+      ) : (
+        <>
+          <Panel
+            title="研究主题"
+            description="题目、进度条和错误信息统一放在顶层，便于先判断是否需要继续等待。"
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px] lg:items-start">
+              <div>
+                <p className="text-base leading-7 text-[var(--app-text)]">
+                  {run.query}
+                </p>
+                <ProgressBar
+                  value={run.progressPercent}
+                  tone={statusTone(run.status)}
+                  className="mt-4"
+                />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <StatusPill
+                    label={statusLabels[run.status] ?? run.status}
+                    tone={statusTone(run.status)}
+                  />
+                  <StatusPill
+                    label={run.template.code}
+                    tone={
+                      run.template.code === COMPANY_RESEARCH_TEMPLATE_CODE
+                        ? "info"
+                        : "neutral"
+                    }
+                  />
+                  <span className="app-data text-xs text-[var(--app-text-soft)]">
+                    {run.progressPercent}%
+                  </span>
+                  <span className="text-xs text-[var(--app-text-soft)]">
+                    创建于 {formatDate(run.createdAt)}
+                  </span>
+                </div>
+                {run.errorMessage ? (
+                  <div className="mt-4 rounded-[10px] border border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
+                    {run.errorCode ? `${run.errorCode}: ` : ""}
+                    {run.errorMessage}
+                  </div>
+                ) : null}
+              </div>
 
-        {!run ? (
-          <section className="market-soft-panel rounded-2xl p-5 text-sm text-[#9eb8b3]">
-            {runQuery.isLoading
-              ? "加载任务信息中..."
-              : (runQuery.error?.message ?? "未找到该任务")}
-          </section>
-        ) : (
-          <>
-            <section className="grid gap-4 md:grid-cols-4">
-              <article className="market-soft-panel rounded-2xl p-4">
-                <p className="text-xs text-[#7f9a97]">状态</p>
-                <p
-                  className={`mt-2 text-lg font-semibold ${statusStyles[run.status] ?? "text-[#d8e8f8]"}`}
-                >
-                  {statusLabels[run.status] ?? run.status}
+              <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.74)] p-4 text-sm text-[var(--app-text-muted)]">
+                <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                  完成时间
                 </p>
-              </article>
-              <article className="market-soft-panel rounded-2xl p-4">
-                <p className="text-xs text-[#7f9a97]">当前阶段</p>
-                <p className="mt-2 text-sm text-[#cddff0]">
-                  {run.currentNodeKey ?? "准备中"}
-                </p>
-              </article>
-              <article className="market-soft-panel rounded-2xl p-4">
-                <p className="text-xs text-[#7f9a97]">发起时间</p>
-                <p className="market-data mt-2 text-sm text-[#cddff0]">
-                  {formatDate(run.createdAt)}
-                </p>
-              </article>
-              <article className="market-soft-panel rounded-2xl p-4">
-                <p className="text-xs text-[#7f9a97]">完成时间</p>
-                <p className="market-data mt-2 text-sm text-[#cddff0]">
+                <p className="app-data mt-3 text-[15px] text-[var(--app-text)]">
                   {formatDate(run.completedAt)}
                 </p>
-              </article>
-            </section>
-
-            <section className="market-panel rounded-2xl p-5">
-              <p className="text-sm text-[#cbddef]">研究主题: {run.query}</p>
-              <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-[#0c1b2f]">
-                <div
-                  className="h-full rounded-full bg-[#5dd7c0] transition-all"
-                  style={{ width: `${run.progressPercent}%` }}
-                />
-              </div>
-              <p className="market-data mt-2 text-xs text-[#79dfc8]">
-                当前进度 {run.progressPercent}%
-              </p>
-              {run.errorMessage ? (
-                <p className="mt-3 rounded-lg border border-[#ff7f92]/45 bg-[#5a2432]/45 px-3 py-2 text-xs text-[#ffbdc8]">
-                  {run.errorCode ? `${run.errorCode}: ` : ""}
-                  {run.errorMessage}
+                <p className="mt-4 text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                  Run ID
                 </p>
-              ) : null}
-            </section>
+                <p className="app-data mt-3 break-all text-[11px] text-[var(--app-text-soft)]">
+                  {runId}
+                </p>
+              </div>
+            </div>
+          </Panel>
 
-            {resultHighlights.length > 0 ? (
-              <section className="rounded-2xl border border-[#4ce0af]/45 bg-[#12352f]/55 p-5">
-                <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-[#7cf7cd]">
-                  研究结论摘要
-                </h2>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {resultHighlights.map((item) => (
-                    <article
-                      key={item.key}
-                      className="rounded-xl border border-[#4ce0af]/28 bg-[#0b2024]/70 p-3"
-                    >
-                      <p className="text-xs text-[#86b6b2]">{item.key}</p>
-                      <p className="mt-1 text-sm text-[#e4f4f2]">
-                        {item.value}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-                <details className="mt-4 rounded-xl border border-[#4ce0af]/28 bg-[#071626]/90 px-3 py-2">
-                  <summary className="cursor-pointer text-xs text-[#8abeb8]">
-                    查看原始结果 JSON
-                  </summary>
-                  <pre className="market-data mt-2 overflow-auto text-xs leading-6 text-[#d4e8fa]">
-                    {JSON.stringify(run.result, null, 2)}
-                  </pre>
-                </details>
-              </section>
-            ) : null}
-
-            <section className="market-panel rounded-2xl p-5">
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-[#eef7ff]">
-                研究步骤状态
-              </h2>
-              <div className="mt-4 grid gap-3">
-                {run.nodes.map((node) => (
-                  <article
-                    key={node.id}
-                    className="market-soft-panel rounded-xl p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium text-[#d8e8f8]">
-                          {node.nodeKey}
-                        </p>
-                        <p className="text-xs text-[#839db8]">
-                          处理器: {node.agentName}
-                        </p>
-                      </div>
-                      <p
-                        className={`text-sm ${statusStyles[node.status] ?? "text-[#d8e8f8]"}`}
-                      >
-                        {statusLabels[node.status] ?? node.status}
-                      </p>
-                    </div>
-                    <p className="market-data mt-2 text-xs text-[#8ca6c0]">
-                      开始 {formatDate(node.startedAt)} | 结束{" "}
-                      {formatDate(node.completedAt)} | 用时{" "}
-                      {node.durationMs ?? "-"} ms
+          {companyResult ? (
+            <>
+              <Panel
+                title="投资判断"
+                description="先看公司研究最终 stance，再决定是否继续下钻问题与证据。"
+              >
+                <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                  <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                      结论
                     </p>
-                    {node.errorMessage ? (
-                      <p className="mt-2 rounded-lg border border-[#ff7f92]/45 bg-[#5a2432]/45 px-3 py-2 text-xs text-[#ffbdc8]">
-                        {node.errorCode ? `${node.errorCode}: ` : ""}
-                        {node.errorMessage}
-                      </p>
-                    ) : null}
+                    <p className="app-display mt-3 text-2xl text-[var(--app-text)]">
+                      {companyResult.verdict.stance}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {companyResult.brief.focusConcepts.map((concept) => (
+                        <StatusPill key={concept} label={concept} tone="info" />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
+                    <p className="text-sm leading-7 text-[var(--app-text)]">
+                      {companyResult.verdict.summary}
+                    </p>
+                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                          看多要点
+                        </p>
+                        <div className="mt-3 space-y-2 text-sm text-[var(--app-text-muted)]">
+                          {companyResult.verdict.bullPoints.map((item) => (
+                            <p key={item}>{item}</p>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                          风险要点
+                        </p>
+                        <div className="mt-3 space-y-2 text-sm text-[var(--app-text-muted)]">
+                          {companyResult.verdict.bearPoints.map((item) => (
+                            <p key={item}>{item}</p>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                          后续核验
+                        </p>
+                        <div className="mt-3 space-y-2 text-sm text-[var(--app-text-muted)]">
+                          {companyResult.verdict.nextChecks.map((item) => (
+                            <p key={item}>{item}</p>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Panel>
+
+              <div className="grid gap-6 xl:grid-cols-3">
+                <Panel
+                  title="概念解析"
+                  description="重点看概念、商业化路径和阶段判断。"
+                >
+                  <div className="grid gap-3">
+                    {companyResult.conceptInsights.map((item) => (
+                      <article
+                        key={item.concept}
+                        className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[15px] font-medium text-[var(--app-text)]">
+                            {item.concept}
+                          </p>
+                          <StatusPill label={item.maturity} tone="info" />
+                        </div>
+                        <div className="mt-3 space-y-2 text-sm leading-6 text-[var(--app-text-muted)]">
+                          <p>{item.whyItMatters}</p>
+                          <p>{item.companyFit}</p>
+                          <p>{item.monetizationPath}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="深问题与回答"
+                  description="优先找出尚未被充分披露、但最影响投资判断的变量。"
+                >
+                  <div className="grid gap-3">
+                    {companyResult.findings.map((item, index) => {
+                      const question = companyResult.deepQuestions[index];
+                      return (
+                        <article
+                          key={item.question}
+                          className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-[15px] font-medium text-[var(--app-text)]">
+                              {item.question}
+                            </p>
+                            <StatusPill
+                              label={item.confidence}
+                              tone="warning"
+                            />
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[var(--app-text)]">
+                            {item.answer}
+                          </p>
+                          {question ? (
+                            <p className="mt-3 text-xs leading-5 text-[var(--app-text-soft)]">
+                              目标指标: {question.targetMetric}
+                            </p>
+                          ) : null}
+                          {item.gaps.length > 0 ? (
+                            <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
+                              {item.gaps.map((gap) => (
+                                <p key={gap}>- {gap}</p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="网页证据"
+                  description="Firecrawl 抓到的网页证据会优先出现在这里。"
+                >
+                  <div className="grid gap-3">
+                    <article className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill
+                          label={
+                            companyResult.crawler.configured
+                              ? "Firecrawl 已启用"
+                              : "Firecrawl 未配置"
+                          }
+                          tone={
+                            companyResult.crawler.configured
+                              ? "success"
+                              : "warning"
+                          }
+                        />
+                        <span className="text-xs text-[var(--app-text-soft)]">
+                          查询数 {companyResult.crawler.queries.length}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
+                        {companyResult.crawler.queries.map((query) => (
+                          <p key={query}>{query}</p>
+                        ))}
+                      </div>
+                      {companyResult.crawler.notes.length > 0 ? (
+                        <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
+                          {companyResult.crawler.notes.map((note) => (
+                            <p key={note}>- {note}</p>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+
+                    {companyResult.evidence.map((item) => (
+                      <article
+                        key={item.url}
+                        className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill label={item.sourceType} tone="info" />
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm text-[var(--app-accent-strong)] hover:underline"
+                          >
+                            {item.title}
+                          </a>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 text-[var(--app-text)]">
+                          {item.extractedFact}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-[var(--app-text-muted)]">
+                          {item.snippet}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </Panel>
+              </div>
+            </>
+          ) : resultHighlights.length > 0 ? (
+            <Panel
+              title="研究结论摘要"
+              description="先看压缩后的结构化要点，再决定是否展开原始结果。"
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                {resultHighlights.map((item) => (
+                  <article
+                    key={item.key}
+                    className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
+                  >
+                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                      {item.key}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-[var(--app-text)]">
+                      {item.value}
+                    </p>
                   </article>
                 ))}
               </div>
-            </section>
+            </Panel>
+          ) : null}
 
-            <section className="market-panel rounded-2xl p-5">
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-[#eef7ff]">
-                事件时间线
-              </h2>
-              {timeline.length === 0 ? (
-                <p className="mt-3 text-sm text-[#8ca5be]">暂无事件。</p>
+          <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+            <Panel
+              title="研究步骤状态"
+              description="每个节点保留处理器、起止时间和错误信息。"
+            >
+              {run.nodes.length === 0 ? (
+                <EmptyState
+                  title="还没有节点状态"
+                  description="工作流开始执行后，节点状态会按顺序出现在这里。"
+                />
               ) : (
-                <div className="mt-3 grid gap-2">
+                <div className="grid gap-3">
+                  {run.nodes.map((node) => (
+                    <article
+                      key={node.id}
+                      className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[15px] font-medium text-[var(--app-text)]">
+                            {node.nodeKey}
+                          </p>
+                          <p className="mt-1 text-xs text-[var(--app-text-soft)]">
+                            处理器: {node.agentName}
+                          </p>
+                        </div>
+                        <StatusPill
+                          label={statusLabels[node.status] ?? node.status}
+                          tone={statusTone(node.status)}
+                        />
+                      </div>
+
+                      <div className="mt-3 grid gap-2 text-xs text-[var(--app-text-muted)] sm:grid-cols-3">
+                        <p>开始: {formatDate(node.startedAt)}</p>
+                        <p>结束: {formatDate(node.completedAt)}</p>
+                        <p className="app-data">
+                          耗时: {node.durationMs ?? "-"} ms
+                        </p>
+                      </div>
+
+                      {node.errorMessage ? (
+                        <div className="mt-4 rounded-[10px] border border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
+                          {node.errorCode ? `${node.errorCode}: ` : ""}
+                          {node.errorMessage}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </Panel>
+
+            <Panel
+              title="事件时间线"
+              description="数据库事件和 SSE 实时事件会自动合并，按序号倒序展示。"
+            >
+              {timeline.length === 0 ? (
+                <EmptyState
+                  title="暂无事件"
+                  description="只要工作流开始产生日志，时间线会立刻在这里滚动更新。"
+                />
+              ) : (
+                <div className="grid gap-2">
                   {timeline.map((event) => (
                     <article
                       key={`${event.sequence}-${event.type}`}
-                      className="market-soft-panel rounded-lg px-3 py-2"
+                      className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] px-4 py-3"
                     >
-                      <p className="market-data text-xs text-[#8da7c1]">
-                        #{event.sequence} · {event.type} ·{" "}
-                        {event.nodeKey ?? "主流程"} ·{" "}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill
+                          label={`#${event.sequence}`}
+                          tone="neutral"
+                        />
+                        <StatusPill label={event.type} tone="info" />
+                        <span className="text-xs text-[var(--app-text-soft)]">
+                          {event.nodeKey ?? "主流程"}
+                        </span>
+                      </div>
+                      <p className="app-data mt-3 text-[11px] text-[var(--app-text-soft)]">
                         {formatDate(event.timestamp)}
                       </p>
                     </article>
                   ))}
                 </div>
               )}
-              {streamError ? (
-                <p className="mt-3 rounded-lg border border-[#f6bf64]/45 bg-[#5d4621]/35 px-3 py-2 text-xs text-[#ffd697]">
-                  {streamError}
-                </p>
-              ) : null}
-            </section>
 
-            <details className="rounded-2xl border border-[#375758]/65 bg-[#0b1a1b]/75 p-4">
-              <summary className="cursor-pointer text-sm text-[#a8c2c0]">
-                技术信息
-              </summary>
-              <p className="market-data mt-2 break-all text-xs text-[#88a5a3]">
-                runId: {runId}
-              </p>
-            </details>
-          </>
-        )}
-      </div>
-    </main>
+              {streamError ? (
+                <div className="mt-4 rounded-[10px] border border-[rgba(226,181,111,0.34)] bg-[rgba(86,60,23,0.2)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                  {streamError}
+                </div>
+              ) : null}
+            </Panel>
+          </div>
+
+          <Panel
+            title="原始结果 JSON"
+            description="需要更细节的研究输出时，再展开完整结果对象。"
+          >
+            <pre className="app-data app-scroll overflow-auto rounded-[10px] border border-[var(--app-border)] bg-[rgba(10,14,18,0.88)] p-4 text-xs leading-6 text-[var(--app-accent-strong)]">
+              {JSON.stringify(run.result ?? {}, null, 2)}
+            </pre>
+          </Panel>
+        </>
+      )}
+    </WorkspaceShell>
   );
 }

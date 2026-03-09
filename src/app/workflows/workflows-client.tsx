@@ -3,6 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+
+import {
+  EmptyState,
+  KpiCard,
+  Panel,
+  ProgressBar,
+  StatusPill,
+  statusTone,
+  WorkspaceShell,
+} from "~/app/_components/ui";
+import { QUICK_RESEARCH_TEMPLATE_CODE } from "~/server/domain/workflow/types";
 import { api } from "~/trpc/react";
 
 function formatDate(value?: Date | null) {
@@ -19,14 +30,6 @@ function formatDate(value?: Date | null) {
   }).format(value);
 }
 
-const statusStyleMap: Record<string, string> = {
-  PENDING: "text-[#ffd180]",
-  RUNNING: "text-[#71dcff]",
-  SUCCEEDED: "text-[#63f2c1]",
-  FAILED: "text-[#ff93a2]",
-  CANCELLED: "text-[#b3c5d7]",
-};
-
 const statusLabelMap: Record<string, string> = {
   PENDING: "排队中",
   RUNNING: "进行中",
@@ -36,9 +39,9 @@ const statusLabelMap: Record<string, string> = {
 };
 
 const quickPrompts = [
-  "半导体设备国产替代，未来 12 个月核心机会与风险",
-  "创新药出海链条中，最值得跟踪的商业化指标",
-  "AI 算力基础设施，盈利兑现节奏如何判断",
+  "半导体设备国产替代，未来 12 个月核心机会与风险是什么？",
+  "创新药出海链条中，最值得跟踪的商业化指标有哪些？",
+  "AI 算力基础设施的盈利兑现节奏应如何判断？",
 ];
 
 export function WorkflowsClient() {
@@ -49,18 +52,25 @@ export function WorkflowsClient() {
 
   const runsQuery = api.workflow.listRuns.useQuery({
     limit: 20,
+    templateCode: QUICK_RESEARCH_TEMPLATE_CODE,
   });
 
   const startMutation = api.workflow.startQuickResearch.useMutation({
     onSuccess: async (result) => {
-      await utils.workflow.listRuns.invalidate();
+      await utils.workflow.listRuns.invalidate({
+        limit: 20,
+        templateCode: QUICK_RESEARCH_TEMPLATE_CODE,
+      });
       router.push(`/workflows/${result.runId}`);
     },
   });
 
   const cancelMutation = api.workflow.cancelRun.useMutation({
     onSuccess: async () => {
-      await utils.workflow.listRuns.invalidate();
+      await utils.workflow.listRuns.invalidate({
+        limit: 20,
+        templateCode: QUICK_RESEARCH_TEMPLATE_CODE,
+      });
     },
   });
 
@@ -71,6 +81,11 @@ export function WorkflowsClient() {
       );
     });
   }, [runsQuery.data?.items]);
+
+  const liveRuns = sortedRuns.filter(
+    (run) => run.status === "PENDING" || run.status === "RUNNING",
+  );
+  const finishedRuns = sortedRuns.filter((run) => run.status === "SUCCEEDED");
 
   const handleStart = async () => {
     if (!query.trim()) {
@@ -84,157 +99,187 @@ export function WorkflowsClient() {
   };
 
   return (
-    <main className="market-shell px-6 py-10 text-[var(--market-text)]">
-      <div className="market-frame flex w-full max-w-6xl flex-col gap-6">
-        <header className="market-panel rounded-3xl p-6 md:p-8">
-          <p className="font-[family-name:var(--font-display)] text-xs tracking-[0.35em] text-[#8cd9cd]">
-            INDUSTRY RESEARCH
-          </p>
-          <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight text-[#eef7f3] md:text-4xl">
-            行业研究任务中心
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-[#9fb8b5]">
-            输入你关心的赛道问题，系统会自动串联多 Agent
-            研究流程，持续返回进度与结论。
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link
-              href="/"
-              className="rounded-full border border-[#4f6e6a] bg-[#0b1b1b]/65 px-4 py-2 text-sm text-[#cde2dd] transition hover:border-[#81cec0] hover:text-[#ebfbf7]"
+    <WorkspaceShell
+      section="workflows"
+      eyebrow="Industry Research Workflow"
+      title="行业研究任务中心"
+      description="围绕一个清晰问题启动行业研究工作流，持续追踪节点状态、事件时间线和结构化结论。这里更像任务台，而不是展示页。"
+      actions={
+        <>
+          <Link href="/" className="app-button">
+            返回总览
+          </Link>
+          <Link
+            href="/company-research"
+            className="app-button app-button-primary"
+          >
+            打开公司研究
+          </Link>
+          <Link href="/screening" className="app-button app-button-success">
+            去策略筛选台
+          </Link>
+        </>
+      }
+      summary={
+        <>
+          <KpiCard
+            label="任务总数"
+            value={sortedRuns.length}
+            hint="最近 20 条行业研究记录"
+            tone="info"
+          />
+          <KpiCard
+            label="进行中"
+            value={liveRuns.length}
+            hint="排队中与执行中的任务"
+            tone="warning"
+          />
+          <KpiCard
+            label="已完成"
+            value={finishedRuns.length}
+            hint="成功返回结果的任务"
+            tone="success"
+          />
+          <KpiCard
+            label="最近发起"
+            value={formatDate(sortedRuns[0]?.createdAt ?? null)}
+            hint="用于确认研究流是否在持续运转"
+            tone="neutral"
+          />
+        </>
+      }
+    >
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <Panel
+          title="发起研究"
+          description="建议按“行业 / 链条 / 主题 + 关键问题”的格式提问，让工作流更快产出可执行结论。"
+          actions={
+            <button
+              type="button"
+              onClick={handleStart}
+              disabled={startMutation.isPending || !query.trim()}
+              className="app-button app-button-primary"
             >
-              返回首页
-            </Link>
-            <Link
-              href="/screening"
-              className="rounded-full border border-[#4f6e6a] bg-[#0f2630]/65 px-4 py-2 text-sm text-[#bfe4f5] transition hover:border-[#81c5e0] hover:text-[#e9f8ff]"
-            >
-              去策略筛选台
-            </Link>
+              {startMutation.isPending ? "任务创建中" : "开始研究"}
+            </button>
+          }
+        >
+          <div className="grid gap-4">
+            <textarea
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="请输入你想研究的行业问题，例如：AI 眼镜供应链中，哪些环节会先兑现利润？"
+              className="app-input min-h-[180px] resize-none"
+            />
+            <input
+              value={idempotencyKey}
+              onChange={(event) => setIdempotencyKey(event.target.value)}
+              placeholder="可选：幂等键，用于避免重复创建"
+              className="app-input"
+            />
+            {startMutation.error ? (
+              <div className="rounded-[10px] border border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
+                {startMutation.error.message}
+              </div>
+            ) : null}
           </div>
-        </header>
+        </Panel>
 
-        <section className="market-panel rounded-2xl p-5">
-          <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-[#edf6f3]">
-            发起新研究
-          </h2>
-          <p className="mt-2 text-sm text-[#90a9a6]">
-            建议使用“行业 +
-            你想回答的问题”格式，例如：光伏逆变器出海，未来两年的利润弹性。
-          </p>
-
-          <div className="mt-4 flex flex-wrap gap-2">
+        <Panel
+          title="问题模板"
+          description="先用成熟提问方式铺开结构，再补充你最关心的判断维度。"
+        >
+          <div className="grid gap-3">
             {quickPrompts.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => setQuery(prompt)}
-                className="rounded-full border border-[#5a7470]/70 bg-[#102423]/66 px-3 py-1.5 text-xs text-[#bcd8d3] transition hover:border-[#86cbbf] hover:text-[#e5f8f4]"
+                className="rounded-[10px] border border-[var(--app-border)] bg-[rgba(14,19,25,0.84)] px-4 py-3 text-left text-sm leading-6 text-[var(--app-text-muted)] transition-colors hover:border-[var(--app-border-strong)] hover:bg-[rgba(18,24,32,0.94)] hover:text-[var(--app-text)]"
               >
                 {prompt}
               </button>
             ))}
+            <div className="rounded-[10px] border border-[var(--app-border)] bg-[rgba(14,19,25,0.76)] p-4 text-sm leading-6 text-[var(--app-text-muted)]">
+              好问题应该同时包含范围、变量和验证口径，例如“盈利兑现节奏如何判断”比“怎么看这个行业”更适合作为工作流输入。
+            </div>
           </div>
+        </Panel>
+      </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-[2fr_auto]">
-            <textarea
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="请输入你想研究的行业问题"
-              rows={4}
-              className="rounded-xl border border-[#4d6a69] bg-[#091717] px-4 py-3 text-sm text-[#e8f6f4] placeholder:text-[#6e8a89] focus:border-[#62d8c3] focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={startMutation.isPending}
-              className="market-button-positive rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {startMutation.isPending ? "任务创建中..." : "开始研究"}
-            </button>
-          </div>
-
-          <details className="mt-3 rounded-xl border border-[#3f5655] bg-[#0a1819]/70 px-3 py-2">
-            <summary className="cursor-pointer text-xs text-[#92aca9]">
-              高级选项（幂等键）
-            </summary>
-            <input
-              value={idempotencyKey}
-              onChange={(event) => setIdempotencyKey(event.target.value)}
-              placeholder="可选：用于避免重复提交"
-              className="mt-2 w-full rounded-lg border border-[#4d6a69] bg-[#091717] px-3 py-2 text-sm text-[#e8f6f4] placeholder:text-[#6e8a89] focus:border-[#62d8c3] focus:outline-none"
-            />
-          </details>
-
-          {startMutation.error ? (
-            <p className="mt-3 rounded-lg border border-[#ff7f92]/45 bg-[#5b2432]/45 px-3 py-2 text-xs text-[#ffbdc8]">
-              {startMutation.error.message}
-            </p>
-          ) : null}
-        </section>
-
-        <section className="market-panel rounded-2xl p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-[#edf6f3]">
-              最近研究记录
-            </h2>
-            <button
-              type="button"
-              onClick={() => runsQuery.refetch()}
-              className="rounded-full border border-[#4d6968] px-3 py-1 text-xs text-[#9cb8b4] transition hover:border-[#79d4c4] hover:text-[#e5f8f3]"
-            >
-              刷新
-            </button>
-          </div>
-
-          {runsQuery.isLoading ? (
-            <p className="mt-4 text-sm text-[#95b0ad]">正在加载...</p>
-          ) : sortedRuns.length === 0 ? (
-            <p className="mt-4 text-sm text-[#879f9d]">
-              还没有研究记录，先发起一个问题试试。
-            </p>
-          ) : (
-            <div className="mt-4 grid gap-3">
-              {sortedRuns.map((run) => (
-                <article
-                  key={run.id}
-                  className="market-soft-panel grid gap-3 rounded-xl p-4 md:grid-cols-[2fr_1fr_1fr_auto]"
-                >
-                  <div>
-                    <p className="text-sm text-[#d8ece8]">{run.query}</p>
-                    <p className="mt-1 text-xs text-[#7f9a99]">
-                      创建时间: {formatDate(run.createdAt)}
+      <Panel
+        title="最近研究记录"
+        description="状态、进度和详情入口放在同一列表里，适合高频查看与快速取消。"
+        actions={
+          <button
+            type="button"
+            onClick={() => runsQuery.refetch()}
+            className="app-button"
+          >
+            刷新列表
+          </button>
+        }
+      >
+        {runsQuery.isLoading ? (
+          <EmptyState
+            title="正在加载研究记录"
+            description="任务列表会在查询完成后显示。"
+          />
+        ) : sortedRuns.length === 0 ? (
+          <EmptyState
+            title="还没有研究记录"
+            description="从上面的提问台发起一个问题，系统会自动创建新的行业研究任务。"
+          />
+        ) : (
+          <div className="grid gap-3">
+            {sortedRuns.map((run) => (
+              <article
+                key={run.id}
+                className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.74)] p-4"
+              >
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_140px_150px_auto] xl:items-start">
+                  <div className="min-w-0">
+                    <p className="text-base font-medium text-[var(--app-text)]">
+                      {run.query}
                     </p>
-                    <details className="mt-2 text-xs text-[#799291]">
-                      <summary className="cursor-pointer">查看任务编号</summary>
-                      <p className="market-data mt-1 break-all text-[11px] text-[#88a6a3]">
-                        {run.id}
-                      </p>
-                    </details>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[#7f9a99]">状态</p>
-                    <p
-                      className={`text-sm font-semibold ${statusStyleMap[run.status] ?? "text-[#d8e8f8]"}`}
-                    >
-                      {statusLabelMap[run.status] ?? run.status}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <StatusPill
+                        label={statusLabelMap[run.status] ?? run.status}
+                        tone={statusTone(run.status)}
+                      />
+                      <span className="text-xs text-[var(--app-text-soft)]">
+                        创建于 {formatDate(run.createdAt)}
+                      </span>
+                    </div>
+                    <p className="app-data mt-3 break-all text-[11px] text-[var(--app-text-soft)]">
+                      {run.id}
                     </p>
                   </div>
+
                   <div>
-                    <p className="text-xs text-[#7f9a99]">进度</p>
-                    <p className="market-data text-sm text-[#66daff]">
+                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                      进度
+                    </p>
+                    <p className="app-data mt-2 text-lg text-[var(--app-text)]">
                       {run.progressPercent}%
                     </p>
-                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#0b1b2f]">
-                      <div
-                        className="h-full rounded-full bg-[#5ed7c1] transition-all"
-                        style={{ width: `${run.progressPercent}%` }}
-                      />
-                    </div>
                   </div>
-                  <div className="flex items-start justify-end gap-2">
+
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                      状态条
+                    </p>
+                    <ProgressBar
+                      value={run.progressPercent}
+                      tone={statusTone(run.status)}
+                      className="mt-3"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-start justify-end gap-2">
                     <Link
                       href={`/workflows/${run.id}`}
-                      className="rounded-full border border-[#69ccb9]/70 px-3 py-1 text-xs text-[#9be5d8] transition hover:bg-[#175a50]/35"
+                      className="app-button app-button-primary"
                     >
                       查看详情
                     </Link>
@@ -242,24 +287,24 @@ export function WorkflowsClient() {
                       <button
                         type="button"
                         onClick={() => cancelMutation.mutate({ runId: run.id })}
-                        className="rounded-full border border-[#f6bf63]/70 px-3 py-1 text-xs text-[#ffd695] transition hover:bg-[#5f4620]/35"
+                        className="app-button app-button-danger"
                       >
-                        取消
+                        取消任务
                       </button>
                     )}
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
-          {runsQuery.error ? (
-            <p className="mt-4 rounded-lg border border-[#ff7f92]/45 bg-[#5b2432]/45 px-3 py-2 text-xs text-[#ffbdc8]">
-              {runsQuery.error.message}
-            </p>
-          ) : null}
-        </section>
-      </div>
-    </main>
+        {runsQuery.error ? (
+          <div className="mt-4 rounded-[10px] border border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
+            {runsQuery.error.message}
+          </div>
+        ) : null}
+      </Panel>
+    </WorkspaceShell>
   );
 }
