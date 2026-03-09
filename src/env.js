@@ -30,6 +30,9 @@ export const env = createEnv({
       .default("http://127.0.0.1:8000"),
     DEEPSEEK_API_KEY: z.string().optional(),
     DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
+    FIRECRAWL_API_KEY: z.string().optional(),
+    FIRECRAWL_BASE_URL: z.string().url().default("https://api.firecrawl.dev"),
+    FIRECRAWL_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
     WORKFLOW_WORKER_POLL_INTERVAL_MS: z.coerce
       .number()
       .int()
@@ -77,6 +80,9 @@ export const env = createEnv({
       process.env.PYTHON_INTELLIGENCE_SERVICE_URL,
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL,
+    FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
+    FIRECRAWL_BASE_URL: process.env.FIRECRAWL_BASE_URL,
+    FIRECRAWL_TIMEOUT_MS: process.env.FIRECRAWL_TIMEOUT_MS,
     WORKFLOW_WORKER_POLL_INTERVAL_MS:
       process.env.WORKFLOW_WORKER_POLL_INTERVAL_MS,
     SCREENING_WORKER_POLL_INTERVAL_MS:
