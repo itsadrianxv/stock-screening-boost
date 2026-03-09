@@ -1,5 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { env } from "~/env";
+import type { InsightArchiveService } from "~/server/application/intelligence/insight-archive-service";
+import type { ScreeningInsightPipelineDispatcher } from "~/server/application/workflow/screening-insight-pipeline-dispatcher";
 import { ScreeningSession } from "~/server/domain/screening/aggregates/screening-session";
 import { NoCandidateStocksError } from "~/server/domain/screening/errors";
 import type { IScreeningSessionRepository } from "~/server/domain/screening/repositories/screening-session-repository";
@@ -22,6 +24,8 @@ function chunkArray<T>(items: readonly T[], size: number): T[][] {
 export type ScreeningExecutionServiceDependencies = {
   sessionRepository: IScreeningSessionRepository;
   strategyRepository: IScreeningStrategyRepository;
+  insightArchiveService?: InsightArchiveService;
+  pipelineDispatcher?: ScreeningInsightPipelineDispatcher;
 };
 
 export class ScreeningExecutionService {
@@ -30,6 +34,8 @@ export class ScreeningExecutionService {
   private readonly dataClient: PythonDataServiceClient;
   private readonly calcService: IndicatorCalculationService;
   private readonly scoringService: ScoringService;
+  private readonly insightArchiveService?: InsightArchiveService;
+  private readonly pipelineDispatcher?: ScreeningInsightPipelineDispatcher;
   private readonly chunkSize = 120;
 
   constructor(dependencies: ScreeningExecutionServiceDependencies) {
@@ -40,6 +46,8 @@ export class ScreeningExecutionService {
     });
     this.calcService = new IndicatorCalculationService(this.dataClient);
     this.scoringService = new ScoringService();
+    this.insightArchiveService = dependencies.insightArchiveService;
+    this.pipelineDispatcher = dependencies.pipelineDispatcher;
   }
 
   async enqueueStrategyExecution(params: {
@@ -211,6 +219,26 @@ export class ScreeningExecutionService {
       beforeScore.updateProgress(96, "生成结果快照");
       beforeScore.complete(result);
       await this.sessionRepository.save(beforeScore);
+
+      if (this.pipelineDispatcher) {
+        try {
+          await this.pipelineDispatcher.dispatchCompletedSession(beforeScore);
+        } catch (error) {
+          console.error(
+            "[screening] dispatch insight pipeline failed:",
+            error instanceof Error ? error.message : "unknown error",
+          );
+        }
+      } else if (this.insightArchiveService) {
+        try {
+          await this.insightArchiveService.archiveSessionInsights(beforeScore);
+        } catch (error) {
+          console.error(
+            "[screening] archive insights failed:",
+            error instanceof Error ? error.message : "unknown error",
+          );
+        }
+      }
     } catch (error) {
       const latest = await this.sessionRepository.findById(session.id);
       if (!latest) {
