@@ -2,25 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { KpiCard, WorkspaceShell } from "~/app/_components/ui";
 import {
   type CreateStrategyInput,
   type FilterGroupInput,
   filterGroupInputSchema,
   scoringConfigInputSchema,
 } from "~/contracts/screening";
-import { IndicatorField } from "~/server/domain/screening/enums/indicator-field";
 import type { NormalizationMethod } from "~/server/domain/screening/value-objects/scoring-config";
 import { api, type RouterOutputs } from "~/trpc/react";
 import { FilterGroupEditor } from "./filter-group-editor";
 import { ScoringRulesEditor } from "./scoring-rules-editor";
 import {
-  buildConditionSummary,
-  buildGroupSubtitle,
   countConditions,
   createDefaultStrategyForm,
   formatDate,
   formatDuration,
-  indicatorMetadataMap,
   isLiveSession,
   normalizeRuleWeights,
   type ParsedTopStock,
@@ -51,14 +48,14 @@ function Notice({ notice }: { notice: NoticeState | null }) {
 
   const className =
     notice.tone === "success"
-      ? "border-[#4ce0af]/45 bg-[#133730]/65 text-[#9bfad6]"
+      ? "border-[rgba(120,211,173,0.34)] bg-[rgba(26,68,54,0.2)] text-[var(--app-success)]"
       : notice.tone === "error"
-        ? "border-[#ff7f92]/45 bg-[#5b2432]/52 text-[#ffbec9]"
-        : "border-[#f6bf64]/45 bg-[#5d4621]/42 text-[#ffd697]";
+        ? "border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] text-[var(--app-danger)]"
+        : "border-[rgba(226,181,111,0.34)] bg-[rgba(86,60,23,0.2)] text-[var(--app-warning)]";
 
   return (
     <p
-      className={`studio-rise rounded-2xl border px-4 py-3 text-sm ${className}`}
+      className={`studio-rise rounded-[12px] border px-4 py-3 text-sm ${className}`}
     >
       {notice.text}
     </p>
@@ -90,13 +87,11 @@ export function ScreeningStudioClient() {
   );
   const [watchMetaName, setWatchMetaName] = useState("");
   const [watchMetaDescription, setWatchMetaDescription] = useState("");
-  const [newStockCode, setNewStockCode] = useState("");
-  const [newStockName, setNewStockName] = useState("");
-  const [newStockNote, setNewStockNote] = useState("");
-  const [newStockTags, setNewStockTags] = useState("跟踪, 命中");
+  const [_newStockCode, setNewStockCode] = useState("");
+  const [_newStockName, setNewStockName] = useState("");
+  const [_newStockNote, setNewStockNote] = useState("");
+  const [_newStockTags, _setNewStockTags] = useState("跟踪, 命中");
   const [selectedStockCode, setSelectedStockCode] = useState("");
-  const [editedStockNote, setEditedStockNote] = useState("");
-  const [editedStockTags, setEditedStockTags] = useState("");
 
   const strategiesQuery = api.screening.listStrategies.useQuery(
     { limit: 50, offset: 0 },
@@ -273,7 +268,7 @@ export function ScreeningStudioClient() {
     },
   });
 
-  const deleteWatchListMutation = api.watchlist.delete.useMutation({
+  const _deleteWatchListMutation = api.watchlist.delete.useMutation({
     onSuccess: async () => {
       setNotice({ tone: "success", text: "自选股清单已删除" });
       await Promise.all([
@@ -306,24 +301,6 @@ export function ScreeningStudioClient() {
       }
       await utils.watchlist.list.invalidate();
       setNotice({ tone: "success", text: "股票已移出清单" });
-    },
-  });
-
-  const updateStockNoteMutation = api.watchlist.updateStockNote.useMutation({
-    onSuccess: async () => {
-      if (selectedWatchListId) {
-        await utils.watchlist.getDetail.invalidate({ id: selectedWatchListId });
-      }
-      setNotice({ tone: "success", text: "备注已更新" });
-    },
-  });
-
-  const updateStockTagsMutation = api.watchlist.updateStockTags.useMutation({
-    onSuccess: async () => {
-      if (selectedWatchListId) {
-        await utils.watchlist.getDetail.invalidate({ id: selectedWatchListId });
-      }
-      setNotice({ tone: "success", text: "标签已更新" });
     },
   });
 
@@ -421,6 +398,9 @@ export function ScreeningStudioClient() {
     (sum, rule) => sum + rule.weight,
     0,
   );
+  const liveSessionCount = sessions.filter((session) =>
+    isLiveSession(session.status),
+  ).length;
 
   const resetStrategyForm = () => {
     setStrategyMode("create");
@@ -479,39 +459,51 @@ export function ScreeningStudioClient() {
   };
 
   return (
-    <main className="market-shell px-4 py-6 font-[family-name:var(--font-body)] text-[#e8f3ff] sm:px-6 lg:px-8 lg:py-8">
-      <div className="market-frame relative flex w-full max-w-[1480px] flex-col gap-6">
-        <header className="studio-rise rounded-[30px] border border-[#35526f]/35 bg-[#0d1c30]/95 p-6 shadow-[0_28px_88px_-48px_rgba(2,10,22,0.92)] sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="font-[family-name:var(--font-display)] text-xs tracking-[0.45em] text-[#8aa5bf]">
-                SCREENING LAB
-              </p>
-              <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl font-semibold text-[#f0f8ff] sm:text-4xl">
-                策略筛选与清单沉淀工作台
-              </h1>
-              <p className="mt-3 max-w-4xl text-sm leading-7 text-[#a6bdd3] sm:text-base">
-                不再直接编辑
-                JSON。策略规则、异步执行、取消重试和加入清单都在同一个界面完成。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/"
-                className="rounded-full border border-[#d9e8f9]/20 bg-[#0d1e31]/86 px-4 py-2 text-sm font-medium text-[#d9e8f9]"
-              >
-                返回首页
-              </Link>
-              <Link
-                href="/workflows"
-                className="rounded-full border border-[#2f8dc8]/25 bg-[#12364f]/45 px-4 py-2 text-sm font-medium text-[#89deff]"
-              >
-                行业研究任务中心
-              </Link>
-            </div>
-          </div>
-        </header>
-
+    <WorkspaceShell
+      section="screening"
+      eyebrow="Screening And Watchlist Desk"
+      title="策略筛选与清单沉淀工作台"
+      description="策略规则、异步执行、取消重试和加入清单都集中在同一个暗色工作台里，保持更清晰的研究操作顺序。"
+      actions={
+        <>
+          <Link href="/" className="app-button">
+            返回总览
+          </Link>
+          <Link href="/workflows" className="app-button app-button-primary">
+            行业研究任务中心
+          </Link>
+        </>
+      }
+      summary={
+        <>
+          <KpiCard
+            label="策略数量"
+            value={strategies.length}
+            hint="当前策略库规模"
+            tone="info"
+          />
+          <KpiCard
+            label="进行中会话"
+            value={liveSessionCount}
+            hint="排队与执行中的筛选任务"
+            tone="warning"
+          />
+          <KpiCard
+            label="自选清单"
+            value={watchLists.length}
+            hint="已经建立的长期跟踪视图"
+            tone="success"
+          />
+          <KpiCard
+            label="条件数量"
+            value={countConditions(strategyForm.filters)}
+            hint={strategyMode === "create" ? "新建模式" : "编辑模式"}
+            tone="neutral"
+          />
+        </>
+      }
+    >
+      <div className="grid gap-6">
         <Notice notice={notice} />
 
         <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
@@ -986,6 +978,6 @@ export function ScreeningStudioClient() {
           </div>
         </section>
       </div>
-    </main>
+    </WorkspaceShell>
   );
 }

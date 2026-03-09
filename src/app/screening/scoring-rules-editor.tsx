@@ -36,29 +36,27 @@ export function ScoringRulesEditor(props: {
   } = props;
 
   return (
-    <section className="mt-6 rounded-2xl border border-[#35526f]/35 bg-[#0f2238]/92 p-4">
+    <section className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-[#eef6ff]">评分规则</h3>
-          <p className="mt-1 text-xs text-[#7ca0bf]">
-            指标权重会在提交前自动归一化，方向用于控制“值越大越好”还是“值越小越好”。
+          <h3 className="text-sm font-medium text-[var(--app-text)]">
+            评分规则
+          </h3>
+          <p className="mt-1 text-xs leading-6 text-[var(--app-text-soft)]">
+            指标权重会在提交前自动归一化，方向决定“值越大越好”还是“值越小越好”。
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
-            className={`rounded-full px-3 py-1 text-[11px] ${
+            className={`rounded-[8px] border px-3 py-1 text-[11px] ${
               Math.abs(weightSum - 1) <= 0.001
-                ? "border border-[#4ce0af]/40 bg-[#12372f] text-[#9bfad6]"
-                : "border border-[#f6bf64]/40 bg-[#4c3515] text-[#ffd697]"
+                ? "border-[rgba(120,211,173,0.34)] bg-[rgba(26,68,54,0.2)] text-[var(--app-success)]"
+                : "border-[rgba(226,181,111,0.34)] bg-[rgba(86,60,23,0.2)] text-[var(--app-warning)]"
             }`}
           >
-            当前权重和: {weightSum.toFixed(4)}
+            当前权重和：{weightSum.toFixed(4)}
           </span>
-          <button
-            type="button"
-            onClick={onNormalize}
-            className="rounded-full border border-[#39b8e2]/24 bg-[#103247] px-3 py-1.5 text-xs text-[#8ddfff] transition hover:border-[#39b8e2]/55"
-          >
+          <button type="button" onClick={onNormalize} className="app-button">
             自动归一化
           </button>
         </div>
@@ -66,13 +64,18 @@ export function ScoringRulesEditor(props: {
 
       <div className="mt-4 grid gap-3">
         {rules.map((rule) => {
-          const metadata = indicatorMetadataMap.get(rule.field)!;
+          const metadata = indicatorMetadataMap.get(rule.field);
+
+          if (!metadata) {
+            return null;
+          }
+
           return (
             <article
               key={rule.id}
-              className="grid gap-3 rounded-2xl border border-[#2f475f]/60 bg-[#0b1b2e]/88 p-3 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
+              className="grid gap-3 rounded-[12px] border border-[var(--app-border)] bg-[rgba(10,14,18,0.82)] p-4 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
             >
-              <label className="text-xs text-[#95b6d5]">
+              <label className="text-xs text-[var(--app-text-muted)]">
                 指标
                 <select
                   value={rule.field}
@@ -88,7 +91,7 @@ export function ScoringRulesEditor(props: {
                       ),
                     )
                   }
-                  className="mt-1 w-full rounded-xl border border-[#e1eeff]/24 bg-[#091728] px-3 py-2 text-sm text-[#e4f1ff] outline-none transition focus:border-[#4bc2ef]"
+                  className="app-select mt-2"
                 >
                   {numericScoringFields.map((option) => (
                     <option key={option.field} value={option.field}>
@@ -98,7 +101,7 @@ export function ScoringRulesEditor(props: {
                 </select>
               </label>
 
-              <label className="text-xs text-[#95b6d5]">
+              <label className="text-xs text-[var(--app-text-muted)]">
                 权重
                 <input
                   type="number"
@@ -117,11 +120,11 @@ export function ScoringRulesEditor(props: {
                       ),
                     )
                   }
-                  className="mt-1 w-full rounded-xl border border-[#e1eeff]/24 bg-[#091728] px-3 py-2 text-sm text-[#e4f1ff] outline-none transition focus:border-[#4bc2ef]"
+                  className="app-input mt-2"
                 />
               </label>
 
-              <label className="text-xs text-[#95b6d5]">
+              <label className="text-xs text-[var(--app-text-muted)]">
                 方向
                 <select
                   value={rule.direction}
@@ -137,7 +140,7 @@ export function ScoringRulesEditor(props: {
                       ),
                     )
                   }
-                  className="mt-1 w-full rounded-xl border border-[#e1eeff]/24 bg-[#091728] px-3 py-2 text-sm text-[#e4f1ff] outline-none transition focus:border-[#4bc2ef]"
+                  className="app-select mt-2"
                 >
                   <option value={ScoringDirection.ASC}>值越大越好</option>
                   <option value={ScoringDirection.DESC}>值越小越好</option>
@@ -151,13 +154,13 @@ export function ScoringRulesEditor(props: {
                   onClick={() =>
                     onRulesChange(rules.filter((item) => item.id !== rule.id))
                   }
-                  className="rounded-full border border-[#ff8d9b]/28 bg-[#4b2331] px-3 py-2 text-xs text-[#ff9aaa] transition hover:border-[#ff8d9b]/55 disabled:cursor-not-allowed disabled:opacity-45"
+                  className="app-button app-button-danger"
                 >
                   删除
                 </button>
               </div>
 
-              <p className="text-[11px] text-[#7395b3] lg:col-span-4">
+              <p className="text-[11px] leading-6 text-[var(--app-text-soft)] lg:col-span-4">
                 {metadata.description}
                 {metadata.unit ? ` · 单位：${metadata.unit}` : ""}
               </p>
@@ -180,7 +183,7 @@ export function ScoringRulesEditor(props: {
               },
             ])
           }
-          className="rounded-full border border-[#39b8e2]/28 bg-[#103247] px-3 py-1.5 text-xs text-[#8ddfff] transition hover:border-[#39b8e2]/55"
+          className="app-button app-button-success"
         >
           新增评分指标
         </button>
@@ -191,7 +194,7 @@ export function ScoringRulesEditor(props: {
               event.target.value as NormalizationMethod,
             )
           }
-          className="rounded-full border border-[#e1eeff]/24 bg-[#091728] px-3 py-1.5 text-xs text-[#d7ebff] outline-none transition focus:border-[#4bc2ef]"
+          className="app-select max-w-[180px]"
         >
           <option value={NormalizationMethod.MIN_MAX}>MIN_MAX</option>
           <option value={NormalizationMethod.Z_SCORE}>Z_SCORE</option>
