@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Panel } from "~/app/_components/ui";
 import { api } from "~/trpc/react";
 
 export function LatestPost() {
@@ -17,36 +18,42 @@ export function LatestPost() {
   });
 
   return (
-    <div className="market-soft-panel w-full max-w-xs rounded-2xl p-4 text-[#d8e8f8]">
+    <Panel
+      title="Latest Post"
+      description="保留一个简洁的调试入口，视觉上与新的暗色工作台保持一致。"
+      className="w-full max-w-sm"
+    >
       {latestPost ? (
-        <p className="truncate text-sm">
+        <p className="truncate text-sm text-[var(--app-text)]">
           Your most recent post: {latestPost.name}
         </p>
       ) : (
-        <p className="text-sm text-[#9cb4cb]">You have no posts yet.</p>
+        <p className="text-sm text-[var(--app-text-muted)]">
+          You have no posts yet.
+        </p>
       )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           createPost.mutate({ name });
         }}
-        className="mt-3 flex flex-col gap-2"
+        className="mt-4 flex flex-col gap-3"
       >
         <input
           type="text"
           placeholder="Title"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-full border border-[#587493]/45 bg-[#0a1a2d] px-4 py-2 text-sm text-[#e7f4ff] placeholder:text-[#7a96b2]"
+          className="app-input"
         />
         <button
           type="submit"
-          className="market-button-primary rounded-full px-10 py-3 text-sm font-semibold transition"
+          className="app-button app-button-primary"
           disabled={createPost.isPending}
         >
           {createPost.isPending ? "Submitting..." : "Submit"}
         </button>
       </form>
-    </div>
+    </Panel>
   );
 }
