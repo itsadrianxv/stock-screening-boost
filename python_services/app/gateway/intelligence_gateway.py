@@ -7,6 +7,8 @@ import time
 from app.contracts.intelligence import (
     StockEvidenceData,
     StockEvidenceResponse,
+    StockResearchPackData,
+    StockResearchPackResponse,
     ThemeConceptsData,
     ThemeConceptsResponse,
     ThemeNewsData,
@@ -19,6 +21,7 @@ from app.policies.retry_policy import RetryPolicy
 from app.providers.akshare.client import AkShareProviderClient
 from app.providers.akshare.mappers import (
     to_company_evidence,
+    to_company_research_pack,
     to_concept_match_item,
     to_theme_news_item,
 )
@@ -144,6 +147,47 @@ class IntelligenceGateway:
                 stockCode=result.data.stockCode,
                 concept=result.data.concept,
                 evidence=result.data,
+            ),
+        )
+
+    def get_stock_research_pack(
+        self,
+        request_id: str,
+        stock_code: str,
+        concept: str | None,
+        force_refresh: bool = False,
+    ) -> StockResearchPackResponse:
+        started_at = time.perf_counter()
+        result = execute_cached(
+            dataset="company_research_pack",
+            provider=self._provider_client.provider_name,
+            params={"stockCode": stock_code, "concept": concept or ""},
+            fetcher=lambda: to_company_research_pack(
+                self._provider_client.get_stock_research_pack(
+                    stock_code=stock_code,
+                    concept=concept,
+                )
+            ),
+            cache_policy=get_cache_policy("company_evidence"),
+            retry_policy=self._retry_policy,
+            cache=self._cache,
+            force_refresh=force_refresh,
+        )
+
+        return StockResearchPackResponse(
+            meta=build_meta(
+                request_id=request_id,
+                provider=result.provider,
+                started_at=started_at,
+                cache_hit=result.cache_hit,
+                is_stale=result.is_stale,
+                warnings=result.warnings,
+                as_of=result.as_of,
+            ),
+            data=StockResearchPackData(
+                stockCode=result.data.stockCode,
+                concept=result.data.concept,
+                researchPack=result.data,
             ),
         )
 

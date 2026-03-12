@@ -350,6 +350,13 @@ export type CompanyResearchCollectorSummary = {
   notes: string[];
 };
 
+export type CompanyResearchCollectorRunInfo = {
+  collectorKey: CompanyResearchCollectorKey;
+  configured: boolean;
+  queries: string[];
+  notes: string[];
+};
+
 export type CompanyResearchCollectionSummary = {
   collectors: CompanyResearchCollectorSummary[];
   totalRawCount: number;
@@ -398,6 +405,9 @@ export type CompanyResearchGraphState = WorkflowGraphState & {
   >;
   collectorPacks?: Partial<
     Record<CompanyResearchCollectorKey, CompanyResearchPack | undefined>
+  >;
+  collectorRunInfo?: Partial<
+    Record<CompanyResearchCollectorKey, CompanyResearchCollectorRunInfo>
   >;
   collectionNotes?: string[];
   evidence?: CompanyEvidenceNote[];

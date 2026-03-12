@@ -25,6 +25,27 @@ export type CompanyEvidenceBatchRequest = {
   concept: string;
 };
 
+export type CompanyResearchPackReferenceItem = {
+  id: string;
+  title: string;
+  sourceName: string;
+  snippet: string;
+  extractedFact: string;
+  url?: string;
+  publishedAt?: string;
+  credibilityScore?: number;
+  sourceType: string;
+};
+
+export type CompanyResearchPack = {
+  stockCode: string;
+  companyName: string;
+  concept: string;
+  financialHighlights: string[];
+  referenceItems: CompanyResearchPackReferenceItem[];
+  summaryNotes: string[];
+};
+
 export type InsightConfidence = "high" | "medium" | "low";
 
 export type RiskSeverity = "high" | "medium" | "low";

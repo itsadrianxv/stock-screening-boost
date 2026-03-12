@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request
 
 from app.contracts.intelligence import (
     StockEvidenceResponse,
+    StockResearchPackResponse,
     ThemeConceptsResponse,
     ThemeNewsResponse,
 )
@@ -78,3 +79,25 @@ async def get_stock_evidence(
         concept=concept.strip() if concept else None,
     )
 
+
+@router.get(
+    "/stocks/{stock_code}/research-pack",
+    response_model=StockResearchPackResponse,
+)
+async def get_stock_research_pack(
+    request: Request,
+    stock_code: str,
+    concept: str | None = Query(None),
+):
+    if not is_valid_stock_code(stock_code):
+        raise GatewayError(
+            code="invalid_stock_code",
+            message=f"无效的股票代码格式: {stock_code}",
+            status_code=400,
+        )
+
+    return intelligence_gateway.get_stock_research_pack(
+        request_id=request.state.request_id,
+        stock_code=stock_code,
+        concept=concept.strip() if concept else None,
+    )

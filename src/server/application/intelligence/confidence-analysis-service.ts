@@ -17,6 +17,7 @@ import type {
   CompanyEvidenceNote,
   CompanyQuestionFinding,
   CompanyResearchBrief,
+  CompanyResearchReferenceItem,
   CompanyResearchVerdict,
   QuickResearchCandidate,
   QuickResearchCredibility,
@@ -69,9 +70,9 @@ function buildCompanyEvidenceNoteReference(
   index: number,
 ): ConfidenceReferenceItem {
   return {
-    id: `${index}:${item.url}`,
+    id: item.referenceId || `${index}:${item.url ?? item.title}`,
     title: item.title,
-    sourceName: item.sourceType,
+    sourceName: item.sourceName,
     excerpt: sanitizeLines([
       item.extractedFact,
       item.snippet,
@@ -79,6 +80,21 @@ function buildCompanyEvidenceNoteReference(
     ]).join("\n"),
     url: item.url,
     sourceType: item.sourceType,
+  };
+}
+
+function buildCompanyResearchReference(
+  item: CompanyResearchReferenceItem,
+): ConfidenceReferenceItem {
+  return {
+    id: item.id,
+    title: item.title,
+    sourceName: item.sourceName,
+    excerpt: sanitizeLines([item.extractedFact, item.snippet]).join("\n"),
+    url: item.url,
+    publishedAt: item.publishedAt,
+    sourceType: item.sourceType,
+    credibilityScore: item.credibilityScore,
   };
 }
 
@@ -212,15 +228,18 @@ export class ConfidenceAnalysisService {
     findings: CompanyQuestionFinding[];
     verdict: CompanyResearchVerdict;
     evidence: CompanyEvidenceNote[];
+    references?: CompanyResearchReferenceItem[];
   }): Promise<ConfidenceAnalysis> {
     return this.analyzeRequest({
       module: "company_research",
       question: params.brief.researchGoal,
       responseText: buildCompanyResearchText(params),
       referenceItems: dedupeReferences(
-        params.evidence.map((item, index) =>
-          buildCompanyEvidenceNoteReference(item, index),
-        ),
+        params.references && params.references.length > 0
+          ? params.references.map((item) => buildCompanyResearchReference(item))
+          : params.evidence.map((item, index) =>
+              buildCompanyEvidenceNoteReference(item, index),
+            ),
       ),
     });
   }

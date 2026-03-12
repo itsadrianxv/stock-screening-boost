@@ -22,10 +22,8 @@ export function addWorkflowNodes<
 ) {
   for (const nodeKey of nodeOrder) {
     // LangGraph's generic NodeAction typing is narrower than our partial state updates.
-    graph.addNode(
-      nodeKey,
-      (async (state: State) => nodeExecutors[nodeKey](state)) as never,
-    );
+    graph.addNode(nodeKey, (async (state: State) =>
+      nodeExecutors[nodeKey](state)) as never);
   }
 }
 

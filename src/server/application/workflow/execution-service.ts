@@ -23,7 +23,10 @@ import { PrismaScreeningInsightRepository } from "~/server/infrastructure/intell
 import { PythonConfidenceAnalysisClient } from "~/server/infrastructure/intelligence/python-confidence-analysis-client";
 import { PythonIntelligenceDataClient } from "~/server/infrastructure/intelligence/python-intelligence-data-client";
 import { PrismaScreeningSessionRepository } from "~/server/infrastructure/screening/prisma-screening-session-repository";
-import { CompanyResearchLangGraph } from "~/server/infrastructure/workflow/langgraph/company-research-graph";
+import {
+  CompanyResearchLangGraph,
+  LegacyCompanyResearchLangGraph,
+} from "~/server/infrastructure/workflow/langgraph/company-research-graph";
 import { WorkflowGraphRegistry } from "~/server/infrastructure/workflow/langgraph/graph-registry";
 import { QuickResearchLangGraph } from "~/server/infrastructure/workflow/langgraph/quick-research-graph";
 import { ScreeningInsightPipelineLangGraph } from "~/server/infrastructure/workflow/langgraph/screening-insight-pipeline-graph";
@@ -98,6 +101,7 @@ export function createWorkflowExecutionService(
   const companyResearchService = new CompanyResearchAgentService({
     deepSeekClient,
     firecrawlClient: new FirecrawlClient(),
+    pythonIntelligenceDataClient: intelligenceDataClient,
     confidenceAnalysisService,
   });
   const reminderRepository = new PrismaResearchReminderRepository(prisma);
@@ -115,6 +119,7 @@ export function createWorkflowExecutionService(
     runtimeStore: options?.runtimeStore ?? new RedisWorkflowRuntimeStore(),
     graphs: options?.graphs ?? [
       new QuickResearchLangGraph(intelligenceService),
+      new LegacyCompanyResearchLangGraph(companyResearchService),
       new CompanyResearchLangGraph(companyResearchService),
       new ScreeningInsightPipelineLangGraph({
         screeningSessionRepository: new PrismaScreeningSessionRepository(
@@ -194,7 +199,10 @@ export class WorkflowExecutionService {
       );
     }
 
-    const graph = this.graphRegistry.get(run.template.code);
+    const graph = this.graphRegistry.get(
+      run.template.code,
+      run.template.version,
+    );
 
     if (await this.repository.isCancellationRequested(runId)) {
       await this.repository.markRunCancelled({

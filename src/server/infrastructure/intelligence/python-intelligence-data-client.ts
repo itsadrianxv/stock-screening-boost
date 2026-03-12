@@ -1,7 +1,8 @@
-﻿import { env } from "~/env";
+import { env } from "~/env";
 import type {
   CompanyEvidence,
   CompanyEvidenceBatchRequest,
+  CompanyResearchPack,
   ThemeNewsItem,
 } from "~/server/domain/intelligence/types";
 import {
@@ -27,10 +28,9 @@ export class PythonIntelligenceDataClient {
   private readonly timeoutMs: number;
 
   constructor(config?: PythonIntelligenceDataClientConfig) {
-    this.baseUrl = (config?.baseUrl ?? env.PYTHON_INTELLIGENCE_SERVICE_URL).replace(
-      /\/$/,
-      "",
-    );
+    this.baseUrl = (
+      config?.baseUrl ?? env.PYTHON_INTELLIGENCE_SERVICE_URL
+    ).replace(/\/$/, "");
     this.timeoutMs = config?.timeoutMs ?? 10_000;
   }
 
@@ -45,7 +45,9 @@ export class PythonIntelligenceDataClient {
       limit: String(params.limit ?? 20),
     });
 
-    return this.request<ThemeNewsItem[]>(`/api/intelligence/news?${search.toString()}`);
+    return this.request<ThemeNewsItem[]>(
+      `/api/intelligence/news?${search.toString()}`,
+    );
   }
 
   async getCandidates(params: {
@@ -62,7 +64,10 @@ export class PythonIntelligenceDataClient {
     );
   }
 
-  async getEvidence(stockCode: string, concept?: string): Promise<CompanyEvidence> {
+  async getEvidence(
+    stockCode: string,
+    concept?: string,
+  ): Promise<CompanyEvidence> {
     const search = new URLSearchParams();
     if (concept) {
       search.set("concept", concept);
@@ -81,6 +86,21 @@ export class PythonIntelligenceDataClient {
       method: "POST",
       body: JSON.stringify(request),
     });
+  }
+
+  async getCompanyResearchPack(params: {
+    stockCode: string;
+    concept?: string;
+  }): Promise<CompanyResearchPack> {
+    const search = new URLSearchParams();
+    if (params.concept) {
+      search.set("concept", params.concept);
+    }
+
+    const query = search.toString();
+    return this.request<CompanyResearchPack>(
+      `/api/v1/intelligence/stocks/${params.stockCode}/research-pack${query ? `?${query}` : ""}`,
+    );
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -105,7 +125,17 @@ export class PythonIntelligenceDataClient {
         );
       }
 
-      return (await response.json()) as T;
+      const payload = (await response.json()) as T | { data?: T };
+      if (
+        payload &&
+        typeof payload === "object" &&
+        !Array.isArray(payload) &&
+        "data" in payload
+      ) {
+        return payload.data as T;
+      }
+
+      return payload as T;
     } catch (error) {
       if (error instanceof WorkflowDomainError) {
         throw error;

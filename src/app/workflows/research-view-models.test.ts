@@ -3,7 +3,10 @@ import {
   buildResearchDigest,
   extractConfidenceAnalysis,
 } from "~/app/workflows/research-view-models";
-import { QUICK_RESEARCH_TEMPLATE_CODE } from "~/server/domain/workflow/types";
+import {
+  COMPANY_RESEARCH_TEMPLATE_CODE,
+  QUICK_RESEARCH_TEMPLATE_CODE,
+} from "~/server/domain/workflow/types";
 
 describe("research-view-models", () => {
   it("extracts confidence analysis from quick research results", () => {
@@ -52,5 +55,88 @@ describe("research-view-models", () => {
 
     expect(digest.templateLabel).toBe("行业判断");
     expect(digest.metrics.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("builds company digest from v2 result fields", () => {
+    const digest = buildResearchDigest({
+      templateCode: COMPANY_RESEARCH_TEMPLATE_CODE,
+      query: "Company run",
+      status: "SUCCEEDED",
+      result: {
+        brief: {
+          companyName: "示例公司",
+          researchGoal: "验证利润兑现",
+          focusConcepts: ["算力"],
+          keyQuestions: [],
+        },
+        conceptInsights: [],
+        deepQuestions: [],
+        findings: [
+          {
+            question: "Q1",
+            answer: "A1",
+            confidence: "high",
+            evidenceUrls: [],
+            referenceIds: ["ref-1"],
+            gaps: ["gap-1"],
+          },
+        ],
+        evidence: [
+          {
+            referenceId: "ref-1",
+            title: "官网披露",
+            sourceName: "example.com",
+            sourceType: "official",
+            sourceTier: "first_party",
+            collectorKey: "official_sources",
+            isFirstParty: true,
+            snippet: "snippet",
+            extractedFact: "fact",
+            relevance: "relevance",
+          },
+        ],
+        references: [
+          {
+            id: "ref-1",
+            title: "官网披露",
+            sourceName: "example.com",
+            sourceType: "official",
+            sourceTier: "first_party",
+            collectorKey: "official_sources",
+            isFirstParty: true,
+            snippet: "snippet",
+            extractedFact: "fact",
+          },
+        ],
+        verdict: {
+          stance: "优先研究",
+          summary: "值得继续研究。",
+          bullPoints: ["bull"],
+          bearPoints: ["bear"],
+          nextChecks: ["check"],
+        },
+        collectionSummary: {
+          collectors: [],
+          totalRawCount: 4,
+          totalCuratedCount: 1,
+          totalReferenceCount: 1,
+          totalFirstPartyCount: 1,
+          notes: [],
+        },
+        crawler: {
+          provider: "firecrawl",
+          configured: true,
+          queries: [],
+          notes: [],
+        },
+        generatedAt: "2026-03-12T00:00:00.000Z",
+      },
+    });
+
+    expect(digest.templateLabel).toBe("公司判断");
+    expect(digest.metrics.some((item) => item.label === "Reference 数")).toBe(
+      true,
+    );
+    expect(digest.metrics.some((item) => item.label === "一手信源")).toBe(true);
   });
 });

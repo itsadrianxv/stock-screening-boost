@@ -8,6 +8,7 @@ import {
 import {
   COMPANY_RESEARCH_NODE_KEYS,
   COMPANY_RESEARCH_TEMPLATE_CODE,
+  COMPANY_RESEARCH_V1_NODE_KEYS,
   QUICK_RESEARCH_NODE_KEYS,
   QUICK_RESEARCH_TEMPLATE_CODE,
   SCREENING_INSIGHT_PIPELINE_NODE_KEYS,
@@ -100,7 +101,38 @@ export class PrismaWorkflowRunRepository {
   }
 
   async ensureCompanyResearchTemplate() {
-    return this.prisma.workflowTemplate.upsert({
+    const inputSchema = {
+      type: "object",
+      required: ["companyName"],
+      properties: {
+        companyName: {
+          type: "string",
+        },
+        stockCode: {
+          type: "string",
+        },
+        officialWebsite: {
+          type: "string",
+        },
+        focusConcepts: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+        },
+        keyQuestion: {
+          type: "string",
+        },
+        supplementalUrls: {
+          type: "array",
+          items: {
+            type: "string",
+          },
+        },
+      },
+    } as const;
+
+    await this.prisma.workflowTemplate.upsert({
       where: {
         code_version: {
           code: COMPANY_RESEARCH_TEMPLATE_CODE,
@@ -111,38 +143,32 @@ export class PrismaWorkflowRunRepository {
         code: COMPANY_RESEARCH_TEMPLATE_CODE,
         version: 1,
         graphConfig: {
+          nodes: COMPANY_RESEARCH_V1_NODE_KEYS,
+        },
+        inputSchema,
+        isActive: true,
+      },
+      update: {
+        graphConfig: {
+          nodes: COMPANY_RESEARCH_V1_NODE_KEYS,
+        },
+      },
+    });
+
+    return this.prisma.workflowTemplate.upsert({
+      where: {
+        code_version: {
+          code: COMPANY_RESEARCH_TEMPLATE_CODE,
+          version: 2,
+        },
+      },
+      create: {
+        code: COMPANY_RESEARCH_TEMPLATE_CODE,
+        version: 2,
+        graphConfig: {
           nodes: COMPANY_RESEARCH_NODE_KEYS,
         },
-        inputSchema: {
-          type: "object",
-          required: ["companyName"],
-          properties: {
-            companyName: {
-              type: "string",
-            },
-            stockCode: {
-              type: "string",
-            },
-            officialWebsite: {
-              type: "string",
-            },
-            focusConcepts: {
-              type: "array",
-              items: {
-                type: "string",
-              },
-            },
-            keyQuestion: {
-              type: "string",
-            },
-            supplementalUrls: {
-              type: "array",
-              items: {
-                type: "string",
-              },
-            },
-          },
-        },
+        inputSchema,
         isActive: true,
       },
       update: {

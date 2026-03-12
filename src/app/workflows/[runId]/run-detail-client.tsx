@@ -238,6 +238,15 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
   const companyResult = isCompanyResearchResult(run?.result)
     ? run.result
     : null;
+  const companyReferenceMap = useMemo(
+    () =>
+      new Map(
+        (companyResult?.references ?? []).map(
+          (item) => [item.id, item] as const,
+        ),
+      ),
+    [companyResult],
+  );
   const resultHighlights = useMemo(
     () => buildResultHighlights(run?.result),
     [run?.result],
@@ -516,6 +525,44 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
                               ))}
                             </div>
                           ) : null}
+                          {item.referenceIds.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                              {item.referenceIds.map((referenceId) => {
+                                const reference =
+                                  companyReferenceMap.get(referenceId);
+
+                                if (!reference) {
+                                  return (
+                                    <span
+                                      key={referenceId}
+                                      className="rounded-[8px] border border-[var(--app-border)] px-2 py-1 text-[var(--app-text-soft)]"
+                                    >
+                                      {referenceId}
+                                    </span>
+                                  );
+                                }
+
+                                return reference.url ? (
+                                  <a
+                                    key={referenceId}
+                                    href={reference.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-[8px] border border-[var(--app-border)] px-2 py-1 text-[var(--app-accent-strong)] hover:underline"
+                                  >
+                                    {reference.title}
+                                  </a>
+                                ) : (
+                                  <span
+                                    key={referenceId}
+                                    className="rounded-[8px] border border-[var(--app-border)] px-2 py-1 text-[var(--app-text-soft)]"
+                                  >
+                                    {reference.title}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -557,24 +604,69 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
                           ))}
                         </div>
                       ) : null}
+                      {companyResult.collectionSummary ? (
+                        <div className="mt-4 grid gap-2 text-xs text-[var(--app-text-muted)]">
+                          <p>
+                            原始证据{" "}
+                            {companyResult.collectionSummary.totalRawCount}/
+                            入选{" "}
+                            {companyResult.collectionSummary.totalCuratedCount}/
+                            References{" "}
+                            {
+                              companyResult.collectionSummary
+                                .totalReferenceCount
+                            }
+                          </p>
+                          <p>
+                            一手信源{" "}
+                            {
+                              companyResult.collectionSummary
+                                .totalFirstPartyCount
+                            }
+                          </p>
+                          {companyResult.collectionSummary.collectors.map(
+                            (collector) => (
+                              <p key={collector.collectorKey}>
+                                {collector.label}: raw {collector.rawCount} /
+                                curated {collector.curatedCount} / first-party{" "}
+                                {collector.firstPartyCount}
+                              </p>
+                            ),
+                          )}
+                        </div>
+                      ) : null}
                     </article>
 
                     {companyResult.evidence.map((item) => (
                       <article
-                        key={item.url}
+                        key={`${item.referenceId}-${item.title}`}
                         className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4"
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusPill label={item.sourceType} tone="info" />
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sm text-[var(--app-accent-strong)] hover:underline"
-                          >
-                            {item.title}
-                          </a>
+                          <StatusPill
+                            label={item.isFirstParty ? "一手" : "外部"}
+                            tone={item.isFirstParty ? "success" : "neutral"}
+                          />
+                          {item.url ? (
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm text-[var(--app-accent-strong)] hover:underline"
+                            >
+                              {item.title}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-[var(--app-text)]">
+                              {item.title}
+                            </span>
+                          )}
                         </div>
+                        <p className="mt-2 text-xs text-[var(--app-text-soft)]">
+                          {item.sourceName} · {item.collectorKey}
+                          {item.publishedAt ? ` · ${item.publishedAt}` : ""}
+                        </p>
                         <p className="mt-3 text-sm leading-6 text-[var(--app-text)]">
                           {item.extractedFact}
                         </p>
@@ -583,6 +675,64 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
                         </p>
                       </article>
                     ))}
+
+                    {(companyResult.references ?? []).length > 0 ? (
+                      <article className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
+                        <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
+                          References
+                        </p>
+                        <div className="mt-3 grid gap-3">
+                          {(companyResult.references ?? []).map((reference) => (
+                            <div
+                              key={reference.id}
+                              className="rounded-[10px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.72)] p-3"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <StatusPill
+                                  label={reference.sourceType}
+                                  tone="neutral"
+                                />
+                                <StatusPill
+                                  label={
+                                    reference.isFirstParty
+                                      ? "一手信源"
+                                      : "外部信源"
+                                  }
+                                  tone={
+                                    reference.isFirstParty
+                                      ? "success"
+                                      : "neutral"
+                                  }
+                                />
+                                {reference.url ? (
+                                  <a
+                                    href={reference.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-[var(--app-accent-strong)] hover:underline"
+                                  >
+                                    {reference.title}
+                                  </a>
+                                ) : (
+                                  <span className="text-sm text-[var(--app-text)]">
+                                    {reference.title}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-2 text-xs text-[var(--app-text-soft)]">
+                                {reference.sourceName}
+                                {reference.publishedAt
+                                  ? ` · ${reference.publishedAt}`
+                                  : ""}
+                              </p>
+                              <p className="mt-2 text-sm leading-6 text-[var(--app-text)]">
+                                {reference.extractedFact}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    ) : null}
                   </div>
                 </Panel>
               </div>

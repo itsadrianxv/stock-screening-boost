@@ -30,6 +30,7 @@ export type WorkflowGraphBuildInitialStateParams = {
 
 export interface WorkflowGraphRunner {
   readonly templateCode: string;
+  readonly templateVersion?: number;
   getNodeOrder(): string[];
   buildInitialState(
     params: WorkflowGraphBuildInitialStateParams,

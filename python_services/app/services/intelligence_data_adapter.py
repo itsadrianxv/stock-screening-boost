@@ -19,6 +19,7 @@ from typing import Any, Callable, TypeVar
 import akshare as ak
 import pandas as pd
 
+from app.services.akshare_adapter import AkShareAdapter
 from app.services.theme_concept_rules_registry import ThemeConceptRulesRegistry
 from app.services.zhipu_search_client import ZhipuSearchClient
 
@@ -170,6 +171,22 @@ class IntelligenceDataAdapter:
             cache_key=cache_key,
             fetch_fn=lambda: _fetch_company_evidence_from_akshare(normalized_code, concept_name),
             fallback_fn=lambda: _build_mock_company_evidence(normalized_code, concept_name),
+        )
+
+    @staticmethod
+    def get_company_research_pack(stock_code: str, concept: str | None = None) -> dict:
+        normalized_code = _normalize_stock_code(stock_code)
+        concept_name = concept.strip() if concept else "通用赛道"
+        cache_key = f"research-pack:{normalized_code}:{concept_name}"
+
+        return _read_with_cache(
+            cache_key=cache_key,
+            fetch_fn=lambda: _fetch_company_research_pack_from_akshare(
+                normalized_code, concept_name
+            ),
+            fallback_fn=lambda: _build_mock_company_research_pack(
+                normalized_code, concept_name
+            ),
         )
 
     @staticmethod
@@ -647,6 +664,53 @@ def _fetch_company_evidence_from_akshare(stock_code: str, concept: str) -> dict:
     }
 
 
+def _fetch_company_research_pack_from_akshare(stock_code: str, concept: str) -> dict:
+    evidence = _fetch_company_evidence_from_akshare(stock_code, concept)
+    snapshots = AkShareAdapter.get_stocks_by_codes([stock_code])
+    snapshot = snapshots[0] if snapshots else {}
+
+    financial_highlights = [
+        line
+        for line in [
+            _format_metric_line("总市值", snapshot.get("marketCap"), "亿元"),
+            _format_metric_line("流通市值", snapshot.get("floatMarketCap"), "亿元"),
+            _format_metric_line("市盈率", snapshot.get("pe")),
+            _format_metric_line("市净率", snapshot.get("pb")),
+            _format_metric_line("ROE", snapshot.get("roe")),
+            _format_metric_line("涨跌幅", snapshot.get("changePercent"), "%"),
+            _format_metric_line("换手率", snapshot.get("turnoverRate"), "%"),
+        ]
+        if line
+    ]
+
+    summary_notes = [evidence["evidenceSummary"], *evidence["catalysts"], *evidence["risks"]]
+
+    reference_items = [
+        {
+            "id": f"{stock_code}:financial_snapshot",
+            "title": f"{evidence['companyName']} 财务快照",
+            "sourceName": "akshare:stock_snapshot",
+            "snippet": "基于 AkShare 行情快照提取的结构化财务指标。",
+            "extractedFact": "；".join(financial_highlights[:3])
+            or evidence["evidenceSummary"],
+            "publishedAt": evidence["updatedAt"],
+            "credibilityScore": _normalize_credibility_score(
+                evidence["credibilityScore"]
+            ),
+            "sourceType": "financial",
+        }
+    ]
+
+    return {
+        "stockCode": stock_code,
+        "companyName": evidence["companyName"],
+        "concept": concept,
+        "financialHighlights": financial_highlights,
+        "referenceItems": reference_items,
+        "summaryNotes": summary_notes[:6],
+    }
+
+
 def _select_concepts(theme: str, top_n: int) -> list[dict]:
     concept_rows, _ = _select_concepts_with_source(theme=theme, top_n=top_n)
     return concept_rows
@@ -1072,6 +1136,35 @@ def _safe_text(raw_value: Any) -> str:
     return str(raw_value).strip()
 
 
+def _format_metric_line(label: str, value: Any, suffix: str = "") -> str | None:
+    numeric = _to_float(value)
+    if numeric is None:
+        return None
+
+    if suffix == "%":
+        return f"{label}: {numeric:.2f}%"
+
+    if suffix:
+        return f"{label}: {numeric:.2f}{suffix}"
+
+    return f"{label}: {numeric:.2f}"
+
+
+def _normalize_credibility_score(value: int | float | None) -> float | None:
+    if value is None:
+        return None
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if numeric <= 1:
+        return max(0.0, min(1.0, numeric))
+
+    return max(0.0, min(1.0, numeric / 100))
+
+
 def _normalize_stock_code(raw_value: Any) -> str:
     if raw_value is None:
         return ""
@@ -1155,6 +1248,35 @@ def _build_mock_company_evidence(stock_code: str, concept: str) -> dict:
         ],
         "credibilityScore": credibility_score,
         "updatedAt": datetime.now(UTC).isoformat(),
+    }
+
+
+def _build_mock_company_research_pack(stock_code: str, concept: str) -> dict:
+    evidence = _build_mock_company_evidence(stock_code, concept)
+
+    return {
+        "stockCode": stock_code,
+        "companyName": evidence["companyName"],
+        "concept": concept,
+        "financialHighlights": [
+            "缺少实时财务快照，当前返回降级摘要。",
+            "建议结合最新财报与交易所公告进一步核验。",
+        ],
+        "referenceItems": [
+            {
+                "id": f"{stock_code}:fallback_financial_summary",
+                "title": f"{evidence['companyName']} 降级财务摘要",
+                "sourceName": "intelligence-fallback",
+                "snippet": "上游财务数据暂不可用，已回退到兜底摘要。",
+                "extractedFact": evidence["evidenceSummary"],
+                "publishedAt": evidence["updatedAt"],
+                "credibilityScore": _normalize_credibility_score(
+                    evidence["credibilityScore"]
+                ),
+                "sourceType": "financial",
+            }
+        ],
+        "summaryNotes": [evidence["evidenceSummary"], *evidence["risks"][:2]],
     }
 
 

@@ -1,6 +1,7 @@
-import { Annotation, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, StateGraph } from "@langchain/langgraph";
 import type { CompanyResearchAgentService } from "~/server/application/intelligence/company-research-agent-service";
 import type {
+  CompanyResearchCollectionSummary,
   CompanyResearchGraphState,
   CompanyResearchInput,
   CompanyResearchNodeKey,
@@ -10,14 +11,45 @@ import type {
 import {
   COMPANY_RESEARCH_NODE_KEYS,
   COMPANY_RESEARCH_TEMPLATE_CODE,
+  COMPANY_RESEARCH_V1_NODE_KEYS,
 } from "~/server/domain/workflow/types";
 import type { WorkflowGraphBuildInitialStateParams } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
 import { BaseWorkflowLangGraph } from "~/server/infrastructure/workflow/langgraph/workflow-graph-base";
 import {
+  addFanOutAndJoinEdges,
   addResumeStart,
-  addSequentialEdges,
   addWorkflowNodes,
 } from "~/server/infrastructure/workflow/langgraph/workflow-graph-builder";
+
+type LegacyNodeKey = (typeof COMPANY_RESEARCH_V1_NODE_KEYS)[number];
+type V2NodeKey = (typeof COMPANY_RESEARCH_NODE_KEYS)[number];
+type CompanyGraphBuilder = StateGraph<
+  unknown,
+  CompanyResearchGraphState,
+  Partial<CompanyResearchGraphState>,
+  string
+>;
+type NodeExecutor = (
+  state: CompanyResearchGraphState,
+) => Promise<Partial<CompanyResearchGraphState>>;
+
+function mergeStringArrays(left?: string[], right?: string[]) {
+  return [...new Set([...(left ?? []), ...(right ?? [])].filter(Boolean))];
+}
+
+function mergeGroundedSources(
+  left?: NonNullable<CompanyResearchGraphState["groundedSources"]>,
+  right?: NonNullable<CompanyResearchGraphState["groundedSources"]>,
+) {
+  return [
+    ...new Map(
+      [...(left ?? []), ...(right ?? [])].map((item) => [
+        `${item.collectorKey}:${item.url}`,
+        item,
+      ]),
+    ).values(),
+  ];
+}
 
 const WorkflowState = Annotation.Root({
   runId: Annotation<string>,
@@ -30,8 +62,32 @@ const WorkflowState = Annotation.Root({
   brief: Annotation<CompanyResearchGraphState["brief"]>,
   conceptInsights: Annotation<CompanyResearchGraphState["conceptInsights"]>,
   deepQuestions: Annotation<CompanyResearchGraphState["deepQuestions"]>,
+  groundedSources: Annotation<CompanyResearchGraphState["groundedSources"]>({
+    reducer: (left, right) => mergeGroundedSources(left, right),
+    default: () => [],
+  }),
+  collectedEvidenceByCollector: Annotation<
+    CompanyResearchGraphState["collectedEvidenceByCollector"]
+  >({
+    reducer: (left, right) => ({ ...left, ...right }),
+    default: () => ({}),
+  }),
+  collectorPacks: Annotation<CompanyResearchGraphState["collectorPacks"]>({
+    reducer: (left, right) => ({ ...left, ...right }),
+    default: () => ({}),
+  }),
+  collectorRunInfo: Annotation<CompanyResearchGraphState["collectorRunInfo"]>({
+    reducer: (left, right) => ({ ...left, ...right }),
+    default: () => ({}),
+  }),
+  collectionNotes: Annotation<CompanyResearchGraphState["collectionNotes"]>({
+    reducer: (left, right) => mergeStringArrays(left, right),
+    default: () => [],
+  }),
   evidence: Annotation<CompanyResearchGraphState["evidence"]>,
+  references: Annotation<CompanyResearchGraphState["references"]>,
   findings: Annotation<CompanyResearchGraphState["findings"]>,
+  collectionSummary: Annotation<CompanyResearchGraphState["collectionSummary"]>,
   crawlerSummary: Annotation<CompanyResearchGraphState["crawlerSummary"]>,
   finalReport: Annotation<CompanyResearchGraphState["finalReport"]>,
   errors: Annotation<string[]>({
@@ -39,10 +95,6 @@ const WorkflowState = Annotation.Root({
     default: () => [],
   }),
 });
-
-type NodeExecutor = (
-  state: CompanyResearchGraphState,
-) => Promise<Partial<CompanyResearchGraphState>>;
 
 function toResearchInput(input: Record<string, unknown>): CompanyResearchInput {
   const companyName =
@@ -90,42 +142,90 @@ function createFallbackBrief(state: CompanyResearchGraphState) {
   };
 }
 
-export class CompanyResearchLangGraph extends BaseWorkflowLangGraph<
-  CompanyResearchGraphState,
-  CompanyResearchNodeKey
-> {
+function summarizeCollectorState(
+  state: CompanyResearchGraphState,
+  collectorKey:
+    | "official_sources"
+    | "financial_sources"
+    | "news_sources"
+    | "industry_sources",
+) {
+  const evidence = state.collectedEvidenceByCollector?.[collectorKey] ?? [];
+  const runInfo = state.collectorRunInfo?.[collectorKey];
+
+  return {
+    collectorKey,
+    rawCount: evidence.length,
+    firstPartyCount: evidence.filter((item) => item.isFirstParty).length,
+    configured: runInfo?.configured ?? false,
+    queries: runInfo?.queries ?? [],
+    notes: runInfo?.notes ?? [],
+  };
+}
+
+abstract class CompanyResearchLangGraphBase<
+  NodeKey extends CompanyResearchNodeKey,
+> extends BaseWorkflowLangGraph<CompanyResearchGraphState, NodeKey> {
   readonly templateCode = COMPANY_RESEARCH_TEMPLATE_CODE;
 
+  buildInitialState(
+    params: WorkflowGraphBuildInitialStateParams,
+  ): CompanyResearchGraphState {
+    return {
+      runId: params.runId,
+      userId: params.userId,
+      query: params.query,
+      progressPercent: params.progressPercent,
+      resumeFromNodeKey: undefined,
+      currentNodeKey: undefined,
+      researchInput: toResearchInput(params.input),
+      errors: [],
+    };
+  }
+
+  mergeNodeOutput(
+    state: WorkflowGraphState,
+    nodeKey: WorkflowNodeKey,
+    output: Record<string, unknown>,
+  ) {
+    return {
+      ...state,
+      ...output,
+      currentNodeKey: nodeKey,
+      lastCompletedNodeKey: nodeKey,
+    };
+  }
+
+  getRunResult(state: WorkflowGraphState): Record<string, unknown> {
+    const companyState = state as CompanyResearchGraphState;
+
+    return (companyState.finalReport ?? {
+      generatedAt: new Date().toISOString(),
+    }) as Record<string, unknown>;
+  }
+}
+
+export class LegacyCompanyResearchLangGraph extends CompanyResearchLangGraphBase<LegacyNodeKey> {
+  readonly templateVersion = 1;
+
   constructor(companyResearchService: CompanyResearchAgentService) {
-    const nodeExecutors: Record<CompanyResearchNodeKey, NodeExecutor> = {
-      agent1_company_briefing: async (state) => {
-        const brief = await companyResearchService.buildResearchBrief(
+    const nodeExecutors: Record<LegacyNodeKey, NodeExecutor> = {
+      agent1_company_briefing: async (state) => ({
+        brief: await companyResearchService.buildResearchBrief(
           state.researchInput,
-        );
-
-        return {
-          brief,
-        };
-      },
-      agent2_concept_mapping: async (state) => {
-        const conceptInsights = await companyResearchService.mapConceptInsights(
+        ),
+      }),
+      agent2_concept_mapping: async (state) => ({
+        conceptInsights: await companyResearchService.mapConceptInsights(
           state.brief ?? createFallbackBrief(state),
-        );
-
-        return {
-          conceptInsights,
-        };
-      },
-      agent3_question_design: async (state) => {
-        const deepQuestions = await companyResearchService.designDeepQuestions({
+        ),
+      }),
+      agent3_question_design: async (state) => ({
+        deepQuestions: await companyResearchService.designDeepQuestions({
           brief: state.brief ?? createFallbackBrief(state),
           conceptInsights: state.conceptInsights ?? [],
-        });
-
-        return {
-          deepQuestions,
-        };
-      },
+        }),
+      }),
       agent4_evidence_collection: async (state) => {
         const collected = await companyResearchService.collectEvidence({
           brief: state.brief ?? createFallbackBrief(state),
@@ -156,90 +256,76 @@ export class CompanyResearchLangGraph extends BaseWorkflowLangGraph<
             verdict,
             evidence: state.evidence ?? [],
           });
-        const finalReport = companyResearchService.buildFinalReport({
-          brief,
-          conceptInsights: state.conceptInsights ?? [],
-          deepQuestions: state.deepQuestions ?? [],
-          findings,
-          evidence: state.evidence ?? [],
-          crawler: state.crawlerSummary ?? {
-            provider: "firecrawl",
-            configured: false,
-            queries: [],
-            notes: ["No crawler notes available."],
-          },
-          verdict,
-          confidenceAnalysis,
-        });
 
         return {
           findings,
-          finalReport,
+          finalReport: companyResearchService.buildFinalReport({
+            brief,
+            conceptInsights: state.conceptInsights ?? [],
+            deepQuestions: state.deepQuestions ?? [],
+            findings,
+            evidence: state.evidence ?? [],
+            crawler: state.crawlerSummary ?? {
+              provider: "firecrawl",
+              configured: false,
+              queries: [],
+              notes: ["No crawler notes available."],
+            },
+            verdict,
+            confidenceAnalysis,
+          }),
         };
       },
     };
 
-    const graphBuilder = new StateGraph(WorkflowState) as StateGraph<
-      unknown,
-      CompanyResearchGraphState,
-      Partial<CompanyResearchGraphState>,
-      string
-    >;
-    addWorkflowNodes(graphBuilder, COMPANY_RESEARCH_NODE_KEYS, nodeExecutors);
-    addResumeStart(graphBuilder, COMPANY_RESEARCH_NODE_KEYS);
-    addSequentialEdges(graphBuilder, COMPANY_RESEARCH_NODE_KEYS);
+    const graphBuilder = new StateGraph(
+      WorkflowState,
+    ) as unknown as CompanyGraphBuilder;
+    addWorkflowNodes(
+      graphBuilder,
+      COMPANY_RESEARCH_V1_NODE_KEYS,
+      nodeExecutors,
+    );
+    addResumeStart(graphBuilder, COMPANY_RESEARCH_V1_NODE_KEYS);
+    graphBuilder.addEdge("agent1_company_briefing", "agent2_concept_mapping");
+    graphBuilder.addEdge("agent2_concept_mapping", "agent3_question_design");
+    graphBuilder.addEdge(
+      "agent3_question_design",
+      "agent4_evidence_collection",
+    );
+    graphBuilder.addEdge(
+      "agent4_evidence_collection",
+      "agent5_investment_synthesis",
+    );
+    graphBuilder.addEdge("agent5_investment_synthesis", END);
 
     super({
       graph: graphBuilder.compile(),
-      nodeOrder: COMPANY_RESEARCH_NODE_KEYS,
+      nodeOrder: COMPANY_RESEARCH_V1_NODE_KEYS,
     });
-  }
-
-  buildInitialState(
-    params: WorkflowGraphBuildInitialStateParams,
-  ): CompanyResearchGraphState {
-    return {
-      runId: params.runId,
-      userId: params.userId,
-      query: params.query,
-      progressPercent: params.progressPercent,
-      resumeFromNodeKey: undefined,
-      currentNodeKey: undefined,
-      researchInput: toResearchInput(params.input),
-      errors: [],
-    };
   }
 
   getNodeOutput(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
     const companyState = state as CompanyResearchGraphState;
 
     if (nodeKey === "agent1_company_briefing") {
-      return {
-        brief: companyState.brief,
-      };
+      return { brief: companyState.brief };
     }
-
     if (nodeKey === "agent2_concept_mapping") {
-      return {
-        conceptInsights: companyState.conceptInsights,
-      };
+      return { conceptInsights: companyState.conceptInsights };
     }
-
     if (nodeKey === "agent3_question_design") {
-      return {
-        deepQuestions: companyState.deepQuestions,
-      };
+      return { deepQuestions: companyState.deepQuestions };
     }
-
     if (nodeKey === "agent4_evidence_collection") {
       return {
-        evidence: companyState.evidence,
+        evidenceCount: companyState.evidence?.length ?? 0,
         crawlerSummary: companyState.crawlerSummary,
       };
     }
 
     return {
-      findings: companyState.findings,
+      findingCount: companyState.findings?.length ?? 0,
       finalReport: companyState.finalReport,
     };
   }
@@ -252,13 +338,11 @@ export class CompanyResearchLangGraph extends BaseWorkflowLangGraph<
         questionCount: companyState.deepQuestions?.length ?? 0,
       };
     }
-
     if (nodeKey === "agent4_evidence_collection") {
       return {
         evidenceCount: companyState.evidence?.length ?? 0,
       };
     }
-
     if (nodeKey === "agent5_investment_synthesis") {
       return {
         findingCount: companyState.findings?.length ?? 0,
@@ -269,25 +353,294 @@ export class CompanyResearchLangGraph extends BaseWorkflowLangGraph<
 
     return {};
   }
+}
 
-  mergeNodeOutput(
-    state: WorkflowGraphState,
-    nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
-  ) {
+export class CompanyResearchLangGraph extends CompanyResearchLangGraphBase<V2NodeKey> {
+  readonly templateVersion = 2;
+
+  protected getResumeNodeKey(startNodeIndex?: number): V2NodeKey | undefined {
+    if (startNodeIndex === undefined) {
+      return undefined;
+    }
+
+    const requestedNodeKey = COMPANY_RESEARCH_NODE_KEYS[startNodeIndex];
+    if (
+      requestedNodeKey === "collector_official_sources" ||
+      requestedNodeKey === "collector_financial_sources" ||
+      requestedNodeKey === "collector_news_sources" ||
+      requestedNodeKey === "collector_industry_sources"
+    ) {
+      return "agent4_source_grounding";
+    }
+
+    return super.getResumeNodeKey(startNodeIndex) as V2NodeKey | undefined;
+  }
+
+  constructor(companyResearchService: CompanyResearchAgentService) {
+    const nodeExecutors: Record<V2NodeKey, NodeExecutor> = {
+      agent1_company_briefing: async (state) => ({
+        brief: await companyResearchService.buildResearchBrief(
+          state.researchInput,
+        ),
+      }),
+      agent2_concept_mapping: async (state) => ({
+        conceptInsights: await companyResearchService.mapConceptInsights(
+          state.brief ?? createFallbackBrief(state),
+        ),
+      }),
+      agent3_question_design: async (state) => ({
+        deepQuestions: await companyResearchService.designDeepQuestions({
+          brief: state.brief ?? createFallbackBrief(state),
+          conceptInsights: state.conceptInsights ?? [],
+        }),
+      }),
+      agent4_source_grounding: async (state) => {
+        const grounded = companyResearchService.groundSources({
+          input: state.researchInput,
+          brief: state.brief ?? createFallbackBrief(state),
+        });
+        return {
+          groundedSources: grounded.groundedSources,
+          collectionNotes: grounded.notes,
+        };
+      },
+      collector_official_sources: async (state) =>
+        companyResearchService.buildCollectorState(
+          await companyResearchService.collectOfficialSources({
+            brief: state.brief ?? createFallbackBrief(state),
+            groundedSources: state.groundedSources ?? [],
+          }),
+        ),
+      collector_financial_sources: async (state) =>
+        companyResearchService.buildCollectorState(
+          await companyResearchService.collectFinancialSources({
+            brief: state.brief ?? createFallbackBrief(state),
+            conceptInsights: state.conceptInsights ?? [],
+          }),
+        ),
+      collector_news_sources: async (state) =>
+        companyResearchService.buildCollectorState(
+          await companyResearchService.collectNewsSources({
+            brief: state.brief ?? createFallbackBrief(state),
+            questions: state.deepQuestions ?? [],
+            groundedSources: state.groundedSources ?? [],
+          }),
+        ),
+      collector_industry_sources: async (state) =>
+        companyResearchService.buildCollectorState(
+          await companyResearchService.collectIndustrySources({
+            brief: state.brief ?? createFallbackBrief(state),
+            questions: state.deepQuestions ?? [],
+          }),
+        ),
+      agent9_evidence_curation: async (state) => {
+        const curated = companyResearchService.curateEvidence({
+          brief: state.brief ?? createFallbackBrief(state),
+          questions: state.deepQuestions ?? [],
+          collectedEvidenceByCollector:
+            state.collectedEvidenceByCollector ?? {},
+          collectorRunInfo: state.collectorRunInfo ?? {},
+          collectionNotes: state.collectionNotes ?? [],
+        });
+
+        return {
+          evidence: curated.evidence,
+          references: curated.references,
+          collectionSummary: curated.collectionSummary,
+          crawlerSummary: curated.crawler,
+        };
+      },
+      agent10_reference_enrichment: async (state) =>
+        companyResearchService.enrichReferences({
+          references: state.references ?? [],
+          evidence: state.evidence ?? [],
+        }),
+      agent11_investment_synthesis: async (state) => {
+        const brief = state.brief ?? createFallbackBrief(state);
+        const findings = await companyResearchService.answerQuestions({
+          brief,
+          questions: state.deepQuestions ?? [],
+          evidence: state.evidence ?? [],
+        });
+        const verdict = await companyResearchService.buildVerdict({
+          brief,
+          conceptInsights: state.conceptInsights ?? [],
+          findings,
+        });
+        const confidenceAnalysis =
+          await companyResearchService.analyzeConfidence({
+            brief,
+            findings,
+            verdict,
+            evidence: state.evidence ?? [],
+            references: state.references ?? [],
+          });
+
+        return {
+          findings,
+          finalReport: companyResearchService.buildFinalReport({
+            brief,
+            conceptInsights: state.conceptInsights ?? [],
+            deepQuestions: state.deepQuestions ?? [],
+            findings,
+            evidence: state.evidence ?? [],
+            references: state.references ?? [],
+            collectionSummary: state.collectionSummary as
+              | CompanyResearchCollectionSummary
+              | undefined,
+            crawler: state.crawlerSummary ?? {
+              provider: "firecrawl",
+              configured: false,
+              queries: [],
+              notes: ["No crawler notes available."],
+            },
+            verdict,
+            confidenceAnalysis,
+          }),
+        };
+      },
+    };
+
+    const graphBuilder = new StateGraph(
+      WorkflowState,
+    ) as unknown as CompanyGraphBuilder;
+    addWorkflowNodes(graphBuilder, COMPANY_RESEARCH_NODE_KEYS, nodeExecutors);
+    addResumeStart(graphBuilder, COMPANY_RESEARCH_NODE_KEYS);
+    graphBuilder.addEdge("agent1_company_briefing", "agent2_concept_mapping");
+    graphBuilder.addEdge("agent2_concept_mapping", "agent3_question_design");
+    graphBuilder.addEdge("agent3_question_design", "agent4_source_grounding");
+    addFanOutAndJoinEdges(graphBuilder, {
+      startNode: "agent4_source_grounding",
+      parallelNodes: [
+        "collector_official_sources",
+        "collector_financial_sources",
+        "collector_news_sources",
+        "collector_industry_sources",
+      ],
+      joinNode: "agent9_evidence_curation",
+    });
+    graphBuilder.addEdge(
+      "agent9_evidence_curation",
+      "agent10_reference_enrichment",
+    );
+    graphBuilder.addEdge(
+      "agent10_reference_enrichment",
+      "agent11_investment_synthesis",
+    );
+    graphBuilder.addEdge("agent11_investment_synthesis", END);
+
+    super({
+      graph: graphBuilder.compile(),
+      nodeOrder: COMPANY_RESEARCH_NODE_KEYS,
+    });
+  }
+
+  getNodeOutput(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
+    const companyState = state as CompanyResearchGraphState;
+
+    if (nodeKey === "agent1_company_briefing") {
+      return { brief: companyState.brief };
+    }
+    if (nodeKey === "agent2_concept_mapping") {
+      return { conceptInsights: companyState.conceptInsights };
+    }
+    if (nodeKey === "agent3_question_design") {
+      return { deepQuestions: companyState.deepQuestions };
+    }
+    if (nodeKey === "agent4_source_grounding") {
+      return {
+        groundedSources: companyState.groundedSources,
+        firstPartySeedCount:
+          companyState.groundedSources?.filter((item) => item.isFirstParty)
+            .length ?? 0,
+      };
+    }
+    if (
+      nodeKey === "collector_official_sources" ||
+      nodeKey === "collector_financial_sources" ||
+      nodeKey === "collector_news_sources" ||
+      nodeKey === "collector_industry_sources"
+    ) {
+      return summarizeCollectorState(
+        companyState,
+        nodeKey.replace("collector_", "") as Parameters<
+          typeof summarizeCollectorState
+        >[1],
+      );
+    }
+    if (nodeKey === "agent9_evidence_curation") {
+      return {
+        evidenceCount: companyState.evidence?.length ?? 0,
+        referenceCount: companyState.references?.length ?? 0,
+        collectionSummary: companyState.collectionSummary,
+      };
+    }
+    if (nodeKey === "agent10_reference_enrichment") {
+      return {
+        evidenceCount: companyState.evidence?.length ?? 0,
+        referenceCount: companyState.references?.length ?? 0,
+      };
+    }
+
     return {
-      ...state,
-      ...output,
-      currentNodeKey: nodeKey,
-      lastCompletedNodeKey: nodeKey,
+      findingCount: companyState.findings?.length ?? 0,
+      finalReport: companyState.finalReport,
     };
   }
 
-  getRunResult(state: WorkflowGraphState): Record<string, unknown> {
+  getNodeEventPayload(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
     const companyState = state as CompanyResearchGraphState;
 
-    return (companyState.finalReport ?? {
-      generatedAt: new Date().toISOString(),
-    }) as Record<string, unknown>;
+    if (nodeKey === "agent3_question_design") {
+      return {
+        questionCount: companyState.deepQuestions?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent4_source_grounding") {
+      return {
+        groundedSourceCount: companyState.groundedSources?.length ?? 0,
+        firstPartyCount:
+          companyState.groundedSources?.filter((item) => item.isFirstParty)
+            .length ?? 0,
+      };
+    }
+    if (
+      nodeKey === "collector_official_sources" ||
+      nodeKey === "collector_financial_sources" ||
+      nodeKey === "collector_news_sources" ||
+      nodeKey === "collector_industry_sources"
+    ) {
+      return summarizeCollectorState(
+        companyState,
+        nodeKey.replace("collector_", "") as Parameters<
+          typeof summarizeCollectorState
+        >[1],
+      );
+    }
+    if (nodeKey === "agent9_evidence_curation") {
+      return {
+        rawCount: companyState.collectionSummary?.totalRawCount ?? 0,
+        curatedCount: companyState.collectionSummary?.totalCuratedCount ?? 0,
+        referenceCount:
+          companyState.collectionSummary?.totalReferenceCount ?? 0,
+        firstPartyCount:
+          companyState.collectionSummary?.totalFirstPartyCount ?? 0,
+      };
+    }
+    if (nodeKey === "agent10_reference_enrichment") {
+      return {
+        evidenceCount: companyState.evidence?.length ?? 0,
+        referenceCount: companyState.references?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent11_investment_synthesis") {
+      return {
+        findingCount: companyState.findings?.length ?? 0,
+        confidenceStatus:
+          companyState.finalReport?.confidenceAnalysis?.status ?? "UNAVAILABLE",
+      };
+    }
+
+    return {};
   }
 }

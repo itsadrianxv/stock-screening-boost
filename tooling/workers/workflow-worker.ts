@@ -31,7 +31,10 @@ import { PythonTimingDataClient } from "~/server/infrastructure/timing/python-ti
 import { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
 import { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
 import { PrismaTimingSignalSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-signal-snapshot-repository";
-import { CompanyResearchLangGraph } from "~/server/infrastructure/workflow/langgraph/company-research-graph";
+import {
+  CompanyResearchLangGraph,
+  LegacyCompanyResearchLangGraph,
+} from "~/server/infrastructure/workflow/langgraph/company-research-graph";
 import { QuickResearchLangGraph } from "~/server/infrastructure/workflow/langgraph/quick-research-graph";
 import { ScreeningInsightPipelineLangGraph } from "~/server/infrastructure/workflow/langgraph/screening-insight-pipeline-graph";
 import { ScreeningToTimingPipelineLangGraph } from "~/server/infrastructure/workflow/langgraph/screening-to-timing-graph";
@@ -97,6 +100,15 @@ const executionService = new WorkflowExecutionService({
       new CompanyResearchAgentService({
         deepSeekClient,
         firecrawlClient: new FirecrawlClient(),
+        pythonIntelligenceDataClient: pythonDataClient,
+        confidenceAnalysisService,
+      }),
+    ),
+    new LegacyCompanyResearchLangGraph(
+      new CompanyResearchAgentService({
+        deepSeekClient,
+        firecrawlClient: new FirecrawlClient(),
+        pythonIntelligenceDataClient: pythonDataClient,
         confidenceAnalysisService,
       }),
     ),

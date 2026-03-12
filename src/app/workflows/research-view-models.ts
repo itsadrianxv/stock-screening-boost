@@ -201,6 +201,10 @@ function buildCompanyResearchDigest(
   const highConfidenceCount = result.findings.filter(
     (item) => item.confidence === "high",
   ).length;
+  const firstPartyCount =
+    result.collectionSummary?.totalFirstPartyCount ??
+    result.evidence.filter((item) => item.isFirstParty).length;
+  const referenceCount = result.references?.length ?? result.evidence.length;
 
   return {
     templateLabel: "公司判断",
@@ -216,7 +220,10 @@ function buildCompanyResearchDigest(
     bullPoints: uniqueList(result.verdict.bullPoints, 4),
     bearPoints: uniqueList(result.verdict.bearPoints, 4),
     evidence: uniqueList(
-      result.evidence.map((item) => `${item.title}: ${item.extractedFact}`),
+      result.evidence.map(
+        (item) =>
+          `${item.isFirstParty ? "[一手]" : "[外部]"} ${item.title}: ${item.extractedFact}`,
+      ),
       4,
     ),
     gaps: uniqueList(
@@ -227,7 +234,9 @@ function buildCompanyResearchDigest(
     metrics: [
       ...buildConfidenceMetrics(result.confidenceAnalysis),
       { label: "证据条数", value: String(result.evidence.length) },
-      { label: "高置信回答", value: String(highConfidenceCount) },
+      { label: "Reference 数", value: String(referenceCount) },
+      { label: "一手信源", value: String(firstPartyCount) },
+      { label: "高信度回答", value: String(highConfidenceCount) },
       { label: "待核验缺口", value: String(gapCount) },
       { label: "重点概念", value: String(result.brief.focusConcepts.length) },
     ],
@@ -268,22 +277,20 @@ function buildGenericDigest(params: {
   if (params.status === "PAUSED") {
     return {
       templateLabel,
-      verdictLabel: "Awaiting approval",
+      verdictLabel: "等待审批",
       verdictTone: "warning",
       headline: firstSentence(params.query),
       summary:
         params.currentNodeKey && params.currentNodeKey.length > 0
-          ? `Run paused at ${params.currentNodeKey}. Resume after manual approval.`
-          : "Run paused and waiting for manual approval.",
+          ? `任务暂停于 ${params.currentNodeKey}，需要人工审批后继续。`
+          : "任务已暂停，等待人工审批。",
       bullPoints: [],
       bearPoints: [],
       evidence: [],
-      gaps: [
-        "Approve the paused run to continue the remaining workflow nodes.",
-      ],
+      gaps: ["审批后才能继续执行剩余节点。"],
       nextActions: ["Approve & Resume"],
       metrics: [
-        { label: "Current Progress", value: `${params.progressPercent ?? 0}%` },
+        { label: "当前进度", value: `${params.progressPercent ?? 0}%` },
       ],
     };
   }
@@ -299,7 +306,7 @@ function buildGenericDigest(params: {
       bearPoints: ["本次结果未完整生成"],
       evidence: [],
       gaps: ["需要重新运行以获取正式结论"],
-      nextActions: ["检查输入是否过宽或缺失关键上下文"],
+      nextActions: ["检查输入是否过宽或缺少关键上下文"],
       metrics: [],
     };
   }

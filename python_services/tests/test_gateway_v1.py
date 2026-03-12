@@ -96,6 +96,35 @@ def test_get_v1_theme_news_success() -> None:
     assert payload["data"]["newsItems"][0]["id"] == "ai-1"
 
 
+def test_get_v1_stock_research_pack_success() -> None:
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_stock_research_pack",
+        return_value={
+            "stockCode": "600519",
+            "companyName": "贵州茅台",
+            "concept": "白酒",
+            "financialHighlights": ["总市值: 20000.00亿元"],
+            "referenceItems": [
+                {
+                    "id": "pack-1",
+                    "title": "财务快照",
+                    "sourceName": "akshare:stock_snapshot",
+                    "snippet": "结构化财务指标摘要",
+                    "extractedFact": "总市值: 20000.00亿元",
+                    "sourceType": "financial",
+                }
+            ],
+            "summaryNotes": ["用于补强财务口径"],
+        },
+    ):
+        response = client.get("/api/v1/intelligence/stocks/600519/research-pack")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["stockCode"] == "600519"
+    assert payload["data"]["researchPack"]["referenceItems"][0]["id"] == "pack-1"
+
+
 def test_market_gateway_uses_stale_cache_when_provider_fails() -> None:
     cache_key = build_cache_key(
         dataset="stock_snapshot",

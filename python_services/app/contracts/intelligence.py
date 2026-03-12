@@ -57,6 +57,35 @@ class StockEvidenceData(BaseModel):
     evidence: CompanyEvidence
 
 
+class CompanyResearchPackReferenceItem(BaseModel):
+    id: str
+    title: str
+    sourceName: str
+    snippet: str
+    extractedFact: str
+    url: str | None = None
+    publishedAt: str | None = None
+    credibilityScore: float | None = Field(default=None, ge=0, le=1)
+    sourceType: str
+
+
+class CompanyResearchPack(BaseModel):
+    stockCode: str
+    companyName: str
+    concept: str
+    financialHighlights: list[str] = Field(default_factory=list)
+    referenceItems: list[CompanyResearchPackReferenceItem] = Field(
+        default_factory=list
+    )
+    summaryNotes: list[str] = Field(default_factory=list)
+
+
+class StockResearchPackData(BaseModel):
+    stockCode: str
+    concept: str
+    researchPack: CompanyResearchPack
+
+
 class ConfidenceReferenceItem(BaseModel):
     id: str
     title: str
@@ -122,4 +151,8 @@ class ThemeConceptsResponse(GatewayResponse[ThemeConceptsData]):
 
 
 class StockEvidenceResponse(GatewayResponse[StockEvidenceData]):
+    pass
+
+
+class StockResearchPackResponse(GatewayResponse[StockResearchPackData]):
     pass

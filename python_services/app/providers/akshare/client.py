@@ -83,6 +83,12 @@ class AkShareProviderClient:
             concept=concept,
         )
 
+    def get_stock_research_pack(self, stock_code: str, concept: str | None) -> dict:
+        return IntelligenceDataAdapter.get_company_research_pack(
+            stock_code=stock_code,
+            concept=concept,
+        )
+
     def get_concept_catalog(self) -> list[dict]:
         try:
             df = ak.stock_board_concept_name_em()

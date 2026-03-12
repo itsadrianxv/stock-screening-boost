@@ -89,6 +89,7 @@ describe("ConfidenceAnalysisService", () => {
           answer: "Answer",
           confidence: "medium",
           evidenceUrls: [],
+          referenceIds: ["ref-1"],
           gaps: [],
         },
       ],
@@ -101,9 +102,14 @@ describe("ConfidenceAnalysisService", () => {
       },
       evidence: [
         {
+          referenceId: "ref-1",
           title: "Evidence",
+          sourceName: "official",
           url: "https://example.com",
           sourceType: "official",
+          sourceTier: "first_party",
+          collectorKey: "official_sources",
+          isFirstParty: true,
           snippet: "Snippet",
           extractedFact: "Fact",
           relevance: "Relevant",

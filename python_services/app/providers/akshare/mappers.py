@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.contracts.intelligence import CompanyEvidence, ConceptMatchItem, ThemeNewsItem
+from app.contracts.intelligence import (
+    CompanyEvidence,
+    CompanyResearchPack,
+    CompanyResearchPackReferenceItem,
+    ConceptMatchItem,
+    ThemeNewsItem,
+)
 from app.contracts.market import MarketStock, ThemeCandidate
 
 
@@ -93,6 +99,35 @@ def to_company_evidence(raw: dict) -> CompanyEvidence:
     )
 
 
+def to_company_research_pack_reference(
+    raw: dict,
+) -> CompanyResearchPackReferenceItem:
+    return CompanyResearchPackReferenceItem(
+        id=str(raw.get("id") or "").strip(),
+        title=str(raw.get("title") or "").strip(),
+        sourceName=str(raw.get("sourceName") or "").strip(),
+        snippet=str(raw.get("snippet") or "").strip(),
+        extractedFact=str(raw.get("extractedFact") or "").strip(),
+        url=str(raw.get("url") or "").strip() or None,
+        publishedAt=str(raw.get("publishedAt") or "").strip() or None,
+        credibilityScore=raw.get("credibilityScore"),
+        sourceType=str(raw.get("sourceType") or "").strip() or "financial",
+    )
+
+
+def to_company_research_pack(raw: dict) -> CompanyResearchPack:
+    return CompanyResearchPack(
+        stockCode=str(raw.get("stockCode") or "").strip(),
+        companyName=str(raw.get("companyName") or "").strip(),
+        concept=str(raw.get("concept") or "").strip(),
+        financialHighlights=list(raw.get("financialHighlights") or []),
+        referenceItems=[
+            to_company_research_pack_reference(item)
+            for item in raw.get("referenceItems") or []
+        ],
+        summaryNotes=list(raw.get("summaryNotes") or []),
+    )
+
+
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
-

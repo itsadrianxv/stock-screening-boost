@@ -434,6 +434,14 @@ export class WorkflowCommandService {
       command.templateVersion,
     );
 
+    if (
+      command.templateCode === COMPANY_RESEARCH_TEMPLATE_CODE &&
+      command.templateVersion === undefined &&
+      (!template || template.version < 2)
+    ) {
+      template = await this.repository.ensureCompanyResearchTemplate();
+    }
+
     if (!template && command.templateCode === QUICK_RESEARCH_TEMPLATE_CODE) {
       template = await this.repository.ensureQuickResearchTemplate();
     }

@@ -15,6 +15,7 @@ import {
 import {
   buildResearchDigest,
   extractConfidenceAnalysis,
+  isCompanyResearchResult,
 } from "~/app/workflows/research-view-models";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
@@ -185,6 +186,9 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
     result: run?.result,
   });
   const confidenceAnalysis = extractConfidenceAnalysis(run?.result);
+  const companyResult = isCompanyResearchResult(run?.result)
+    ? run.result
+    : null;
   const nextSectionItems =
     digest.gaps.length > 0 ? digest.gaps : digest.nextActions;
 
@@ -445,6 +449,132 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
               tone="neutral"
             />
           </div>
+
+          {companyResult ? (
+            <Panel
+              title="Reference Coverage"
+              description="Shows first-party coverage, collector output, and the structured references used by the final company conclusion."
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
+                  <div className="text-xs text-[var(--app-text-soft)]">
+                    Raw Evidence
+                  </div>
+                  <div className="app-data mt-2 text-lg text-[var(--app-text)]">
+                    {companyResult.collectionSummary?.totalRawCount ??
+                      companyResult.evidence.length}
+                  </div>
+                </div>
+                <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
+                  <div className="text-xs text-[var(--app-text-soft)]">
+                    Curated Evidence
+                  </div>
+                  <div className="app-data mt-2 text-lg text-[var(--app-text)]">
+                    {companyResult.collectionSummary?.totalCuratedCount ??
+                      companyResult.evidence.length}
+                  </div>
+                </div>
+                <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
+                  <div className="text-xs text-[var(--app-text-soft)]">
+                    References
+                  </div>
+                  <div className="app-data mt-2 text-lg text-[var(--app-text)]">
+                    {companyResult.collectionSummary?.totalReferenceCount ??
+                      companyResult.evidence.length}
+                  </div>
+                </div>
+                <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
+                  <div className="text-xs text-[var(--app-text-soft)]">
+                    First-party Sources
+                  </div>
+                  <div className="app-data mt-2 text-lg text-[var(--app-text)]">
+                    {companyResult.collectionSummary?.totalFirstPartyCount ??
+                      companyResult.evidence.filter((item) => item.isFirstParty)
+                        .length}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                <div className="grid gap-3">
+                  {(companyResult.collectionSummary?.collectors ?? []).map(
+                    (collector) => (
+                      <div
+                        key={collector.collectorKey}
+                        className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.84)] px-4 py-3 text-sm text-[var(--app-text-muted)]"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[var(--app-text)]">
+                            {collector.label}
+                          </span>
+                          <StatusPill
+                            label={collector.configured ? "Active" : "Skipped"}
+                            tone={collector.configured ? "info" : "warning"}
+                          />
+                        </div>
+                        <p className="mt-2">
+                          raw {collector.rawCount} / curated{" "}
+                          {collector.curatedCount} / first-party{" "}
+                          {collector.firstPartyCount}
+                        </p>
+                      </div>
+                    ),
+                  )}
+                </div>
+
+                <div className="grid gap-3">
+                  {(companyResult.references ?? [])
+                    .slice(0, 8)
+                    .map((reference) => (
+                      <div
+                        key={reference.id}
+                        className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.84)] px-4 py-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill
+                            label={reference.sourceType}
+                            tone="neutral"
+                          />
+                          <StatusPill
+                            label={
+                              reference.isFirstParty
+                                ? "First-party"
+                                : "External"
+                            }
+                            tone={
+                              reference.isFirstParty ? "success" : "neutral"
+                            }
+                          />
+                          {reference.url ? (
+                            <a
+                              href={reference.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm text-[var(--app-accent-strong)] hover:underline"
+                            >
+                              {reference.title}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-[var(--app-text)]">
+                              {reference.title}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-xs text-[var(--app-text-soft)]">
+                          {reference.sourceName}
+                          {reference.publishedAt
+                            ? ` · ${reference.publishedAt}`
+                            : ""}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
+                          {reference.extractedFact}
+                        </p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </Panel>
+          ) : null}
         </>
       )}
     </WorkspaceShell>

@@ -31,6 +31,7 @@ type ReviewPauseState = WorkflowGraphState & {
 
 class RecoverableGraph implements WorkflowGraphRunner {
   readonly templateCode = "recoverable_graph";
+  readonly templateVersion = 1;
   readonly startedNodes: string[] = [];
 
   getNodeOrder() {
@@ -127,6 +128,7 @@ class RecoverableGraph implements WorkflowGraphRunner {
 
 class ReviewPauseGraph implements WorkflowGraphRunner {
   readonly templateCode = SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE;
+  readonly templateVersion = 1;
 
   getNodeOrder() {
     return ["validate_insights", "review_gate", "archive_insights"];
@@ -281,6 +283,7 @@ type MutableRunState = {
   result: Record<string, unknown> | null;
   template: {
     code: string;
+    version?: number;
   };
   nodeRuns: Array<{
     id: string;
@@ -317,6 +320,7 @@ function createRepositoryHarness(params: {
     result: null,
     template: {
       code: params.graph.templateCode,
+      version: params.graph.templateVersion,
     },
     nodeRuns:
       params.nodeRuns?.map((nodeRun) => ({
@@ -613,7 +617,10 @@ describe("WorkflowExecutionService", () => {
           id: "run_1",
           progressPercent: 50,
           currentNodeKey: "archive_insights",
-          template: { code: graph.templateCode },
+          template: {
+            code: graph.templateCode,
+            version: graph.templateVersion,
+          },
         },
       ]),
       getRunById: vi.fn().mockResolvedValue({
@@ -623,7 +630,7 @@ describe("WorkflowExecutionService", () => {
         input: {},
         progressPercent: 50,
         currentNodeKey: "archive_insights",
-        template: { code: graph.templateCode },
+        template: { code: graph.templateCode, version: graph.templateVersion },
         nodeRuns: [
           {
             id: "node_archive",
