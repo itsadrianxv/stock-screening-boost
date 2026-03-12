@@ -84,6 +84,43 @@ export interface PythonDataServiceClientConfig {
   timeout?: number;
 }
 
+type ScreeningServiceBasePath = {
+  baseUrl: string;
+  stocksBasePath: string;
+};
+
+function resolveScreeningServiceBasePath(
+  rawBaseUrl: string,
+): ScreeningServiceBasePath {
+  const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, "");
+
+  if (normalizedBaseUrl.endsWith("/api/stocks")) {
+    return {
+      baseUrl: normalizedBaseUrl,
+      stocksBasePath: "",
+    };
+  }
+
+  if (normalizedBaseUrl.endsWith("/api/v1")) {
+    return {
+      baseUrl: normalizedBaseUrl.slice(0, -3),
+      stocksBasePath: "/stocks",
+    };
+  }
+
+  if (normalizedBaseUrl.endsWith("/api")) {
+    return {
+      baseUrl: normalizedBaseUrl,
+      stocksBasePath: "/stocks",
+    };
+  }
+
+  return {
+    baseUrl: normalizedBaseUrl,
+    stocksBasePath: "/api/stocks",
+  };
+}
+
 /**
  * Python 数据服务 HTTP 客户端
  *
@@ -94,6 +131,7 @@ export class PythonDataServiceClient
   implements IMarketDataRepository, IHistoricalDataProvider
 {
   private readonly baseUrl: string;
+  private readonly stocksBasePath: string;
   private readonly timeout: number;
 
   /**
@@ -101,8 +139,14 @@ export class PythonDataServiceClient
    * @param config 客户端配置
    */
   constructor(config: PythonDataServiceClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, ""); // 移除末尾斜杠
+    const resolvedBaseUrl = resolveScreeningServiceBasePath(config.baseUrl);
+    this.baseUrl = resolvedBaseUrl.baseUrl;
+    this.stocksBasePath = resolvedBaseUrl.stocksBasePath;
     this.timeout = config.timeout ?? 10000;
+  }
+
+  private stocksPath(path: string) {
+    return `${this.stocksBasePath}${path}`;
   }
 
   /**
@@ -208,7 +252,9 @@ export class PythonDataServiceClient
    * @returns 股票代码列表
    */
   async getAllStockCodes(): Promise<StockCode[]> {
-    const response = await this.fetch<StockCodesResponse>("/stocks/codes");
+    const response = await this.fetch<StockCodesResponse>(
+      this.stocksPath("/codes"),
+    );
     return response.codes.map((code) => StockCode.create(code));
   }
 
@@ -247,10 +293,13 @@ export class PythonDataServiceClient
       codes: codes.map((code) => code.value),
     };
 
-    const response = await this.fetch<StockDataResponse[]>("/stocks/batch", {
-      method: "POST",
-      body: JSON.stringify(request),
-    });
+    const response = await this.fetch<StockDataResponse[]>(
+      this.stocksPath("/batch"),
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+      },
+    );
 
     return response.map((data) => this.mapToStock(data));
   }
@@ -261,7 +310,7 @@ export class PythonDataServiceClient
    */
   async getAvailableIndustries(): Promise<string[]> {
     const response = await this.fetch<IndustriesResponse>(
-      "/stocks/industries"
+      this.stocksPath("/industries"),
     );
     return response.industries;
   }
@@ -281,7 +330,9 @@ export class PythonDataServiceClient
     indicator: IndicatorField,
     years: number
   ): Promise<IndicatorDataPoint[]> {
-    const path = `/stocks/${stockCode.value}/history?indicator=${indicator}&years=${years}`;
+    const path = this.stocksPath(
+      `/${stockCode.value}/history?indicator=${indicator}&years=${years}`,
+    );
     const response =
       await this.fetch<IndicatorDataPointResponse[]>(path);
 

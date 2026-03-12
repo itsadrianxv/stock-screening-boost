@@ -49,7 +49,7 @@ describe("PythonDataServiceClient", () => {
       const result = await client.getAllStockCodes();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/stocks/codes`,
+        `${baseUrl}/api/stocks/codes`,
         expect.objectContaining({
           headers: expect.objectContaining({
             "Content-Type": "application/json",
@@ -207,7 +207,7 @@ describe("PythonDataServiceClient", () => {
       const result = await client.getStocksByCodes(codes);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/stocks/batch`,
+        `${baseUrl}/api/stocks/batch`,
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ codes: ["600519", "000001"] }),
@@ -259,7 +259,7 @@ describe("PythonDataServiceClient", () => {
       const result = await client.getAvailableIndustries();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/stocks/industries`,
+        `${baseUrl}/api/stocks/industries`,
         expect.anything()
       );
 
@@ -301,7 +301,7 @@ describe("PythonDataServiceClient", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/stocks/600519/history?indicator=${IndicatorField.REVENUE}&years=3`,
+        `${baseUrl}/api/stocks/600519/history?indicator=${IndicatorField.REVENUE}&years=3`,
         expect.anything()
       );
 
@@ -416,7 +416,64 @@ describe("PythonDataServiceClient", () => {
       void clientWithSlash.getAllStockCodes();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8000/stocks/codes",
+        "http://localhost:8000/api/stocks/codes",
+        expect.anything()
+      );
+    });
+
+    it("should accept baseUrl with /api", () => {
+      const clientWithApi = new PythonDataServiceClient({
+        baseUrl: "http://localhost:8000/api",
+        timeout: 5000,
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ codes: [], total: 0 }),
+      });
+
+      void clientWithApi.getAllStockCodes();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8000/api/stocks/codes",
+        expect.anything()
+      );
+    });
+
+    it("should accept baseUrl with /api/stocks", () => {
+      const clientWithStocksApi = new PythonDataServiceClient({
+        baseUrl: "http://localhost:8000/api/stocks",
+        timeout: 5000,
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ codes: [], total: 0 }),
+      });
+
+      void clientWithStocksApi.getAllStockCodes();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8000/api/stocks/codes",
+        expect.anything()
+      );
+    });
+
+    it("should accept baseUrl with /api/v1", () => {
+      const clientWithV1 = new PythonDataServiceClient({
+        baseUrl: "http://localhost:8000/api/v1",
+        timeout: 5000,
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ codes: [], total: 0 }),
+      });
+
+      void clientWithV1.getAllStockCodes();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:8000/api/stocks/codes",
         expect.anything()
       );
     });
