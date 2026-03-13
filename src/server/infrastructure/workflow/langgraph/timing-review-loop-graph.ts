@@ -1,4 +1,5 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
+import type { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
 import type { TimingReviewPolicy } from "~/server/domain/timing/services/timing-review-policy";
 import type {
   TimingReviewLoopGraphState,
@@ -12,6 +13,10 @@ import {
   TIMING_REVIEW_LOOP_TEMPLATE_CODE,
 } from "~/server/domain/workflow/types";
 import type { PrismaResearchReminderRepository } from "~/server/infrastructure/intelligence/prisma-research-reminder-repository";
+import type { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
+import type { PrismaTimingFeedbackObservationRepository } from "~/server/infrastructure/timing/prisma-timing-feedback-observation-repository";
+import type { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
+import type { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
 import type { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
 import type { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
 import type { WorkflowGraphBuildInitialStateParams } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
@@ -33,6 +38,9 @@ const WorkflowState = Annotation.Root({
   dueReviews: Annotation<TimingReviewLoopGraphState["dueReviews"]>,
   evaluatedReviews: Annotation<TimingReviewLoopGraphState["evaluatedReviews"]>,
   persistedReviews: Annotation<TimingReviewLoopGraphState["persistedReviews"]>,
+  feedbackSuggestions: Annotation<
+    TimingReviewLoopGraphState["feedbackSuggestions"]
+  >,
   consumedReminderIds: Annotation<
     TimingReviewLoopGraphState["consumedReminderIds"]
   >,
@@ -55,6 +63,11 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
   constructor(deps: {
     timingDataClient: PythonTimingDataClient;
     reviewRecordRepository: PrismaTimingReviewRecordRepository;
+    recommendationRepository: PrismaTimingRecommendationRepository;
+    analysisCardRepository: PrismaTimingAnalysisCardRepository;
+    feedbackObservationRepository: PrismaTimingFeedbackObservationRepository;
+    presetRepository: PrismaTimingPresetRepository;
+    feedbackService: TimingFeedbackService;
     reminderRepository: PrismaResearchReminderRepository;
     reviewPolicy: TimingReviewPolicy;
   }) {
@@ -79,7 +92,6 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
         const targetDateText = targetDate.toISOString().slice(0, 10);
 
         const evaluatedReviews = [];
-
         for (const review of state.dueReviews) {
           const bars = await deps.timingDataClient.getBars({
             stockCode: review.stockCode,
@@ -110,11 +122,111 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
       review_agent: async (state) => ({
         evaluatedReviews: state.evaluatedReviews,
       }),
-      persist_reviews: async (state) => ({
-        persistedReviews: await deps.reviewRecordRepository.completeMany({
-          items: state.evaluatedReviews,
-        }),
-      }),
+      persist_reviews: async (state) => {
+        const persistedReviews = await deps.reviewRecordRepository.completeMany(
+          {
+            items: state.evaluatedReviews,
+          },
+        );
+
+        const recommendationIds = state.dueReviews
+          .map((review) => review.recommendationId)
+          .filter((value): value is string => Boolean(value));
+        const analysisCardIds = state.dueReviews
+          .map((review) => review.analysisCardId)
+          .filter((value): value is string => Boolean(value));
+
+        const [recommendations, analysisCards] = await Promise.all([
+          deps.recommendationRepository.getByIds(recommendationIds),
+          deps.analysisCardRepository.getByIds(analysisCardIds),
+        ]);
+
+        const recommendationById = new Map(
+          recommendations.map((item) => [item.id, item]),
+        );
+        const analysisCardById = new Map(
+          analysisCards.map((item) => [item.id, item]),
+        );
+
+        await deps.feedbackObservationRepository.upsertMany({
+          items: persistedReviews.map((review) => {
+            const source = state.dueReviews.find(
+              (item) => item.id === review.id,
+            );
+            const recommendation = source?.recommendationId
+              ? recommendationById.get(source.recommendationId)
+              : undefined;
+            const analysisCard = source?.analysisCardId
+              ? analysisCardById.get(source.analysisCardId)
+              : undefined;
+
+            return {
+              userId: review.userId,
+              reviewRecordId: review.id,
+              recommendationId: recommendation?.id,
+              presetId:
+                recommendation?.presetId ?? analysisCard?.presetId ?? null,
+              stockCode: review.stockCode,
+              stockName: review.stockName,
+              observedAt: review.completedAt ?? new Date(),
+              sourceAsOfDate: review.sourceAsOfDate,
+              reviewHorizon: review.reviewHorizon,
+              expectedAction: review.expectedAction,
+              signalContext: recommendation?.reasoning.signalContext ??
+                analysisCard?.reasoning.signalContext ?? {
+                  direction: "neutral",
+                  compositeScore: 0,
+                  signalStrength: 0,
+                  confidence: 25,
+                  engineBreakdown: [],
+                  triggerNotes: [],
+                  invalidationNotes: [],
+                  riskFlags: [],
+                  explanation: "缺少原始信号上下文。",
+                  summary: "无可用信号上下文。",
+                },
+              marketContext: recommendation?.reasoning.marketContext ?? null,
+              positionContext:
+                recommendation?.reasoning.positionContext ?? null,
+              actualReturnPct: review.actualReturnPct ?? 0,
+              maxFavorableExcursionPct: review.maxFavorableExcursionPct ?? 0,
+              maxAdverseExcursionPct: review.maxAdverseExcursionPct ?? 0,
+              verdict: review.verdict ?? "MIXED",
+            };
+          }),
+        });
+
+        const uniquePresetIds = [
+          ...new Set(
+            recommendations
+              .map((item) => item.presetId ?? null)
+              .filter((value) => value !== undefined),
+          ),
+        ];
+        const feedbackSuggestions = (
+          await Promise.all(
+            uniquePresetIds.map(async (presetId) => {
+              const preset = presetId
+                ? await deps.presetRepository.getByIdForUser(
+                    state.userId,
+                    presetId,
+                  )
+                : null;
+
+              return deps.feedbackService.refreshSuggestions({
+                userId: state.userId,
+                presetId,
+                presetConfig: preset?.config,
+              });
+            }),
+          )
+        ).flat();
+
+        return {
+          persistedReviews,
+          feedbackSuggestions,
+        };
+      },
       schedule_next_review: async (state) => {
         const consumedReminderIds: string[] = [];
 
@@ -168,6 +280,7 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
       dueReviews: [],
       evaluatedReviews: [],
       persistedReviews: [],
+      feedbackSuggestions: [],
       consumedReminderIds: [],
       errors: [],
     };
@@ -183,7 +296,10 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
       case "review_agent":
         return { evaluatedReviews: reviewState.evaluatedReviews };
       case "persist_reviews":
-        return { persistedReviews: reviewState.persistedReviews };
+        return {
+          persistedReviews: reviewState.persistedReviews,
+          feedbackSuggestions: reviewState.feedbackSuggestions,
+        };
       default:
         return { consumedReminderIds: reviewState.consumedReminderIds };
     }
@@ -197,7 +313,10 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
     }
 
     if (nodeKey === "persist_reviews") {
-      return { persistedReviewCount: reviewState.persistedReviews.length };
+      return {
+        persistedReviewCount: reviewState.persistedReviews.length,
+        feedbackSuggestionCount: reviewState.feedbackSuggestions.length,
+      };
     }
 
     if (nodeKey === "schedule_next_review") {
@@ -224,9 +343,13 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
     const reviewState = state as TimingReviewLoopGraphState;
 
     return {
-      reviewCount: reviewState.persistedReviews.length,
       reviewIds: reviewState.persistedReviews.map((review) => review.id),
-      consumedReminderIds: reviewState.consumedReminderIds,
+      reviewCount: reviewState.persistedReviews.length,
+      feedbackSuggestionIds: reviewState.feedbackSuggestions.map(
+        (item) => item.id,
+      ),
+      feedbackSuggestionCount: reviewState.feedbackSuggestions.length,
+      reminderIds: reviewState.consumedReminderIds,
     };
   }
 }

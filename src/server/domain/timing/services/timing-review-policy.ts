@@ -63,13 +63,9 @@ function buildSummary(params: {
       ? "验证通过"
       : params.verdict === "FAILURE"
         ? "验证失败"
-        : "信号表现一般";
+        : "表现一般";
 
-  return (
-    `${params.stockName} 在 ${params.reviewHorizon} 观察窗内 ${verdictText}，` +
-    `预期动作为 ${params.expectedAction}，区间收益 ${round(params.actualReturnPct)}%，` +
-    `最大顺行 ${round(params.maxFavorableExcursionPct)}%，最大逆行 ${round(params.maxAdverseExcursionPct)}%。`
-  );
+  return `${params.stockName} 在 ${params.reviewHorizon} 观察窗内 ${verdictText}，预期动作为 ${params.expectedAction}，区间收益 ${round(params.actualReturnPct)}%，最大顺行 ${round(params.maxFavorableExcursionPct)}%，最大逆行 ${round(params.maxAdverseExcursionPct)}%。`;
 }
 
 export class TimingReviewPolicy {
@@ -79,12 +75,12 @@ export class TimingReviewPolicy {
     completedAt?: Date;
   }): TimingReviewCompletionDraft {
     if (params.bars.length === 0) {
-      throw new Error(`缺少 ${params.reviewRecord.stockCode} 的复查行情数据`);
+      throw new Error(`缺少 ${params.reviewRecord.stockCode} 的复盘行情数据`);
     }
 
     const entry = params.bars[0];
     if (!entry) {
-      throw new Error(`缺少 ${params.reviewRecord.stockCode} 的复查起点数据`);
+      throw new Error(`缺少 ${params.reviewRecord.stockCode} 的复盘起点数据`);
     }
 
     const last = params.bars[params.bars.length - 1] ?? entry;

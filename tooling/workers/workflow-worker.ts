@@ -8,6 +8,8 @@ import { CompanyResearchAgentService } from "~/server/application/intelligence/c
 import { IntelligenceAgentService } from "~/server/application/intelligence/intelligence-agent-service";
 import { MarketRegimeService } from "~/server/application/timing/market-regime-service";
 import { TimingAnalysisService } from "~/server/application/timing/timing-analysis-service";
+import { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
+import { PositionContextService } from "~/server/application/timing/position-context-service";
 import { TimingReviewSchedulingService } from "~/server/application/timing/timing-review-scheduling-service";
 import { WatchlistPortfolioManagerService } from "~/server/application/timing/watchlist-portfolio-manager-service";
 import { WatchlistRiskManagerService } from "~/server/application/timing/watchlist-risk-manager-service";
@@ -25,7 +27,10 @@ import { PythonConfidenceAnalysisClient } from "~/server/infrastructure/intellig
 import { PythonIntelligenceDataClient } from "~/server/infrastructure/intelligence/python-intelligence-data-client";
 import { PrismaWatchListRepository } from "~/server/infrastructure/screening/prisma-watch-list-repository";
 import { PrismaPortfolioSnapshotRepository } from "~/server/infrastructure/timing/prisma-portfolio-snapshot-repository";
+import { PrismaTimingFeedbackObservationRepository } from "~/server/infrastructure/timing/prisma-timing-feedback-observation-repository";
+import { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-market-context-snapshot-repository";
 import { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
+import { PrismaTimingPresetAdjustmentSuggestionRepository } from "~/server/infrastructure/timing/prisma-timing-preset-adjustment-suggestion-repository";
 import { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
 import { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
 import { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
@@ -57,7 +62,13 @@ const insightRepository = new PrismaScreeningInsightRepository(db);
 const screeningSessionRepository = new PrismaScreeningSessionRepository(db);
 const watchListRepository = new PrismaWatchListRepository(db);
 const portfolioSnapshotRepository = new PrismaPortfolioSnapshotRepository(db);
+const timingMarketContextSnapshotRepository =
+  new PrismaTimingMarketContextSnapshotRepository(db);
 const timingPresetRepository = new PrismaTimingPresetRepository(db);
+const timingFeedbackObservationRepository =
+  new PrismaTimingFeedbackObservationRepository(db);
+const timingPresetAdjustmentSuggestionRepository =
+  new PrismaTimingPresetAdjustmentSuggestionRepository(db);
 const timingReviewRecordRepository = new PrismaTimingReviewRecordRepository(db);
 const timingSignalSnapshotRepository =
   new PrismaTimingSignalSnapshotRepository(db);
@@ -78,8 +89,13 @@ const timingAnalysisService = new TimingAnalysisService({
 });
 const marketRegimeService = new MarketRegimeService();
 const watchlistRiskManagerService = new WatchlistRiskManagerService();
-const watchlistPortfolioManagerService =
-  new WatchlistPortfolioManagerService();
+const timingFeedbackService = new TimingFeedbackService({
+  observationRepository: timingFeedbackObservationRepository,
+  suggestionRepository: timingPresetAdjustmentSuggestionRepository,
+});
+const watchlistPortfolioManagerService = new WatchlistPortfolioManagerService({
+  positionContextService: new PositionContextService(),
+});
 const pythonTimingDataClient = new PythonTimingDataClient();
 const timingReviewSchedulingService = new TimingReviewSchedulingService({
   reviewRecordRepository: timingReviewRecordRepository,
@@ -141,7 +157,9 @@ const executionService = new WorkflowExecutionService({
       timingDataClient: pythonTimingDataClient,
       analysisService: timingAnalysisService,
       presetRepository: timingPresetRepository,
+      marketContextSnapshotRepository: timingMarketContextSnapshotRepository,
       marketRegimeService,
+      feedbackService: timingFeedbackService,
       riskManagerService: watchlistRiskManagerService,
       portfolioManagerService: watchlistPortfolioManagerService,
       recommendationRepository: timingRecommendationRepository,
@@ -159,6 +177,11 @@ const executionService = new WorkflowExecutionService({
     new TimingReviewLoopLangGraph({
       timingDataClient: pythonTimingDataClient,
       reviewRecordRepository: timingReviewRecordRepository,
+      recommendationRepository: timingRecommendationRepository,
+      analysisCardRepository: timingAnalysisCardRepository,
+      feedbackObservationRepository: timingFeedbackObservationRepository,
+      presetRepository: timingPresetRepository,
+      feedbackService: timingFeedbackService,
       reminderRepository,
       reviewPolicy: new TimingReviewPolicy(),
     }),

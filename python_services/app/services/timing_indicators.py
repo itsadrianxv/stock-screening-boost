@@ -1,9 +1,11 @@
-"""Deterministic daily timing indicators and rule summary helpers."""
+"""Deterministic daily timing indicators and multi-engine signal context builders."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 from app.contracts.timing import (
@@ -12,14 +14,26 @@ from app.contracts.timing import (
     TimingMacd,
     TimingObv,
     TimingRsi,
-    TimingRuleSummary,
+    TimingSignalComposite,
+    TimingSignalContext,
     TimingSignalData,
+    TimingSignalEngineResult,
 )
 from app.gateway.common import GatewayError
 
 
+ENGINE_WEIGHTS = {
+    "multiTimeframeAlignment": 0.24,
+    "relativeStrength": 0.20,
+    "volatilityPercentile": 0.14,
+    "liquidityStructure": 0.14,
+    "breakoutFailure": 0.14,
+    "gapVolumeQuality": 0.14,
+}
+
+
 class TimingIndicatorsService:
-    minimum_lookback_days = 120
+    minimum_lookback_days = 240
 
     def build_signal(
         self,
@@ -27,15 +41,16 @@ class TimingIndicatorsService:
         stock_code: str,
         stock_name: str,
         history: pd.DataFrame,
+        benchmark_histories: dict[str, pd.DataFrame] | None = None,
         as_of_date: str | None = None,
     ) -> TimingSignalData:
         normalized = self.normalize_history(history)
         effective = self.slice_as_of(normalized, as_of_date)
 
-        if len(effective.index) < 60:
+        if len(effective.index) < 120:
             raise GatewayError(
                 code="insufficient_history",
-                message=f"{stock_code} 可用历史数据不足，无法计算择时指标",
+                message=f"{stock_code} 可用历史数据不足，无法计算择时上下文",
                 status_code=422,
                 provider="akshare",
             )
@@ -61,10 +76,26 @@ class TimingIndicatorsService:
                 value=self._round_float(latest["obv"]),
                 slope=self._round_float(latest["obv_slope"]),
             ),
+            ema5=self._round_float(latest["ema5"]),
             ema20=self._round_float(latest["ema20"]),
             ema60=self._round_float(latest["ema60"]),
+            ema120=self._round_float(latest["ema120"]),
             atr14=self._round_float(latest["atr14"]),
             volumeRatio20=self._round_float(latest["volume_ratio20"]),
+            realizedVol20=self._round_float(latest["realized_vol20"]),
+            realizedVol120=self._round_float(latest["realized_vol120"]),
+            amount=None
+            if pd.isna(latest["amount"])
+            else self._round_float(latest["amount"]),
+            turnoverRate=None
+            if pd.isna(latest["turnover_rate"])
+            else self._round_float(latest["turnover_rate"]),
+        )
+
+        signal_context = self.build_signal_context(
+            stock_history=enriched,
+            benchmark_histories=benchmark_histories or {},
+            as_of_date=as_of_date,
         )
 
         return TimingSignalData(
@@ -73,7 +104,7 @@ class TimingIndicatorsService:
             asOfDate=latest["trade_date"].strftime("%Y-%m-%d"),
             barsCount=len(effective.index),
             indicators=indicators,
-            ruleSummary=self.build_rule_summary(enriched),
+            signalContext=signal_context,
         )
 
     def normalize_history(self, history: pd.DataFrame) -> pd.DataFrame:
@@ -113,9 +144,22 @@ class TimingIndicatorsService:
 
         frame = renamed.copy()
         frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.date
-        for column in ["open", "high", "low", "close", "volume", "amount", "turnover_rate"]:
+        for column in [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+            "turnover_rate",
+        ]:
             if column in frame.columns:
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
+
+        if "amount" not in frame.columns:
+            frame["amount"] = frame["close"] * frame["volume"]
+        if "turnover_rate" not in frame.columns:
+            frame["turnover_rate"] = np.nan
 
         frame = frame.dropna(subset=["trade_date", "open", "high", "low", "close", "volume"])
         frame = frame.sort_values("trade_date").reset_index(drop=True)
@@ -166,8 +210,10 @@ class TimingIndicatorsService:
         low = frame["low"]
         volume = frame["volume"]
 
+        frame["ema5"] = close.ewm(span=5, adjust=False).mean()
         frame["ema20"] = close.ewm(span=20, adjust=False).mean()
         frame["ema60"] = close.ewm(span=60, adjust=False).mean()
+        frame["ema120"] = close.ewm(span=120, adjust=False).mean()
 
         ema12 = close.ewm(span=12, adjust=False).mean()
         ema26 = close.ewm(span=26, adjust=False).mean()
@@ -209,88 +255,423 @@ class TimingIndicatorsService:
         average_volume20 = volume.rolling(window=20, min_periods=20).mean()
         frame["volume_ratio20"] = (volume / average_volume20).fillna(1)
 
+        returns = close.pct_change()
+        frame["return_1d"] = returns.fillna(0)
+        frame["return_5d"] = close.pct_change(5).fillna(0)
+        frame["return_10d"] = close.pct_change(10).fillna(0)
+        frame["return_20d"] = close.pct_change(20).fillna(0)
+        frame["return_60d"] = close.pct_change(60).fillna(0)
+        frame["realized_vol20"] = returns.rolling(window=20, min_periods=20).std() * math.sqrt(252)
+        frame["realized_vol120"] = returns.rolling(window=120, min_periods=120).std() * math.sqrt(252)
+
         return frame.ffill().bfill()
 
-    def build_rule_summary(self, history: pd.DataFrame) -> TimingRuleSummary:
+    def build_signal_context(
+        self,
+        *,
+        stock_history: pd.DataFrame,
+        benchmark_histories: dict[str, pd.DataFrame],
+        as_of_date: str | None,
+    ) -> TimingSignalContext:
+        normalized_benchmarks: dict[str, pd.DataFrame] = {}
+        for code, frame in benchmark_histories.items():
+            normalized = self.normalize_history(frame)
+            sliced = self.slice_as_of(normalized, as_of_date)
+            if len(sliced.index) >= 120:
+                normalized_benchmarks[code] = self.calculate_indicators(sliced)
+
+        engines = [
+            self._build_multi_timeframe_alignment(stock_history),
+            self._build_relative_strength(stock_history, normalized_benchmarks),
+            self._build_volatility_percentile(stock_history),
+            self._build_liquidity_structure(stock_history),
+            self._build_breakout_failure(stock_history),
+            self._build_gap_volume_quality(stock_history),
+        ]
+
+        weighted_sum = 0.0
+        total_confidence = 0.0
+        for engine in engines:
+            weight_conf = engine.weight * engine.confidence
+            weighted_sum += engine.score * weight_conf
+            total_confidence += weight_conf
+
+        composite_score = 0.0 if total_confidence <= 0 else weighted_sum / total_confidence
+        composite_score = self._clamp(composite_score, -100, 100)
+        composite_confidence = self._clamp(
+            sum(engine.weight * engine.confidence for engine in engines),
+            0,
+            1,
+        )
+        direction = self._direction_from_score(composite_score)
+
+        return TimingSignalContext(
+            engines=engines,
+            composite=TimingSignalComposite(
+                score=self._round_float(composite_score),
+                confidence=self._round_probability(composite_confidence),
+                direction=direction,
+                signalStrength=self._round_float(abs(composite_score)),
+                participatingEngines=len([engine for engine in engines if engine.confidence > 0]),
+            ),
+        )
+
+    def _build_multi_timeframe_alignment(
+        self,
+        history: pd.DataFrame,
+    ) -> TimingSignalEngineResult:
         latest = history.iloc[-1]
-        positive_score = 0
-        negative_score = 0
-        warnings: list[str] = []
+        previous = history.iloc[-6] if len(history.index) >= 6 else history.iloc[0]
 
-        if latest["close"] >= latest["ema20"] >= latest["ema60"]:
-            positive_score += 2
-        elif latest["close"] <= latest["ema20"] <= latest["ema60"]:
-            negative_score += 2
-        else:
-            if latest["close"] > latest["ema20"]:
-                positive_score += 1
-            elif latest["close"] < latest["ema20"]:
-                negative_score += 1
+        bullish_checks = [
+            latest["close"] > latest["ema5"],
+            latest["ema5"] > latest["ema20"],
+            latest["ema20"] > latest["ema60"],
+            latest["ema60"] > latest["ema120"],
+            latest["ema20"] > previous["ema20"],
+            latest["ema60"] > previous["ema60"],
+            latest["return_20d"] > 0,
+        ]
+        bearish_checks = [
+            latest["close"] < latest["ema5"],
+            latest["ema5"] < latest["ema20"],
+            latest["ema20"] < latest["ema60"],
+            latest["ema60"] < latest["ema120"],
+            latest["ema20"] < previous["ema20"],
+            latest["ema60"] < previous["ema60"],
+            latest["return_20d"] < 0,
+        ]
 
-        if latest["macd_hist"] > 0 and latest["macd_dif"] > latest["macd_dea"]:
-            positive_score += 2
-        elif latest["macd_hist"] < 0 and latest["macd_dif"] < latest["macd_dea"]:
-            negative_score += 2
-
-        rsi_value = latest["rsi14"]
-        if 52 <= rsi_value <= 68:
-            positive_score += 1
-        elif 32 <= rsi_value <= 45:
-            negative_score += 1
-
-        boll_position = latest["boll_position"]
-        if boll_position >= 0.6:
-            positive_score += 1
-        elif boll_position <= 0.4:
-            negative_score += 1
-
-        if latest["volume_ratio20"] >= 1.15:
-            positive_score += 1
-        elif latest["volume_ratio20"] <= 0.85:
-            negative_score += 1
-
-        if latest["obv_slope"] > 0:
-            positive_score += 1
-        elif latest["obv_slope"] < 0:
-            negative_score += 1
-
-        direction_score = positive_score - negative_score
-        if direction_score >= 3:
-            direction = "bullish"
-        elif direction_score <= -3:
-            direction = "bearish"
-        else:
-            direction = "neutral"
-
-        strength_base = min(positive_score + negative_score, 8)
-        signal_strength = min(
-            100.0,
-            round(35 + abs(direction_score) * 15 + strength_base * 3, 2),
+        balance = sum(1 for value in bullish_checks if value) - sum(
+            1 for value in bearish_checks if value
         )
+        score = self._clamp((balance / len(bullish_checks)) * 100, -100, 100)
+        confidence = self._clamp(abs(balance) / len(bullish_checks), 0.35, 1)
+        direction = self._direction_from_score(score)
 
-        if rsi_value >= 70 or latest["close"] >= latest["boll_upper"]:
-            warnings.append("OVERBOUGHT")
-        if rsi_value <= 30 or latest["close"] <= latest["boll_lower"]:
-            warnings.append("OVERSOLD")
-
-        close_price = max(float(latest["close"]), 0.0001)
-        if latest["atr14"] / close_price >= 0.05:
-            warnings.append("HIGH_VOLATILITY")
-
-        if latest["close"] < latest["ema20"] or latest["macd_hist"] < 0:
-            warnings.append("TREND_WEAKENING")
-
-        return TimingRuleSummary(
+        return TimingSignalEngineResult(
+            key="multiTimeframeAlignment",
+            label="多周期一致性",
             direction=direction,
-            signalStrength=signal_strength,
-            warnings=list(dict.fromkeys(warnings)),
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["multiTimeframeAlignment"],
+            detail="观察 5/20/60/120 日均线结构、斜率与中期收益率是否同步。",
+            metrics={
+                "close": self._round_float(latest["close"]),
+                "ema5": self._round_float(latest["ema5"]),
+                "ema20": self._round_float(latest["ema20"]),
+                "ema60": self._round_float(latest["ema60"]),
+                "ema120": self._round_float(latest["ema120"]),
+                "return20d": self._round_float(latest["return_20d"] * 100),
+                "bullishChecks": sum(1 for value in bullish_checks if value),
+                "bearishChecks": sum(1 for value in bearish_checks if value),
+            },
+            warnings=[],
         )
+
+    def _build_relative_strength(
+        self,
+        stock_history: pd.DataFrame,
+        benchmark_histories: dict[str, pd.DataFrame],
+    ) -> TimingSignalEngineResult:
+        latest = stock_history.iloc[-1]
+        benchmark_returns20: list[float] = []
+        benchmark_returns60: list[float] = []
+        for frame in benchmark_histories.values():
+            benchmark_latest = frame.iloc[-1]
+            benchmark_returns20.append(float(benchmark_latest["return_20d"]))
+            benchmark_returns60.append(float(benchmark_latest["return_60d"]))
+
+        if not benchmark_returns20 or not benchmark_returns60:
+            return TimingSignalEngineResult(
+                key="relativeStrength",
+                label="相对强弱",
+                direction="neutral",
+                score=0,
+                confidence=0.35,
+                weight=ENGINE_WEIGHTS["relativeStrength"],
+                detail="缺少可用基准序列，相对强弱回退为中性。",
+                metrics={},
+                warnings=["WEAK_RELATIVE_STRENGTH"],
+            )
+
+        excess20 = float(latest["return_20d"]) - (sum(benchmark_returns20) / len(benchmark_returns20))
+        excess60 = float(latest["return_60d"]) - (sum(benchmark_returns60) / len(benchmark_returns60))
+        score = self._clamp((excess20 * 700) + (excess60 * 500), -100, 100)
+        alignment_bonus = 0.2 if (excess20 >= 0 and excess60 >= 0) or (excess20 <= 0 and excess60 <= 0) else 0
+        confidence = self._clamp(
+            min(1, abs(excess20) * 6 + abs(excess60) * 3 + alignment_bonus),
+            0.35,
+            1,
+        )
+        direction = self._direction_from_score(score)
+        warnings = ["WEAK_RELATIVE_STRENGTH"] if score <= -20 else []
+
+        return TimingSignalEngineResult(
+            key="relativeStrength",
+            label="相对强弱",
+            direction=direction,
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["relativeStrength"],
+            detail="比较个股相对沪深核心指数代理的 20/60 日超额收益。",
+            metrics={
+                "stockReturn20d": self._round_float(latest["return_20d"] * 100),
+                "stockReturn60d": self._round_float(latest["return_60d"] * 100),
+                "excess20d": self._round_float(excess20 * 100),
+                "excess60d": self._round_float(excess60 * 100),
+            },
+            warnings=warnings,
+        )
+
+    def _build_volatility_percentile(
+        self,
+        history: pd.DataFrame,
+    ) -> TimingSignalEngineResult:
+        latest = history.iloc[-1]
+        vol_window = history.tail(120)
+        atr_ratio_series = (vol_window["atr14"] / vol_window["close"].replace(0, np.nan)).replace(np.nan, 0)
+        atr_ratio = float(latest["atr14"] / max(latest["close"], 0.0001))
+        vol_pct = self._percentile_rank(vol_window["realized_vol20"], latest["realized_vol20"])
+        atr_pct = self._percentile_rank(atr_ratio_series, atr_ratio)
+
+        score = 0.0
+        if vol_pct >= 80 or atr_pct >= 80:
+            score -= 60
+        elif vol_pct <= 30 and latest["close"] >= latest["ema20"]:
+            score += 35
+        elif vol_pct <= 30:
+            score += 10
+
+        if latest["close"] < latest["ema20"]:
+            score -= 15
+        if latest["close"] > latest["ema20"] and atr_pct <= 50:
+            score += 10
+
+        score = self._clamp(score, -100, 100)
+        confidence = self._clamp((abs(score) / 100) + 0.3, 0.35, 1)
+        direction = self._direction_from_score(score)
+        warnings = ["HIGH_VOLATILITY"] if score <= -20 else []
+
+        return TimingSignalEngineResult(
+            key="volatilityPercentile",
+            label="波动率分位",
+            direction=direction,
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["volatilityPercentile"],
+            detail="使用 ATR 比例与 20 日实现波动率在 120 日窗口中的分位判断波动环境。",
+            metrics={
+                "atrRatio": self._round_float(atr_ratio * 100),
+                "atrPercentile": self._round_float(atr_pct),
+                "realizedVol20": self._round_float(latest["realized_vol20"] * 100),
+                "volatilityPercentile": self._round_float(vol_pct),
+            },
+            warnings=warnings,
+        )
+
+    def _build_liquidity_structure(
+        self,
+        history: pd.DataFrame,
+    ) -> TimingSignalEngineResult:
+        latest = history.iloc[-1]
+        amount_series = history.tail(120)["amount"].fillna(history.tail(120)["close"] * history.tail(120)["volume"])
+        turnover_series = history.tail(120)["turnover_rate"].dropna()
+        volume_ratio_window = history.tail(20)["volume_ratio20"]
+
+        amount_percentile = self._percentile_rank(amount_series, latest["amount"])
+        turnover_percentile = self._percentile_rank(
+            turnover_series if not turnover_series.empty else pd.Series([50.0]),
+            latest["turnover_rate"] if not pd.isna(latest["turnover_rate"]) else 50,
+        )
+
+        score = 0.0
+        volume_ratio = float(latest["volume_ratio20"])
+        if volume_ratio >= 1.1:
+            score += 25
+        elif volume_ratio <= 0.85:
+            score -= 20
+
+        if amount_percentile >= 55:
+            score += 20
+        elif amount_percentile <= 25:
+            score -= 12
+
+        turnover_rate = None if pd.isna(latest["turnover_rate"]) else float(latest["turnover_rate"])
+        if turnover_rate is not None:
+            if 0.8 <= turnover_rate <= 6:
+                score += 18
+            elif turnover_rate < 0.4:
+                score -= 15
+            elif turnover_rate > 12:
+                score -= 12
+
+        if volume_ratio_window.std() <= 0.35 and volume_ratio >= 0.95:
+            score += 12
+
+        score = self._clamp(score, -100, 100)
+        confidence = self._clamp((abs(score) / 100) + 0.35, 0.35, 1)
+        direction = self._direction_from_score(score)
+        warnings = ["THIN_LIQUIDITY"] if score <= -20 else []
+
+        return TimingSignalEngineResult(
+            key="liquidityStructure",
+            label="流动性/换手结构",
+            direction=direction,
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["liquidityStructure"],
+            detail="衡量量比、成交额分位与换手结构，识别是否有足够承接与放量质量。",
+            metrics={
+                "volumeRatio20": self._round_float(volume_ratio),
+                "amountPercentile": self._round_float(amount_percentile),
+                "turnoverRate": None if turnover_rate is None else self._round_float(turnover_rate),
+                "turnoverPercentile": self._round_float(turnover_percentile),
+            },
+            warnings=warnings,
+        )
+
+    def _build_breakout_failure(
+        self,
+        history: pd.DataFrame,
+    ) -> TimingSignalEngineResult:
+        close = history["close"].reset_index(drop=True)
+        failures: list[int] = []
+        for lookback in (60, 120):
+            for idx in range(lookback, len(close) - 5):
+                previous_high = float(close.iloc[idx - lookback : idx].max())
+                current_close = float(close.iloc[idx])
+                if current_close < previous_high * 1.005:
+                    continue
+
+                future_window = close.iloc[idx + 1 : idx + 6]
+                failed = int(float(future_window.min()) < previous_high)
+                failures.append(failed)
+
+        fail_rate = 0.5 if not failures else sum(failures) / len(failures)
+        latest_close = float(close.iloc[-1])
+        rolling_high60 = float(close.tail(60).max())
+        distance_to_high = ((latest_close / max(rolling_high60, 0.0001)) - 1) * 100
+
+        score = (0.5 - fail_rate) * 120
+        if latest_close >= rolling_high60 * 0.98:
+            score += 15
+        if latest_close < history.iloc[-1]["ema20"]:
+            score -= 10
+
+        score = self._clamp(score, -100, 100)
+        confidence = self._clamp((abs(0.5 - fail_rate) * 1.2) + 0.35, 0.35, 1)
+        direction = self._direction_from_score(score)
+        warnings = ["FAILED_BREAKOUT"] if fail_rate >= 0.55 else []
+
+        return TimingSignalEngineResult(
+            key="breakoutFailure",
+            label="突破失败率",
+            direction=direction,
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["breakoutFailure"],
+            detail="统计近 60/120 日突破后 5 日内跌回前高下方的失败概率。",
+            metrics={
+                "failureRate": self._round_float(fail_rate * 100),
+                "sampleSize": len(failures),
+                "distanceTo60dHighPct": self._round_float(distance_to_high),
+            },
+            warnings=warnings,
+        )
+
+    def _build_gap_volume_quality(
+        self,
+        history: pd.DataFrame,
+    ) -> TimingSignalEngineResult:
+        lows = history["low"].reset_index(drop=True)
+        highs = history["high"].reset_index(drop=True)
+        previous_high = highs.shift(1)
+        previous_low = lows.shift(1)
+        volume_ratio = history["volume_ratio20"].reset_index(drop=True)
+
+        gap_events: list[dict[str, float | bool]] = []
+        for idx in range(1, len(history.index) - 5):
+            gap_up = float(lows.iloc[idx]) > float(previous_high.iloc[idx]) * 1.005
+            gap_down = float(highs.iloc[idx]) < float(previous_low.iloc[idx]) * 0.995
+            if not gap_up and not gap_down:
+                continue
+
+            future = history.iloc[idx + 1 : idx + 6]
+            filled = (
+                float(future["low"].min()) <= float(previous_high.iloc[idx])
+                if gap_up
+                else float(future["high"].max()) >= float(previous_low.iloc[idx])
+            )
+            gap_events.append(
+                {
+                    "gap_up": gap_up,
+                    "filled": filled,
+                    "volume_ratio": float(volume_ratio.iloc[idx]),
+                },
+            )
+
+        recent_events = gap_events[-3:]
+        score = 0.0
+        for event in recent_events:
+            if event["gap_up"] and not event["filled"] and event["volume_ratio"] >= 1.15:
+                score += 30
+            elif event["gap_up"] and event["filled"]:
+                score -= 20
+            elif (not event["gap_up"]) and not event["filled"]:
+                score -= 28
+            else:
+                score += 5
+
+        confidence = 0.35 if not recent_events else self._clamp(0.35 + (abs(score) / 100), 0.35, 1)
+        score = self._clamp(score, -100, 100)
+        direction = self._direction_from_score(score)
+        warnings = ["FAILED_BREAKOUT"] if score <= -20 else []
+
+        return TimingSignalEngineResult(
+            key="gapVolumeQuality",
+            label="缺口与放量质量",
+            direction=direction,
+            score=self._round_float(score),
+            confidence=self._round_probability(confidence),
+            weight=ENGINE_WEIGHTS["gapVolumeQuality"],
+            detail="跟踪近期跳空后的回补与放量质量，识别有效缺口还是情绪脉冲。",
+            metrics={
+                "recentGapCount": len(recent_events),
+                "latestVolumeRatio20": self._round_float(volume_ratio.iloc[-1]),
+            },
+            warnings=warnings,
+        )
+
+    def _percentile_rank(self, series: pd.Series, value: float) -> float:
+        cleaned = pd.to_numeric(series, errors="coerce").dropna()
+        if cleaned.empty:
+            return 50.0
+
+        rank = float((cleaned <= value).sum()) / float(len(cleaned))
+        return self._round_float(rank * 100)
+
+    def _direction_from_score(self, score: float) -> str:
+        if score > 20:
+            return "bullish"
+        if score < -20:
+            return "bearish"
+        return "neutral"
 
     def _clamp_close_position(self, value: float) -> float:
         return round(max(0.0, min(1.0, float(value))), 4)
 
+    def _clamp(self, value: float, min_value: float, max_value: float) -> float:
+        return max(min_value, min(max_value, float(value)))
+
     def _round_float(self, value: float) -> float:
+        if pd.isna(value):
+            return 0.0
         return round(float(value), 4)
+
+    def _round_probability(self, value: float) -> float:
+        return round(self._clamp(value, 0.0, 1.0), 4)
 
 
 timing_indicators_service = TimingIndicatorsService()

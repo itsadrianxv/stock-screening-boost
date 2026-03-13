@@ -1,4 +1,4 @@
-"""Tests for timing v1 bars and signal endpoints."""
+"""Tests for timing v1 bars, signal context, and market context endpoints."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ client = TestClient(app)
 
 
 def _sample_history() -> pd.DataFrame:
-    dates = pd.date_range("2026-01-02", periods=80, freq="B")
+    dates = pd.date_range("2025-01-02", periods=280, freq="B")
     records: list[dict[str, object]] = []
 
     for index, value in enumerate(dates):
-        base_close = 10 + index * 0.08
+        base_close = 10 + index * 0.05
         records.append(
             {
                 "日期": value.strftime("%Y-%m-%d"),
@@ -26,9 +26,9 @@ def _sample_history() -> pd.DataFrame:
                 "收盘": base_close,
                 "最高": base_close + 0.12,
                 "最低": base_close - 0.15,
-                "成交量": 1_000_000 + (index * 10_000),
-                "成交额": (1_000_000 + (index * 10_000)) * base_close,
-                "换手率": 1.2,
+                "成交量": 1_000_000 + (index * 8_000),
+                "成交额": (1_000_000 + (index * 8_000)) * base_close,
+                "换手率": 1.2 + (index % 5) * 0.1,
             }
         )
 
@@ -53,7 +53,7 @@ def test_get_timing_bars_success() -> None:
     assert payload["data"]["stockCode"] == "600519"
     assert payload["data"]["stockName"] == "贵州茅台"
     assert payload["data"]["timeframe"] == "DAILY"
-    assert len(payload["data"]["bars"]) == 80
+    assert len(payload["data"]["bars"]) == 280
 
 
 def test_get_timing_signal_success() -> None:
@@ -72,13 +72,14 @@ def test_get_timing_signal_success() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["data"]["stockCode"] == "600519"
-    assert payload["data"]["barsCount"] == 80
+    assert payload["data"]["barsCount"] == 280
     assert payload["data"]["indicators"]["ema20"] > 0
-    assert payload["data"]["ruleSummary"]["direction"] in {
+    assert payload["data"]["signalContext"]["composite"]["direction"] in {
         "bullish",
         "neutral",
         "bearish",
     }
+    assert len(payload["data"]["signalContext"]["engines"]) == 6
 
 
 def test_get_timing_signal_batch_reports_partial_errors() -> None:
@@ -124,7 +125,7 @@ def test_get_timing_bars_rejects_invalid_timeframe() -> None:
     assert response.json()["error"]["code"] == "invalid_timeframe"
 
 
-def test_get_market_regime_snapshot_success() -> None:
+def test_get_market_context_success() -> None:
     with (
         patch(
             "app.providers.akshare.client.AkShareProviderClient.get_stock_universe",
@@ -158,10 +159,11 @@ def test_get_market_regime_snapshot_success() -> None:
             return_value=_sample_history(),
         ),
     ):
-        response = client.get("/api/v1/timing/market/regime-snapshot")
+        response = client.get("/api/v1/timing/market/context")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["data"]["breadth"]["totalCount"] == 3
-    assert len(payload["data"]["indexes"]) == 3
+    assert payload["data"]["latestBreadth"]["totalCount"] == 3
+    assert len(payload["data"]["indexes"]) == 4
     assert payload["data"]["features"]["benchmarkStrength"] >= 0
+    assert "latestLeadership" in payload["data"]

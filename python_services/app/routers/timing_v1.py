@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 
 from app.contracts.timing import (
+    MarketContextSnapshotResponse,
     TimingBarsResponse,
-    TimingMarketRegimeSnapshotResponse,
     TimingSignalBatchRequest,
     TimingSignalBatchResponse,
     TimingSignalResponse,
@@ -76,7 +76,7 @@ async def get_stock_signal(
     lookback_days: int | None = Query(
         default=None,
         alias="lookbackDays",
-        ge=60,
+        ge=120,
         le=365,
     ),
 ):
@@ -119,14 +119,14 @@ async def get_stock_signal_batch(
 
 
 @router.get(
-    "/market/regime-snapshot",
-    response_model=TimingMarketRegimeSnapshotResponse,
+    "/market/context",
+    response_model=MarketContextSnapshotResponse,
 )
-async def get_market_regime_snapshot(
+async def get_market_context(
     request: Request,
     as_of_date: str | None = Query(default=None, alias="asOfDate"),
 ):
-    return timing_gateway.get_market_regime_snapshot(
+    return timing_gateway.get_market_context(
         request_id=request.state.request_id,
         as_of_date=as_of_date,
     )

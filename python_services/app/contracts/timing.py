@@ -1,11 +1,31 @@
-"""Standardized timing contracts for daily bars and technical signals."""
+"""Standardized timing contracts for daily bars, signal context, and market context."""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.contracts.common import BatchItemError
 from app.contracts.meta import GatewayResponse
+
+TimingDirection = Literal["bullish", "neutral", "bearish"]
+SignalEngineKey = Literal[
+    "multiTimeframeAlignment",
+    "relativeStrength",
+    "volatilityPercentile",
+    "liquidityStructure",
+    "breakoutFailure",
+    "gapVolumeQuality",
+]
+TimingMarketState = Literal["RISK_ON", "NEUTRAL", "RISK_OFF"]
+TimingMarketTransition = Literal[
+    "IMPROVING",
+    "STABLE",
+    "DETERIORATING",
+    "PIVOT_UP",
+    "PIVOT_DOWN",
+]
 
 
 class TimingBar(BaseModel):
@@ -55,16 +75,41 @@ class TimingIndicators(BaseModel):
     rsi: TimingRsi
     bollinger: TimingBollinger
     obv: TimingObv
+    ema5: float
     ema20: float
     ema60: float
+    ema120: float
     atr14: float
     volumeRatio20: float
+    realizedVol20: float
+    realizedVol120: float
+    amount: float | None = None
+    turnoverRate: float | None = None
 
 
-class TimingRuleSummary(BaseModel):
-    direction: str
-    signalStrength: float = Field(..., ge=0, le=100)
+class TimingSignalEngineResult(BaseModel):
+    key: SignalEngineKey
+    label: str
+    direction: TimingDirection
+    score: float = Field(..., ge=-100, le=100)
+    confidence: float = Field(..., ge=0, le=1)
+    weight: float = Field(..., ge=0, le=1)
+    detail: str
+    metrics: dict[str, str | float | bool | None] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+
+
+class TimingSignalComposite(BaseModel):
+    score: float = Field(..., ge=-100, le=100)
+    confidence: float = Field(..., ge=0, le=1)
+    direction: TimingDirection
+    signalStrength: float = Field(..., ge=0, le=100)
+    participatingEngines: int = Field(..., ge=0)
+
+
+class TimingSignalContext(BaseModel):
+    engines: list[TimingSignalEngineResult] = Field(default_factory=list)
+    composite: TimingSignalComposite
 
 
 class TimingSignalData(BaseModel):
@@ -73,7 +118,7 @@ class TimingSignalData(BaseModel):
     asOfDate: str
     barsCount: int = Field(..., ge=1)
     indicators: TimingIndicators
-    ruleSummary: TimingRuleSummary
+    signalContext: TimingSignalContext
 
 
 class TimingSignalBatchData(BaseModel):
@@ -84,51 +129,72 @@ class TimingSignalBatchData(BaseModel):
 class TimingSignalBatchRequest(BaseModel):
     stockCodes: list[str] = Field(..., min_length=1, max_length=100)
     asOfDate: str | None = None
-    lookbackDays: int | None = Field(default=None, ge=60, le=365)
+    lookbackDays: int | None = Field(default=None, ge=120, le=365)
 
 
-class TimingMarketIndexSnapshot(BaseModel):
+class MarketIndexSnapshot(BaseModel):
     code: str
     name: str
     close: float
     changePct: float
+    return5d: float
+    return10d: float
     ema20: float
     ema60: float
     aboveEma20: bool
     aboveEma60: bool
     atrRatio: float
+    signalDirection: TimingDirection
 
 
-class TimingMarketBreadthSnapshot(BaseModel):
+class MarketBreadthPoint(BaseModel):
+    asOfDate: str
     totalCount: int = Field(..., ge=0)
     advancingCount: int = Field(..., ge=0)
     decliningCount: int = Field(..., ge=0)
     flatCount: int = Field(..., ge=0)
     positiveRatio: float = Field(..., ge=0, le=1)
+    aboveThreePctRatio: float = Field(..., ge=0, le=1)
+    belowThreePctRatio: float = Field(..., ge=0, le=1)
     medianChangePct: float
-    aboveThreePctCount: int = Field(..., ge=0)
-    belowThreePctCount: int = Field(..., ge=0)
     averageTurnoverRate: float | None = None
 
 
-class TimingMarketVolatilitySnapshot(BaseModel):
+class MarketVolatilityPoint(BaseModel):
+    asOfDate: str
     highVolatilityCount: int = Field(..., ge=0)
     highVolatilityRatio: float = Field(..., ge=0, le=1)
     limitDownLikeCount: int = Field(..., ge=0)
+    indexAtrRatio: float = Field(..., ge=0)
 
 
-class TimingMarketFeatureSnapshot(BaseModel):
+class MarketLeadershipPoint(BaseModel):
+    asOfDate: str
+    leaderCode: str
+    leaderName: str
+    ranking5d: list[str] = Field(default_factory=list)
+    ranking10d: list[str] = Field(default_factory=list)
+    switched: bool
+    previousLeaderCode: str | None = None
+
+
+class MarketContextFeatureSnapshot(BaseModel):
     benchmarkStrength: float = Field(..., ge=0, le=100)
     breadthScore: float = Field(..., ge=0, le=100)
     riskScore: float = Field(..., ge=0, le=100)
+    stateScore: float = Field(..., ge=0, le=100)
 
 
-class TimingMarketRegimeSnapshotData(BaseModel):
+class MarketContextSnapshotData(BaseModel):
     asOfDate: str
-    indexes: list[TimingMarketIndexSnapshot] = Field(default_factory=list)
-    breadth: TimingMarketBreadthSnapshot
-    volatility: TimingMarketVolatilitySnapshot
-    features: TimingMarketFeatureSnapshot
+    indexes: list[MarketIndexSnapshot] = Field(default_factory=list)
+    latestBreadth: MarketBreadthPoint
+    latestVolatility: MarketVolatilityPoint
+    latestLeadership: MarketLeadershipPoint
+    breadthSeries: list[MarketBreadthPoint] = Field(default_factory=list)
+    volatilitySeries: list[MarketVolatilityPoint] = Field(default_factory=list)
+    leadershipSeries: list[MarketLeadershipPoint] = Field(default_factory=list)
+    features: MarketContextFeatureSnapshot
 
 
 class TimingBarsResponse(GatewayResponse[TimingBarsData]):
@@ -143,7 +209,5 @@ class TimingSignalBatchResponse(GatewayResponse[TimingSignalBatchData]):
     pass
 
 
-class TimingMarketRegimeSnapshotResponse(
-    GatewayResponse[TimingMarketRegimeSnapshotData]
-):
+class MarketContextSnapshotResponse(GatewayResponse[MarketContextSnapshotData]):
     pass

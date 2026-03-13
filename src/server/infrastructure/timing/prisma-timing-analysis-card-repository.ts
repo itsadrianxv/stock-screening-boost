@@ -23,7 +23,7 @@ function mapSignalSnapshot(record: {
   timeframe: string;
   barsCount: number;
   indicators: unknown;
-  signalSummary: unknown;
+  signalContext: unknown;
   createdAt: Date;
 }): TimingSignalSnapshotRecord {
   return {
@@ -38,8 +38,8 @@ function mapSignalSnapshot(record: {
     timeframe: record.timeframe as "DAILY",
     barsCount: record.barsCount,
     indicators: record.indicators as TimingSignalSnapshotRecord["indicators"],
-    signalSummary:
-      record.signalSummary as TimingSignalSnapshotRecord["signalSummary"],
+    signalContext:
+      record.signalContext as TimingSignalSnapshotRecord["signalContext"],
     createdAt: record.createdAt,
   };
 }
@@ -57,7 +57,8 @@ function mapCard(record: {
   signalSnapshotId: string;
   actionBias: string;
   confidence: number;
-  marketRegime: string | null;
+  marketState: string | null;
+  marketTransition: string | null;
   summary: string;
   triggerNotes: string[];
   invalidationNotes: string[];
@@ -77,7 +78,7 @@ function mapCard(record: {
     timeframe: string;
     barsCount: number;
     indicators: unknown;
-    signalSummary: unknown;
+    signalContext: unknown;
     createdAt: Date;
   } | null;
 }): TimingAnalysisCardRecord {
@@ -94,7 +95,10 @@ function mapCard(record: {
     signalSnapshotId: record.signalSnapshotId,
     actionBias: record.actionBias as TimingAnalysisCardRecord["actionBias"],
     confidence: record.confidence,
-    marketRegime: record.marketRegime,
+    asOfDate: record.signalSnapshot?.asOfDate.toISOString().slice(0, 10),
+    marketState: record.marketState as TimingAnalysisCardRecord["marketState"],
+    marketTransition:
+      record.marketTransition as TimingAnalysisCardRecord["marketTransition"],
     summary: record.summary,
     triggerNotes: record.triggerNotes,
     invalidationNotes: record.invalidationNotes,
@@ -129,7 +133,8 @@ export class PrismaTimingAnalysisCardRepository {
             signalSnapshotId: item.signalSnapshotId,
             actionBias: item.actionBias,
             confidence: item.confidence,
-            marketRegime: item.marketRegime,
+            marketState: item.marketState,
+            marketTransition: item.marketTransition,
             summary: item.summary,
             triggerNotes: item.triggerNotes,
             invalidationNotes: item.invalidationNotes,
@@ -180,6 +185,25 @@ export class PrismaTimingAnalysisCardRepository {
       take: params.limit,
       orderBy: {
         createdAt: "desc",
+      },
+    });
+
+    return records.map((record) => mapCard(record));
+  }
+
+  async getByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    const records = await this.prisma.timingAnalysisCard.findMany({
+      where: {
+        id: {
+          in: ids,
+        },
+      },
+      include: {
+        signalSnapshot: true,
       },
     });
 

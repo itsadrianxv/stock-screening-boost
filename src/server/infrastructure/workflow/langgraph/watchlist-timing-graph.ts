@@ -1,6 +1,7 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
 import type { MarketRegimeService } from "~/server/application/timing/market-regime-service";
 import type { TimingAnalysisService } from "~/server/application/timing/timing-analysis-service";
+import type { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
 import type { TimingReviewSchedulingService } from "~/server/application/timing/timing-review-scheduling-service";
 import type { WatchlistPortfolioManagerService } from "~/server/application/timing/watchlist-portfolio-manager-service";
 import type { WatchlistRiskManagerService } from "~/server/application/timing/watchlist-risk-manager-service";
@@ -18,6 +19,7 @@ import {
 } from "~/server/domain/workflow/types";
 import type { PrismaWatchListRepository } from "~/server/infrastructure/screening/prisma-watch-list-repository";
 import type { PrismaPortfolioSnapshotRepository } from "~/server/infrastructure/timing/prisma-portfolio-snapshot-repository";
+import type { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-market-context-snapshot-repository";
 import type { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
 import type { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
 import type { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
@@ -51,13 +53,19 @@ const WorkflowState = Annotation.Root({
     WatchlistTimingPipelineGraphState["technicalAssessments"]
   >,
   cards: Annotation<WatchlistTimingPipelineGraphState["cards"]>,
-  marketRegimeSnapshot: Annotation<
-    WatchlistTimingPipelineGraphState["marketRegimeSnapshot"]
+  marketContextSnapshot: Annotation<
+    WatchlistTimingPipelineGraphState["marketContextSnapshot"]
   >,
-  marketRegimeAnalysis: Annotation<
-    WatchlistTimingPipelineGraphState["marketRegimeAnalysis"]
+  marketContextAnalysis: Annotation<
+    WatchlistTimingPipelineGraphState["marketContextAnalysis"]
   >,
   riskPlan: Annotation<WatchlistTimingPipelineGraphState["riskPlan"]>,
+  feedbackContext: Annotation<
+    WatchlistTimingPipelineGraphState["feedbackContext"]
+  >,
+  feedbackSuggestions: Annotation<
+    WatchlistTimingPipelineGraphState["feedbackSuggestions"]
+  >,
   recommendations: Annotation<
     WatchlistTimingPipelineGraphState["recommendations"]
   >,
@@ -91,7 +99,9 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
     timingDataClient: PythonTimingDataClient;
     analysisService: TimingAnalysisService;
     presetRepository: PrismaTimingPresetRepository;
+    marketContextSnapshotRepository: PrismaTimingMarketContextSnapshotRepository;
     marketRegimeService: MarketRegimeService;
+    feedbackService: TimingFeedbackService;
     riskManagerService: WatchlistRiskManagerService;
     portfolioManagerService: WatchlistPortfolioManagerService;
     recommendationRepository: PrismaTimingRecommendationRepository;
@@ -182,27 +192,61 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
           }),
         }),
         market_regime_agent: async (state) => {
-          const marketRegimeSnapshot =
-            await deps.timingDataClient.getMarketRegimeSnapshot({
+          if (state.timingInput.asOfDate) {
+            const existing =
+              await deps.marketContextSnapshotRepository.getByAsOfDate(
+                state.timingInput.asOfDate,
+              );
+            if (existing) {
+              return {
+                marketContextSnapshot: existing.snapshot,
+                marketContextAnalysis: existing.analysis,
+              };
+            }
+          } else {
+            const latest =
+              await deps.marketContextSnapshotRepository.getLatest();
+            if (latest) {
+              return {
+                marketContextSnapshot: latest.snapshot,
+                marketContextAnalysis: latest.analysis,
+              };
+            }
+          }
+
+          const marketContextSnapshot =
+            await deps.timingDataClient.getMarketContext({
               asOfDate: state.timingInput.asOfDate,
             });
+          const history =
+            await deps.marketContextSnapshotRepository.listRecent(20);
+          const marketContextAnalysis = deps.marketRegimeService.analyze(
+            marketContextSnapshot,
+            history.filter(
+              (item) => item.asOfDate !== marketContextSnapshot.asOfDate,
+            ),
+          );
+          await deps.marketContextSnapshotRepository.upsert({
+            asOfDate: marketContextSnapshot.asOfDate,
+            snapshot: marketContextSnapshot,
+            analysis: marketContextAnalysis,
+          });
 
           return {
-            marketRegimeSnapshot,
-            marketRegimeAnalysis:
-              deps.marketRegimeService.analyze(marketRegimeSnapshot),
+            marketContextSnapshot,
+            marketContextAnalysis,
           };
         },
         watchlist_risk_manager: async (state) => {
-          if (!state.portfolioSnapshot || !state.marketRegimeAnalysis) {
-            throw new Error("Portfolio snapshot or market regime missing");
+          if (!state.portfolioSnapshot || !state.marketContextAnalysis) {
+            throw new Error("Portfolio snapshot or market context missing");
           }
 
           return {
             riskPlan: deps.riskManagerService.buildRiskPlan({
               portfolioSnapshot: state.portfolioSnapshot,
               timingCards: state.cards,
-              marketRegimeAnalysis: state.marketRegimeAnalysis,
+              marketContextAnalysis: state.marketContextAnalysis,
             }),
           };
         },
@@ -210,13 +254,19 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
           if (
             !state.watchlist ||
             !state.portfolioSnapshot ||
-            !state.marketRegimeAnalysis ||
+            !state.marketContextAnalysis ||
             !state.riskPlan
           ) {
             throw new Error("Recommendation inputs are incomplete");
           }
 
+          const feedbackContext = await deps.feedbackService.buildContext({
+            userId: state.userId,
+            presetId: state.preset?.id,
+          });
+
           return {
+            feedbackContext,
             recommendations: deps.portfolioManagerService
               .buildRecommendations({
                 userId: state.userId,
@@ -225,7 +275,9 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
                 portfolioSnapshot: state.portfolioSnapshot,
                 timingCards: state.cards,
                 riskPlan: state.riskPlan,
-                marketRegimeAnalysis: state.marketRegimeAnalysis,
+                marketContextAnalysis: state.marketContextAnalysis,
+                presetConfig: state.presetConfig,
+                feedbackContext,
               })
               .map((recommendation) => ({
                 ...recommendation,
@@ -298,9 +350,11 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
       signalSnapshots: [],
       technicalAssessments: [],
       cards: [],
-      marketRegimeSnapshot: undefined,
-      marketRegimeAnalysis: undefined,
+      marketContextSnapshot: undefined,
+      marketContextAnalysis: undefined,
       riskPlan: undefined,
+      feedbackContext: undefined,
+      feedbackSuggestions: [],
       recommendations: [],
       persistedRecommendations: [],
       reviewRecords: [],
@@ -331,13 +385,16 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
         return { cards: timingState.cards };
       case "market_regime_agent":
         return {
-          marketRegimeSnapshot: timingState.marketRegimeSnapshot,
-          marketRegimeAnalysis: timingState.marketRegimeAnalysis,
+          marketContextSnapshot: timingState.marketContextSnapshot,
+          marketContextAnalysis: timingState.marketContextAnalysis,
         };
       case "watchlist_risk_manager":
         return { riskPlan: timingState.riskPlan };
       case "watchlist_portfolio_manager":
-        return { recommendations: timingState.recommendations };
+        return {
+          feedbackContext: timingState.feedbackContext,
+          recommendations: timingState.recommendations,
+        };
       default:
         return {
           persistedRecommendations: timingState.persistedRecommendations,
@@ -395,7 +452,8 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
       ),
       recommendationCount: timingState.persistedRecommendations.length,
       partialErrors: timingState.batchErrors,
-      marketRegime: timingState.marketRegimeAnalysis?.marketRegime,
+      marketState: timingState.marketContextAnalysis?.state,
+      marketTransition: timingState.marketContextAnalysis?.transition,
       riskPlan: timingState.riskPlan,
       reviewRecordIds: timingState.reviewRecords.map((record) => record.id),
       reminderIds: timingState.scheduledReminderIds,

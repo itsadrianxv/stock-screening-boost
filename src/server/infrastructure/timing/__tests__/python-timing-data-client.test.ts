@@ -14,6 +14,47 @@ async function loadClient() {
   return module.PythonTimingDataClient;
 }
 
+function sampleSignalPayload() {
+  return {
+    stockCode: "600519",
+    stockName: "贵州茅台",
+    asOfDate: "2026-03-06",
+    barsCount: 240,
+    indicators: {
+      close: 1500,
+      macd: { dif: 1, dea: 0.8, histogram: 0.4 },
+      rsi: { value: 61 },
+      bollinger: {
+        upper: 1520,
+        middle: 1490,
+        lower: 1460,
+        closePosition: 0.68,
+      },
+      obv: { value: 1000, slope: 15 },
+      ema5: 1492,
+      ema20: 1480,
+      ema60: 1420,
+      ema120: 1360,
+      atr14: 32,
+      volumeRatio20: 1.24,
+      realizedVol20: 0.28,
+      realizedVol120: 0.24,
+      amount: 1000000000,
+      turnoverRate: 2.2,
+    },
+    signalContext: {
+      engines: [],
+      composite: {
+        score: 76,
+        confidence: 0.82,
+        direction: "bullish",
+        signalStrength: 76,
+        participatingEngines: 6,
+      },
+    },
+  };
+}
+
 describe("PythonTimingDataClient", () => {
   it("unwraps gateway response payloads", async () => {
     vi.stubGlobal(
@@ -21,33 +62,7 @@ describe("PythonTimingDataClient", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          data: {
-            stockCode: "600519",
-            stockName: "贵州茅台",
-            asOfDate: "2026-03-06",
-            barsCount: 120,
-            indicators: {
-              close: 1500,
-              macd: { dif: 1, dea: 0.8, histogram: 0.4 },
-              rsi: { value: 61 },
-              bollinger: {
-                upper: 1520,
-                middle: 1490,
-                lower: 1460,
-                closePosition: 0.68,
-              },
-              obv: { value: 1000, slope: 15 },
-              ema20: 1480,
-              ema60: 1420,
-              atr14: 32,
-              volumeRatio20: 1.24,
-            },
-            ruleSummary: {
-              direction: "bullish",
-              signalStrength: 76,
-              warnings: [],
-            },
-          },
+          data: sampleSignalPayload(),
         }),
       }),
     );
@@ -61,40 +76,14 @@ describe("PythonTimingDataClient", () => {
     const payload = await client.getSignal({ stockCode: "600519" });
 
     expect(payload.stockCode).toBe("600519");
-    expect(payload.ruleSummary.direction).toBe("bullish");
+    expect(payload.signalContext.composite.direction).toBe("bullish");
   });
 
   it("supports base URLs that already include /api", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: {
-          stockCode: "600519",
-          stockName: "贵州茅台",
-          asOfDate: "2026-03-06",
-          barsCount: 120,
-          indicators: {
-            close: 1500,
-            macd: { dif: 1, dea: 0.8, histogram: 0.4 },
-            rsi: { value: 61 },
-            bollinger: {
-              upper: 1520,
-              middle: 1490,
-              lower: 1460,
-              closePosition: 0.68,
-            },
-            obv: { value: 1000, slope: 15 },
-            ema20: 1480,
-            ema60: 1420,
-            atr14: 32,
-            volumeRatio20: 1.24,
-          },
-          ruleSummary: {
-            direction: "bullish",
-            signalStrength: 76,
-            warnings: [],
-          },
-        },
+        data: sampleSignalPayload(),
       }),
     });
 
@@ -141,7 +130,7 @@ describe("PythonTimingDataClient", () => {
     ).rejects.toBeInstanceOf(WorkflowDomainError);
   });
 
-  it("unwraps market regime snapshot payloads", async () => {
+  it("unwraps market context payloads", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -155,33 +144,52 @@ describe("PythonTimingDataClient", () => {
                 name: "CSI 300 ETF",
                 close: 4.1,
                 changePct: 0.8,
+                return5d: 2.6,
+                return10d: 4.1,
                 ema20: 4,
                 ema60: 3.8,
                 aboveEma20: true,
                 aboveEma60: true,
                 atrRatio: 0.021,
+                signalDirection: "bullish",
               },
             ],
-            breadth: {
+            latestBreadth: {
+              asOfDate: "2026-03-06",
               totalCount: 10,
               advancingCount: 6,
               decliningCount: 3,
               flatCount: 1,
               positiveRatio: 0.6,
+              aboveThreePctRatio: 0.2,
+              belowThreePctRatio: 0.1,
               medianChangePct: 0.8,
-              aboveThreePctCount: 2,
-              belowThreePctCount: 1,
               averageTurnoverRate: 1.2,
             },
-            volatility: {
+            latestVolatility: {
+              asOfDate: "2026-03-06",
               highVolatilityCount: 1,
               highVolatilityRatio: 0.1,
               limitDownLikeCount: 0,
+              indexAtrRatio: 0.02,
             },
+            latestLeadership: {
+              asOfDate: "2026-03-06",
+              leaderCode: "510300",
+              leaderName: "CSI 300 ETF",
+              ranking5d: ["510300"],
+              ranking10d: ["510300"],
+              switched: false,
+              previousLeaderCode: "510300",
+            },
+            breadthSeries: [],
+            volatilitySeries: [],
+            leadershipSeries: [],
             features: {
               benchmarkStrength: 72,
               breadthScore: 64,
               riskScore: 28,
+              stateScore: 68,
             },
           },
         }),
@@ -194,7 +202,7 @@ describe("PythonTimingDataClient", () => {
       timeoutMs: 500,
     });
 
-    const payload = await client.getMarketRegimeSnapshot();
+    const payload = await client.getMarketContext();
 
     expect(payload.asOfDate).toBe("2026-03-06");
     expect(payload.indexes).toHaveLength(1);

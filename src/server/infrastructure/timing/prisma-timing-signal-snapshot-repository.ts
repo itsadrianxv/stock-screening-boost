@@ -1,6 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
-  TimingRuleSummary,
   TimingSignalData,
   TimingSignalSnapshotRecord,
   TimingSourceType,
@@ -25,7 +24,7 @@ function mapRecord(record: {
   timeframe: string;
   barsCount: number;
   indicators: unknown;
-  signalSummary: unknown;
+  signalContext: unknown;
   createdAt: Date;
 }): TimingSignalSnapshotRecord {
   return {
@@ -40,7 +39,7 @@ function mapRecord(record: {
     timeframe: record.timeframe as "DAILY",
     barsCount: record.barsCount,
     indicators: record.indicators as TimingSignalData["indicators"],
-    signalSummary: record.signalSummary as TimingRuleSummary,
+    signalContext: record.signalContext as TimingSignalData["signalContext"],
     createdAt: record.createdAt,
   };
 }
@@ -69,7 +68,7 @@ export class PrismaTimingSignalSnapshotRepository {
             timeframe: "DAILY",
             barsCount: item.barsCount,
             indicators: toJson(item.indicators),
-            signalSummary: toJson(item.ruleSummary),
+            signalContext: toJson(item.signalContext),
           },
         }),
       ),

@@ -24,7 +24,8 @@ function mapRecord(record: {
   suggestedMinPct: number;
   suggestedMaxPct: number;
   riskBudgetPct: number;
-  marketRegime: string;
+  marketState: string;
+  marketTransition: string;
   riskFlags: string[];
   reasoning: unknown;
   createdAt: Date;
@@ -45,8 +46,10 @@ function mapRecord(record: {
     suggestedMinPct: record.suggestedMinPct,
     suggestedMaxPct: record.suggestedMaxPct,
     riskBudgetPct: record.riskBudgetPct,
-    marketRegime:
-      record.marketRegime as TimingRecommendationRecord["marketRegime"],
+    marketState:
+      record.marketState as TimingRecommendationRecord["marketState"],
+    marketTransition:
+      record.marketTransition as TimingRecommendationRecord["marketTransition"],
     riskFlags: record.riskFlags as TimingRiskFlag[],
     reasoning: record.reasoning as TimingRecommendationReasoning,
     createdAt: record.createdAt,
@@ -75,7 +78,8 @@ export class PrismaTimingRecommendationRepository {
             suggestedMinPct: item.suggestedMinPct,
             suggestedMaxPct: item.suggestedMaxPct,
             riskBudgetPct: item.riskBudgetPct,
-            marketRegime: item.marketRegime,
+            marketState: item.marketState,
+            marketTransition: item.marketTransition,
             riskFlags: item.riskFlags,
             reasoning: toJson(item.reasoning),
           },
@@ -102,6 +106,22 @@ export class PrismaTimingRecommendationRepository {
       },
       take: params.limit,
       orderBy: [{ createdAt: "desc" }, { priority: "asc" }],
+    });
+
+    return records.map((record) => mapRecord(record));
+  }
+
+  async getByIds(ids: string[]) {
+    if (!ids.length) {
+      return [];
+    }
+
+    const records = await this.prisma.timingRecommendation.findMany({
+      where: {
+        id: {
+          in: ids,
+        },
+      },
     });
 
     return records.map((record) => mapRecord(record));

@@ -42,6 +42,10 @@ type PortfolioPositionInput = {
   currentWeightPct: number;
   sector?: string;
   themes?: string[];
+  openedAt?: string;
+  lastAddedAt?: string;
+  invalidationPrice?: number;
+  plannedHoldingDays?: number;
 };
 
 const actionToneMap: Record<
@@ -103,17 +107,33 @@ const reviewVerdictToneMap: Record<
 
 const defaultPresetConfigJson = JSON.stringify(
   {
-    factorWeights: {
-      trend: 1,
-      macd: 1,
-      rsi: 1,
-      bollinger: 1,
-      volume: 1,
-      obv: 1,
-      volatility: 1,
+    contextWeights: {
+      signalContext: 1,
+      marketContext: 0.9,
+      positionContext: 0.8,
+      feedbackContext: 0.6,
     },
-    agentWeights: {
-      technicalSignal: 1,
+    signalEngineWeights: {
+      multiTimeframeAlignment: 0.24,
+      relativeStrength: 0.2,
+      volatilityPercentile: 0.14,
+      liquidityStructure: 0.14,
+      breakoutFailure: 0.14,
+      gapVolumeQuality: 0.14,
+    },
+    positionWeights: {
+      invalidationRiskPenalty: 12,
+      matureGainTrimBoost: 10,
+      lossNearInvalidationPenalty: 14,
+      earlyEntryBonus: 4,
+    },
+    feedbackPolicy: {
+      lookbackDays: 180,
+      minimumSamples: 12,
+      weightStep: 0.15,
+      actionThresholdStep: 3,
+      successRateDeltaThreshold: 8,
+      averageReturnDeltaThreshold: 2,
     },
     confidenceThresholds: {
       signalStrengthWeight: 0.55,
@@ -540,14 +560,14 @@ export function TimingClient() {
                   <StatusPill
                     label={
                       marketRegimeLabelMap[
-                        latestRecommendations[0]?.marketRegime ?? "NEUTRAL"
+                        latestRecommendations[0]?.marketState ?? "NEUTRAL"
                       ] ??
-                      latestRecommendations[0]?.marketRegime ??
+                      latestRecommendations[0]?.marketState ??
                       "NEUTRAL"
                     }
                     tone={
                       marketRegimeToneMap[
-                        latestRecommendations[0]?.marketRegime ?? "NEUTRAL"
+                        latestRecommendations[0]?.marketState ?? "NEUTRAL"
                       ]
                     }
                   />
@@ -561,7 +581,7 @@ export function TimingClient() {
                   />
                 </div>
                 <p className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
-                  {recommendationContext.marketRegimeSummary}
+                  {recommendationContext.marketContext.summary}
                 </p>
               </article>
             ) : (
@@ -996,14 +1016,14 @@ export function TimingClient() {
                   <StatusPill
                     label={
                       marketRegimeLabelMap[
-                        latestRecommendations[0]?.marketRegime ?? "NEUTRAL"
+                        latestRecommendations[0]?.marketState ?? "NEUTRAL"
                       ] ??
-                      latestRecommendations[0]?.marketRegime ??
+                      latestRecommendations[0]?.marketState ??
                       "NEUTRAL"
                     }
                     tone={
                       marketRegimeToneMap[
-                        latestRecommendations[0]?.marketRegime ?? "NEUTRAL"
+                        latestRecommendations[0]?.marketState ?? "NEUTRAL"
                       ]
                     }
                   />
@@ -1017,7 +1037,7 @@ export function TimingClient() {
                   />
                 </div>
                 <p className="text-sm leading-6 text-[var(--app-text-muted)]">
-                  {recommendationContext.marketRegimeSummary}
+                  {recommendationContext.marketContext.summary}
                 </p>
               </div>
             ) : (
@@ -1134,7 +1154,7 @@ export function TimingClient() {
                       市场状态约束
                     </p>
                     <ul className="mt-2 grid gap-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {recommendation.reasoning.regimeConstraints.map(
+                      {recommendation.reasoning.marketContext.constraints.map(
                         (item) => (
                           <li key={item}>- {item}</li>
                         ),
@@ -1146,10 +1166,12 @@ export function TimingClient() {
                       触发与失效
                     </p>
                     <ul className="mt-2 grid gap-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {recommendation.reasoning.triggerNotes.map((item) => (
-                        <li key={item}>- {item}</li>
-                      ))}
-                      {recommendation.reasoning.invalidationNotes.map(
+                      {recommendation.reasoning.signalContext.triggerNotes.map(
+                        (item) => (
+                          <li key={item}>- {item}</li>
+                        ),
+                      )}
+                      {recommendation.reasoning.signalContext.invalidationNotes.map(
                         (item) => (
                           <li key={item}>× {item}</li>
                         ),

@@ -1,7 +1,11 @@
 import type {
-  MarketRegimeAnalysis,
-  MarketRegimeSnapshot,
-  TimingMarketRegime,
+  MarketContextAnalysis,
+  MarketContextSnapshot,
+  MarketContextSnapshotRecord,
+  TimingMarketBreadthTrend,
+  TimingMarketState,
+  TimingMarketTransition,
+  TimingMarketVolatilityTrend,
 } from "~/server/domain/timing/types";
 
 function clamp(value: number, min: number, max: number) {
@@ -12,15 +16,71 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function average(values: number[]) {
+  return values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : 0;
+}
+
+function getBreadthTrend(
+  snapshot: MarketContextSnapshot,
+): TimingMarketBreadthTrend {
+  const ratios = snapshot.breadthSeries
+    .slice(-4)
+    .map((item) => item.positiveRatio);
+  if (ratios.length < 2) {
+    return "STALLING";
+  }
+
+  const latestRatio = ratios.at(-1) ?? 0;
+  const firstRatio = ratios[0] ?? 0;
+  const delta = latestRatio - firstRatio;
+  if (delta >= 0.08) {
+    return "EXPANDING";
+  }
+  if (delta <= -0.08) {
+    return "CONTRACTING";
+  }
+  return "STALLING";
+}
+
+function getVolatilityTrend(
+  snapshot: MarketContextSnapshot,
+): TimingMarketVolatilityTrend {
+  const values = snapshot.volatilitySeries
+    .slice(-4)
+    .map((item) => item.highVolatilityRatio);
+  if (values.length < 2) {
+    return "STABLE";
+  }
+
+  const latestValue = values.at(-1) ?? 0;
+  const firstValue = values[0] ?? 0;
+  const delta = latestValue - firstValue;
+  if (delta >= 0.05) {
+    return "RISING";
+  }
+  if (delta <= -0.05) {
+    return "FALLING";
+  }
+  return "STABLE";
+}
+
 export class MarketRegimeService {
-  analyze(snapshot: MarketRegimeSnapshot): MarketRegimeAnalysis {
+  analyze(
+    snapshot: MarketContextSnapshot,
+    history: MarketContextSnapshotRecord[] = [],
+  ): MarketContextAnalysis {
     const indexesAboveTrend = snapshot.indexes.filter(
       (item) => item.aboveEma20 && item.aboveEma60,
     ).length;
-    const breadthPositive = snapshot.breadth.positiveRatio;
-    const highVolatilityRatio = snapshot.volatility.highVolatilityRatio;
+    const breadthPositive = snapshot.latestBreadth.positiveRatio;
+    const highVolatilityRatio = snapshot.latestVolatility.highVolatilityRatio;
     const benchmarkStrength = snapshot.features.benchmarkStrength;
     const riskScore = snapshot.features.riskScore;
+    const stateScore = snapshot.features.stateScore;
+    const breadthTrend = getBreadthTrend(snapshot);
+    const volatilityTrend = getVolatilityTrend(snapshot);
 
     const riskOffSignals = [
       breadthPositive < 0.42,
@@ -28,6 +88,8 @@ export class MarketRegimeService {
       benchmarkStrength < 45,
       indexesAboveTrend <= 1,
       riskScore >= 62,
+      breadthTrend === "CONTRACTING",
+      volatilityTrend === "RISING",
     ].filter(Boolean).length;
 
     const riskOnSignals = [
@@ -36,52 +98,118 @@ export class MarketRegimeService {
       benchmarkStrength >= 60,
       indexesAboveTrend >= 2,
       riskScore <= 40,
+      breadthTrend === "EXPANDING",
+      volatilityTrend === "FALLING",
     ].filter(Boolean).length;
 
-    let marketRegime: TimingMarketRegime = "NEUTRAL";
-    if (riskOffSignals >= 3) {
-      marketRegime = "RISK_OFF";
-    } else if (riskOnSignals >= 3) {
-      marketRegime = "RISK_ON";
+    let state: TimingMarketState = "NEUTRAL";
+    if (riskOffSignals >= 4 || stateScore <= 38) {
+      state = "RISK_OFF";
+    } else if (riskOnSignals >= 4 || stateScore >= 62) {
+      state = "RISK_ON";
     }
 
-    const separation = Math.abs(riskOnSignals - riskOffSignals);
+    const recentScores = snapshot.breadthSeries.slice(-5).map((item, index) => {
+      const volatility = snapshot.volatilitySeries[index];
+      if (!volatility) {
+        return 50;
+      }
+      return (
+        (item.positiveRatio * 55 +
+          (1 - volatility.highVolatilityRatio) * 25 +
+          (snapshot.indexes.filter((value) => value.aboveEma20).length /
+            Math.max(snapshot.indexes.length, 1)) *
+            20) *
+        100
+      );
+    });
+    const scoreSlope =
+      recentScores.length >= 2
+        ? (recentScores.at(-1) ?? 0) - (recentScores[0] ?? 0)
+        : 0;
+    const previousState = history[0]?.state;
+    let transition: TimingMarketTransition = "STABLE";
+    if (
+      previousState &&
+      previousState !== state &&
+      state === "RISK_ON" &&
+      scoreSlope > 6
+    ) {
+      transition = "PIVOT_UP";
+    } else if (
+      previousState &&
+      previousState !== state &&
+      state === "RISK_OFF" &&
+      scoreSlope < -6
+    ) {
+      transition = "PIVOT_DOWN";
+    } else if (scoreSlope >= 6 || breadthTrend === "EXPANDING") {
+      transition = "IMPROVING";
+    } else if (scoreSlope <= -6 || breadthTrend === "CONTRACTING") {
+      transition = "DETERIORATING";
+    }
+
+    let persistenceDays = 1;
+    for (const record of history) {
+      if (record.state !== state) {
+        break;
+      }
+      persistenceDays += 1;
+    }
+
     const regimeConfidence = clamp(
-      round(54 + separation * 9 + Math.abs(breadthPositive - 0.5) * 28),
+      round(
+        52 +
+          Math.abs(riskOnSignals - riskOffSignals) * 7 +
+          Math.abs(stateScore - 50) * 0.35 +
+          average([Math.abs(scoreSlope), persistenceDays]) * 0.4,
+      ),
       45,
-      92,
+      95,
     );
 
+    const latestLeadership = snapshot.latestLeadership;
     const constraints =
-      marketRegime === "RISK_OFF"
+      state === "RISK_OFF"
         ? [
-            "Prefer WATCH/PROBE over aggressive ADD ideas.",
-            "Tighten single-name exposure and preserve cash flexibility.",
-            "Require stronger confirmation before adding new risk.",
+            "Prefer WATCH/HOLD/TRIM over aggressive ADD actions.",
+            "Tighten invalidation discipline and keep cash flexibility.",
+            "Require stronger relative strength before deploying new risk.",
           ]
-        : marketRegime === "RISK_ON"
+        : state === "RISK_ON"
           ? [
-              "Allow higher conviction names to use the risk budget first.",
-              "Keep probe positions disciplined instead of spreading too thin.",
+              "Allow stronger names to consume risk budget first.",
+              "Use relative strength and breakout quality to prioritize adds.",
             ]
           : [
-              "Favor balanced sizing and wait for stronger breadth confirmation.",
-              "Use the risk budget selectively and keep trim/exit rules active.",
+              "Keep position sizing balanced while waiting for cleaner market expansion.",
+              "Use transition and breadth trend as secondary confirmation.",
             ];
 
     const summary =
-      marketRegime === "RISK_OFF"
-        ? `Market breadth is weak (${round(breadthPositive * 100)}%), volatility is elevated, and benchmark trend support is thin.`
-        : marketRegime === "RISK_ON"
-          ? `Benchmark trend and breadth are aligned, with ${indexesAboveTrend} major proxies above medium-term trend.`
-          : `The market is mixed: breadth sits at ${round(breadthPositive * 100)}% and benchmark strength remains balanced.`;
+      state === "RISK_OFF"
+        ? `市场处于防守态，breadth ${round(breadthPositive * 100)}%，波动趋势 ${volatilityTrend.toLowerCase()}。`
+        : state === "RISK_ON"
+          ? `市场处于偏进攻态，breadth ${round(breadthPositive * 100)}%，领涨代理为 ${latestLeadership.leaderCode}。`
+          : `市场仍偏中性，transition ${transition.toLowerCase()}，需要继续观察 breadth 与波动方向。`;
 
     return {
-      marketRegime,
+      state,
+      transition,
       regimeConfidence,
+      persistenceDays,
       summary,
       constraints,
+      breadthTrend,
+      volatilityTrend,
+      leadership: {
+        leaderCode: latestLeadership.leaderCode,
+        leaderName: latestLeadership.leaderName,
+        switched: latestLeadership.switched,
+        previousLeaderCode: latestLeadership.previousLeaderCode,
+      },
       snapshot,
+      stateScore: round(stateScore),
     };
   }
 }

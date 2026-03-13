@@ -1,6 +1,6 @@
 import { env } from "~/env";
 import type {
-  MarketRegimeSnapshot,
+  MarketContextSnapshot,
   TimingBarsData,
   TimingSignalBatchData,
   TimingSignalData,
@@ -93,9 +93,7 @@ export class PythonTimingDataClient {
     search.set("adjust", params.adjust ?? "qfq");
 
     return this.request<TimingBarsData>(
-      this.timingPath(
-        `/stocks/${params.stockCode}/bars?${search.toString()}`,
-      ),
+      this.timingPath(`/stocks/${params.stockCode}/bars?${search.toString()}`),
     );
   }
 
@@ -134,17 +132,15 @@ export class PythonTimingDataClient {
     );
   }
 
-  async getMarketRegimeSnapshot(params?: { asOfDate?: string }) {
+  async getMarketContext(params?: { asOfDate?: string }) {
     const search = new URLSearchParams();
     if (params?.asOfDate) {
       search.set("asOfDate", params.asOfDate);
     }
 
     const query = search.toString();
-    return this.request<MarketRegimeSnapshot>(
-      this.timingPath(
-        `/market/regime-snapshot${query ? `?${query}` : ""}`,
-      ),
+    return this.request<MarketContextSnapshot>(
+      this.timingPath(`/market/context${query ? `?${query}` : ""}`),
     );
   }
 

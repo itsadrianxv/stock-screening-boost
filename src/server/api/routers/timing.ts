@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { applyTimingPresetPatch } from "~/server/application/timing/timing-feedback-service";
 import { PrismaPortfolioSnapshotRepository } from "~/server/infrastructure/timing/prisma-portfolio-snapshot-repository";
 import { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
+import { PrismaTimingPresetAdjustmentSuggestionRepository } from "~/server/infrastructure/timing/prisma-timing-preset-adjustment-suggestion-repository";
 import { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
 import { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
 import { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
@@ -15,6 +17,16 @@ const portfolioPositionInput = z.object({
   currentWeightPct: z.number().min(0).max(100),
   sector: z.string().trim().min(1).max(64).optional(),
   themes: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
+  openedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  lastAddedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  invalidationPrice: z.number().positive().optional(),
+  plannedHoldingDays: z.number().int().positive().max(3650).optional(),
 });
 
 const portfolioRiskPreferencesInput = z.object({
@@ -80,21 +92,47 @@ const listReviewRecordsInput = z.object({
   completedOnly: z.boolean().default(false),
 });
 
+const listTimingFeedbackSuggestionsInput = z.object({
+  limit: z.number().int().min(1).max(100).default(24),
+  presetId: z.string().cuid().optional(),
+  status: z.enum(["PENDING", "APPLIED", "DISMISSED"]).optional(),
+});
+
 const timingPresetConfigInput = z.object({
-  factorWeights: z
+  contextWeights: z
     .object({
-      trend: z.number().positive().max(3).optional(),
-      macd: z.number().positive().max(3).optional(),
-      rsi: z.number().positive().max(3).optional(),
-      bollinger: z.number().positive().max(3).optional(),
-      volume: z.number().positive().max(3).optional(),
-      obv: z.number().positive().max(3).optional(),
-      volatility: z.number().positive().max(3).optional(),
+      signalContext: z.number().positive().max(3).optional(),
+      marketContext: z.number().positive().max(3).optional(),
+      positionContext: z.number().positive().max(3).optional(),
+      feedbackContext: z.number().positive().max(3).optional(),
     })
     .optional(),
-  agentWeights: z
+  signalEngineWeights: z
     .object({
-      technicalSignal: z.number().positive().max(3).optional(),
+      multiTimeframeAlignment: z.number().positive().max(3).optional(),
+      relativeStrength: z.number().positive().max(3).optional(),
+      volatilityPercentile: z.number().positive().max(3).optional(),
+      liquidityStructure: z.number().positive().max(3).optional(),
+      breakoutFailure: z.number().positive().max(3).optional(),
+      gapVolumeQuality: z.number().positive().max(3).optional(),
+    })
+    .optional(),
+  positionWeights: z
+    .object({
+      invalidationRiskPenalty: z.number().min(0).max(40).optional(),
+      matureGainTrimBoost: z.number().min(0).max(40).optional(),
+      lossNearInvalidationPenalty: z.number().min(0).max(40).optional(),
+      earlyEntryBonus: z.number().min(0).max(20).optional(),
+    })
+    .optional(),
+  feedbackPolicy: z
+    .object({
+      lookbackDays: z.number().int().min(30).max(365).optional(),
+      minimumSamples: z.number().int().min(4).max(100).optional(),
+      weightStep: z.number().min(0.05).max(1).optional(),
+      actionThresholdStep: z.number().int().min(1).max(10).optional(),
+      successRateDeltaThreshold: z.number().min(1).max(50).optional(),
+      averageReturnDeltaThreshold: z.number().min(0.5).max(20).optional(),
     })
     .optional(),
   confidenceThresholds: z
@@ -134,6 +172,10 @@ const saveTimingPresetInput = z.object({
   name: z.string().trim().min(1).max(64),
   description: z.string().trim().max(240).optional(),
   config: timingPresetConfigInput,
+});
+
+const updateTimingFeedbackSuggestionInput = z.object({
+  id: z.string().cuid(),
 });
 
 export const timingRouter = createTRPCRouter({
@@ -243,6 +285,20 @@ export const timingRouter = createTRPCRouter({
     return repository.listForUser(ctx.session.user.id);
   }),
 
+  listTimingFeedbackSuggestions: protectedProcedure
+    .input(listTimingFeedbackSuggestionsInput)
+    .query(async ({ ctx, input }) => {
+      const repository = new PrismaTimingPresetAdjustmentSuggestionRepository(
+        ctx.db,
+      );
+      return repository.listForUser({
+        userId: ctx.session.user.id,
+        limit: input.limit,
+        presetId: input.presetId,
+        status: input.status,
+      });
+    }),
+
   saveTimingPreset: protectedProcedure
     .input(saveTimingPresetInput)
     .mutation(async ({ ctx, input }) => {
@@ -271,5 +327,76 @@ export const timingRouter = createTRPCRouter({
         description: input.description,
         config: input.config,
       });
+    }),
+
+  applyTimingFeedbackSuggestion: protectedProcedure
+    .input(updateTimingFeedbackSuggestionInput)
+    .mutation(async ({ ctx, input }) => {
+      const suggestionRepository =
+        new PrismaTimingPresetAdjustmentSuggestionRepository(ctx.db);
+      const presetRepository = new PrismaTimingPresetRepository(ctx.db);
+      const suggestion = await suggestionRepository.getByIdForUser(
+        ctx.session.user.id,
+        input.id,
+      );
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Feedback suggestion not found",
+        });
+      }
+
+      if (!suggestion.presetId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Feedback suggestion is not bound to a preset",
+        });
+      }
+
+      const preset = await presetRepository.getByIdForUser(
+        ctx.session.user.id,
+        suggestion.presetId,
+      );
+      if (!preset) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Timing preset not found",
+        });
+      }
+
+      const nextConfig = applyTimingPresetPatch(
+        preset.config,
+        suggestion.patch,
+      );
+
+      await presetRepository.update(suggestion.presetId, ctx.session.user.id, {
+        name: preset.name,
+        description: preset.description ?? undefined,
+        config: nextConfig,
+      });
+
+      return suggestionRepository.markApplied(suggestion.id);
+    }),
+
+  dismissTimingFeedbackSuggestion: protectedProcedure
+    .input(updateTimingFeedbackSuggestionInput)
+    .mutation(async ({ ctx, input }) => {
+      const repository = new PrismaTimingPresetAdjustmentSuggestionRepository(
+        ctx.db,
+      );
+      const suggestion = await repository.getByIdForUser(
+        ctx.session.user.id,
+        input.id,
+      );
+
+      if (!suggestion) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Feedback suggestion not found",
+        });
+      }
+
+      return repository.markDismissed(suggestion.id);
     }),
 });

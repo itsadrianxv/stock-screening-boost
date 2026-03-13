@@ -5,6 +5,26 @@ import type {
   ThemeNewsItem,
 } from "~/server/domain/intelligence/types";
 import type {
+  MarketContextAnalysis,
+  MarketContextSnapshot,
+  PortfolioRiskPlan,
+  PortfolioSnapshotRecord,
+  TechnicalAssessment,
+  TimingAnalysisCardRecord,
+  TimingCardDraft,
+  TimingFeedbackContext,
+  TimingPresetAdjustmentSuggestionRecord,
+  TimingPresetConfig,
+  TimingPresetRecord,
+  TimingRecommendationDraft,
+  TimingRecommendationRecord,
+  TimingReviewCompletionDraft,
+  TimingReviewRecord,
+  TimingSignalBatchError,
+  TimingSignalData,
+  TimingSignalSnapshotRecord,
+} from "~/server/domain/timing/types";
+import type {
   CompressedFindings,
   ResearchBriefV2,
   ResearchClarificationRequest,
@@ -19,24 +39,6 @@ import {
   getWorkflowNodeKeysFromParsedGraphConfig,
   resolveResearchRuntimeConfig,
 } from "~/server/domain/workflow/research";
-import type {
-  MarketRegimeAnalysis,
-  MarketRegimeSnapshot,
-  PortfolioRiskPlan,
-  PortfolioSnapshotRecord,
-  TechnicalAssessment,
-  TimingAnalysisCardRecord,
-  TimingCardDraft,
-  TimingPresetConfig,
-  TimingPresetRecord,
-  TimingRecommendationDraft,
-  TimingRecommendationRecord,
-  TimingReviewCompletionDraft,
-  TimingReviewRecord,
-  TimingSignalBatchError,
-  TimingSignalData,
-  TimingSignalSnapshotRecord,
-} from "~/server/domain/timing/types";
 
 export const QUICK_RESEARCH_TEMPLATE_CODE = "quick_industry_research";
 export const COMPANY_RESEARCH_TEMPLATE_CODE = "company_research_center";
@@ -667,9 +669,11 @@ export type WatchlistTimingPipelineGraphState = WorkflowGraphState & {
   signalSnapshots: TimingSignalData[];
   technicalAssessments: TechnicalAssessment[];
   cards: TimingCardDraft[];
-  marketRegimeSnapshot?: MarketRegimeSnapshot;
-  marketRegimeAnalysis?: MarketRegimeAnalysis;
+  marketContextSnapshot?: MarketContextSnapshot;
+  marketContextAnalysis?: MarketContextAnalysis;
   riskPlan?: PortfolioRiskPlan;
+  feedbackContext?: TimingFeedbackContext;
+  feedbackSuggestions: TimingPresetAdjustmentSuggestionRecord[];
   recommendations: TimingRecommendationDraft[];
   persistedRecommendations: TimingRecommendationRecord[];
   reviewRecords: TimingReviewRecord[];
@@ -717,6 +721,7 @@ export type TimingReviewLoopGraphState = WorkflowGraphState & {
   dueReviews: TimingReviewRecord[];
   evaluatedReviews: TimingReviewOutcome[];
   persistedReviews: TimingReviewRecord[];
+  feedbackSuggestions: TimingPresetAdjustmentSuggestionRecord[];
   consumedReminderIds: string[];
 };
 

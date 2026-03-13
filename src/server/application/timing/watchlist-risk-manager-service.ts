@@ -1,5 +1,5 @@
 import type {
-  MarketRegimeAnalysis,
+  MarketContextAnalysis,
   PortfolioRiskPlan,
   PortfolioRiskPreferences,
   PortfolioSnapshotRecord,
@@ -38,7 +38,7 @@ export class WatchlistRiskManagerService {
   buildRiskPlan(params: {
     portfolioSnapshot: PortfolioSnapshotRecord;
     timingCards: TimingCardDraft[];
-    marketRegimeAnalysis: MarketRegimeAnalysis;
+    marketContextAnalysis: MarketContextAnalysis;
   }): PortfolioRiskPlan {
     const preferences = withDefaults(params.portfolioSnapshot.riskPreferences);
     const availableCashPct =
@@ -79,9 +79,9 @@ export class WatchlistRiskManagerService {
     }
 
     const regimeMultiplier =
-      params.marketRegimeAnalysis.marketRegime === "RISK_OFF"
+      params.marketContextAnalysis.state === "RISK_OFF"
         ? 0.5
-        : params.marketRegimeAnalysis.marketRegime === "RISK_ON"
+        : params.marketContextAnalysis.state === "RISK_ON"
           ? 1
           : 0.75;
 
@@ -105,14 +105,14 @@ export class WatchlistRiskManagerService {
     const defaultProbePct = round(
       clamp(
         preferences.defaultProbePct *
-          (params.marketRegimeAnalysis.marketRegime === "RISK_OFF" ? 0.65 : 1),
+          (params.marketContextAnalysis.state === "RISK_OFF" ? 0.65 : 1),
         0.5,
         maxSingleNamePct,
       ),
     );
 
     const blockedActions: TimingAction[] = [];
-    if (params.marketRegimeAnalysis.marketRegime === "RISK_OFF") {
+    if (params.marketContextAnalysis.state === "RISK_OFF") {
       blockedActions.push("ADD");
       if (portfolioRiskBudgetPct <= defaultProbePct) {
         blockedActions.push("PROBE");
@@ -133,8 +133,9 @@ export class WatchlistRiskManagerService {
 
     const notes = [
       `Available cash is ${round(availableCashPct)}% of total capital.`,
-      `Regime confidence is ${params.marketRegimeAnalysis.regimeConfidence}.`,
-      ...params.marketRegimeAnalysis.constraints,
+      `Market state confidence is ${params.marketContextAnalysis.regimeConfidence}.`,
+      `Transition is ${params.marketContextAnalysis.transition}.`,
+      ...params.marketContextAnalysis.constraints,
     ];
 
     return {

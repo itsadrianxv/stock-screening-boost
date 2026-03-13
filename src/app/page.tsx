@@ -392,8 +392,8 @@ export default async function Home() {
                       <StatusPill
                         label={
                           marketRegimeLabelMap[
-                            priorityRecommendation.marketRegime
-                          ] ?? priorityRecommendation.marketRegime
+                            priorityRecommendation.marketState
+                          ] ?? priorityRecommendation.marketState
                         }
                         tone="info"
                       />
@@ -406,7 +406,7 @@ export default async function Home() {
                       />
                     </div>
                     <p className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {priorityRecommendation.reasoning.marketRegimeSummary}
+                      {priorityRecommendation.reasoning.marketContext.summary}
                     </p>
                   </article>
                 ) : null}

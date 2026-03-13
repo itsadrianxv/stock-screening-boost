@@ -1,10 +1,15 @@
+import { PositionContextService } from "~/server/application/timing/position-context-service";
+import { resolveTimingPresetConfig } from "~/server/domain/timing/preset";
 import type {
-  MarketRegimeAnalysis,
+  MarketContextAnalysis,
   PortfolioPosition,
   PortfolioRiskPlan,
   PortfolioSnapshotRecord,
   TimingAction,
   TimingCardDraft,
+  TimingFeedbackContext,
+  TimingPositionContext,
+  TimingPresetConfig,
   TimingRecommendationDraft,
   TimingRiskFlag,
 } from "~/server/domain/timing/types";
@@ -30,9 +35,20 @@ type Candidate = {
   heldPosition?: PortfolioPosition;
   score: number;
   riskFlags: TimingRiskFlag[];
+  positionContext: TimingPositionContext;
 };
 
 export class WatchlistPortfolioManagerService {
+  constructor(
+    private readonly deps: {
+      positionContextService?: PositionContextService;
+    } = {},
+  ) {}
+
+  private get positionContextService() {
+    return this.deps.positionContextService ?? new PositionContextService();
+  }
+
   buildRecommendations(params: {
     userId: string;
     workflowRunId: string;
@@ -40,8 +56,11 @@ export class WatchlistPortfolioManagerService {
     portfolioSnapshot: PortfolioSnapshotRecord;
     timingCards: TimingCardDraft[];
     riskPlan: PortfolioRiskPlan;
-    marketRegimeAnalysis: MarketRegimeAnalysis;
+    marketContextAnalysis: MarketContextAnalysis;
+    presetConfig?: TimingPresetConfig;
+    feedbackContext?: TimingFeedbackContext;
   }): TimingRecommendationDraft[] {
+    const resolvedPresetConfig = resolveTimingPresetConfig(params.presetConfig);
     const positionsByCode = new Map(
       params.portfolioSnapshot.positions.map((position) => [
         position.stockCode,
@@ -50,20 +69,40 @@ export class WatchlistPortfolioManagerService {
     );
 
     let remainingRiskBudget = params.riskPlan.portfolioRiskBudgetPct;
+    const availableCashPct =
+      params.portfolioSnapshot.totalCapital > 0
+        ? round(
+            (params.portfolioSnapshot.cash /
+              params.portfolioSnapshot.totalCapital) *
+              100,
+          )
+        : 0;
 
     const candidates = params.timingCards
       .map((card) => {
         const heldPosition = positionsByCode.get(card.stockCode);
-        const normalizedAction = this.normalizeAction(
-          card.actionBias,
-          Boolean(heldPosition),
-          params.riskPlan.blockedActions,
-          params.marketRegimeAnalysis.marketRegime,
-          card.confidence,
-        );
+        const marketNormalizedAction = this.normalizeForMarket({
+          action: card.actionBias,
+          hasPosition: Boolean(heldPosition),
+          blockedActions: params.riskPlan.blockedActions,
+          marketContextAnalysis: params.marketContextAnalysis,
+          confidence: card.confidence,
+        });
+
+        const positionContext = this.positionContextService.build({
+          position: heldPosition,
+          currentPrice: card.reasoning.indicators.close,
+          asOfDate: card.asOfDate,
+          availableCashPct,
+        });
+        const positionNormalizedAction = this.normalizeForPosition({
+          action: marketNormalizedAction,
+          positionContext,
+          marketContextAnalysis: params.marketContextAnalysis,
+        });
 
         const range = this.getSuggestedRange(
-          normalizedAction,
+          positionNormalizedAction,
           heldPosition,
           params.riskPlan,
         );
@@ -72,30 +111,38 @@ export class WatchlistPortfolioManagerService {
         if (params.riskPlan.correlationWarnings.length > 0 && heldPosition) {
           riskFlags.push("HIGH_CORRELATION");
         }
-
+        if (positionContext.invalidationRisk === "AT_RISK") {
+          riskFlags.push("NEAR_INVALIDATION");
+        }
         if (
-          params.marketRegimeAnalysis.marketRegime === "RISK_OFF" &&
-          (normalizedAction === "ADD" || normalizedAction === "PROBE")
+          params.marketContextAnalysis.state === "RISK_OFF" &&
+          (positionNormalizedAction === "ADD" ||
+            positionNormalizedAction === "PROBE")
         ) {
           riskFlags.push("CROWDING_RISK");
         }
 
         return {
           card,
-          action: normalizedAction,
+          action: positionNormalizedAction,
           confidence: this.adjustConfidence(
             card.confidence,
             card.actionBias,
-            normalizedAction,
-            params.marketRegimeAnalysis.marketRegime,
+            positionNormalizedAction,
+            params.marketContextAnalysis,
+            positionContext,
           ),
           minPct: range.minPct,
           maxPct: range.maxPct,
           heldPosition,
+          positionContext,
           score: this.computeScore(
             card,
-            normalizedAction,
-            Boolean(heldPosition),
+            positionNormalizedAction,
+            params.marketContextAnalysis,
+            positionContext,
+            params.feedbackContext,
+            resolvedPresetConfig,
           ),
           riskFlags: unique(riskFlags),
         } satisfies Candidate;
@@ -130,20 +177,20 @@ export class WatchlistPortfolioManagerService {
     return budgeted.map((candidate, index) => {
       const currentWeight = candidate.heldPosition?.currentWeightPct ?? 0;
       const targetDeltaPct = round(candidate.maxPct - currentWeight);
-      const availableCashPct =
-        params.portfolioSnapshot.totalCapital > 0
-          ? round(
-              (params.portfolioSnapshot.cash /
-                params.portfolioSnapshot.totalCapital) *
-                100,
-            )
-          : 0;
+      const positionContext = this.positionContextService.build({
+        position: candidate.heldPosition,
+        currentPrice: candidate.card.reasoning.indicators.close,
+        asOfDate: candidate.card.asOfDate,
+        availableCashPct,
+        targetDeltaPct,
+      });
 
       return {
         userId: params.userId,
         workflowRunId: params.workflowRunId,
         portfolioSnapshotId: params.portfolioSnapshot.id,
         watchListId: params.watchListId,
+        presetId: candidate.card.presetId,
         stockCode: candidate.card.stockCode,
         stockName: candidate.card.stockName,
         action: candidate.action,
@@ -152,61 +199,128 @@ export class WatchlistPortfolioManagerService {
         suggestedMinPct: round(candidate.minPct),
         suggestedMaxPct: round(candidate.maxPct),
         riskBudgetPct: params.riskPlan.portfolioRiskBudgetPct,
-        marketRegime: params.marketRegimeAnalysis.marketRegime,
+        marketState: params.marketContextAnalysis.state,
+        marketTransition: params.marketContextAnalysis.transition,
         riskFlags: candidate.riskFlags,
         reasoning: {
-          timingSummary: candidate.card.summary,
+          signalContext: candidate.card.reasoning.signalContext,
+          marketContext: {
+            state: params.marketContextAnalysis.state,
+            transition: params.marketContextAnalysis.transition,
+            summary: params.marketContextAnalysis.summary,
+            constraints: params.marketContextAnalysis.constraints,
+            breadthTrend: params.marketContextAnalysis.breadthTrend,
+            volatilityTrend: params.marketContextAnalysis.volatilityTrend,
+            persistenceDays: params.marketContextAnalysis.persistenceDays,
+            leadership: params.marketContextAnalysis.leadership,
+          },
+          positionContext,
+          feedbackContext: params.feedbackContext ?? {
+            presetId: candidate.card.presetId,
+            learningSummary: "尚未沉淀足够复盘样本。",
+            pendingSuggestionCount: 0,
+            adoptedSuggestionCount: 0,
+            highlights: [],
+          },
+          riskPlan: params.riskPlan,
           actionRationale: this.buildActionRationale(
             candidate,
-            params.marketRegimeAnalysis,
+            params.marketContextAnalysis,
+            positionContext,
           ),
-          marketRegimeSummary: params.marketRegimeAnalysis.summary,
-          regimeConstraints: params.marketRegimeAnalysis.constraints,
-          riskPlan: params.riskPlan,
-          positionContext: {
-            held: Boolean(candidate.heldPosition),
-            currentWeightPct: round(currentWeight),
-            targetDeltaPct,
-            availableCashPct,
-          },
-          factorBreakdown: candidate.card.reasoning.factorBreakdown,
-          triggerNotes: candidate.card.triggerNotes,
-          invalidationNotes: candidate.card.invalidationNotes,
         },
       };
     });
   }
 
-  private normalizeAction(
-    action: TimingAction,
-    hasPosition: boolean,
-    blockedActions: TimingAction[],
-    marketRegime: MarketRegimeAnalysis["marketRegime"],
-    confidence: number,
-  ): TimingAction {
-    if (!hasPosition && ["HOLD", "TRIM", "EXIT"].includes(action)) {
+  private normalizeForMarket(params: {
+    action: TimingAction;
+    hasPosition: boolean;
+    blockedActions: TimingAction[];
+    marketContextAnalysis: MarketContextAnalysis;
+    confidence: number;
+  }): TimingAction {
+    if (
+      !params.hasPosition &&
+      ["HOLD", "TRIM", "EXIT"].includes(params.action)
+    ) {
       return "WATCH";
     }
 
-    if (blockedActions.includes(action)) {
+    let action = params.action;
+    if (params.blockedActions.includes(action)) {
       if (action === "ADD") {
-        return blockedActions.includes("PROBE") ? "WATCH" : "PROBE";
-      }
-
-      if (action === "PROBE") {
-        return "WATCH";
+        action = params.blockedActions.includes("PROBE") ? "WATCH" : "PROBE";
+      } else if (action === "PROBE") {
+        action = "WATCH";
       }
     }
 
-    if (marketRegime === "RISK_OFF" && action === "ADD") {
-      return confidence >= 78 ? "PROBE" : "WATCH";
+    if (params.marketContextAnalysis.state === "RISK_OFF" && action === "ADD") {
+      action = params.confidence >= 82 ? "PROBE" : "WATCH";
     }
 
-    if (marketRegime === "RISK_OFF" && action === "PROBE" && confidence < 68) {
-      return "WATCH";
+    if (
+      params.marketContextAnalysis.state === "RISK_OFF" &&
+      action === "PROBE" &&
+      params.confidence < 70
+    ) {
+      action = "WATCH";
+    }
+
+    if (
+      params.marketContextAnalysis.transition === "PIVOT_DOWN" &&
+      !params.hasPosition &&
+      action === "PROBE"
+    ) {
+      action = "WATCH";
     }
 
     return action;
+  }
+
+  private normalizeForPosition(params: {
+    action: TimingAction;
+    positionContext: TimingPositionContext;
+    marketContextAnalysis: MarketContextAnalysis;
+  }): TimingAction {
+    const { positionContext } = params;
+    if (!positionContext.held) {
+      return params.action;
+    }
+
+    if (positionContext.invalidationRisk === "AT_RISK") {
+      if (params.action === "ADD") {
+        return positionContext.pnlZone === "LOSS" ? "EXIT" : "TRIM";
+      }
+      if (params.action === "PROBE") {
+        return "HOLD";
+      }
+    }
+
+    if (
+      ["MATURE_GAIN", "OVEREXTENDED_GAIN"].includes(positionContext.pnlZone) &&
+      ["DETERIORATING", "PIVOT_DOWN"].includes(
+        params.marketContextAnalysis.transition,
+      ) &&
+      (params.action === "HOLD" ||
+        params.action === "ADD" ||
+        params.action === "PROBE")
+    ) {
+      return "TRIM";
+    }
+
+    if (
+      positionContext.costZone === "BELOW_COST" &&
+      positionContext.distanceToInvalidationPct !== undefined &&
+      positionContext.distanceToInvalidationPct !== null &&
+      positionContext.distanceToInvalidationPct <= 3 &&
+      params.action === "ADD"
+    ) {
+      return "HOLD";
+    }
+
+    return params.action;
   }
 
   private getSuggestedRange(
@@ -273,14 +387,27 @@ export class WatchlistPortfolioManagerService {
     confidence: number,
     originalAction: TimingAction,
     normalizedAction: TimingAction,
-    marketRegime: MarketRegimeAnalysis["marketRegime"],
+    marketContextAnalysis: MarketContextAnalysis,
+    positionContext: TimingPositionContext,
   ) {
     let next = confidence;
-    if (marketRegime === "RISK_OFF" && normalizedAction !== originalAction) {
+    if (
+      marketContextAnalysis.state === "RISK_OFF" &&
+      normalizedAction !== originalAction
+    ) {
       next -= 8;
     }
     if (normalizedAction === "WATCH") {
       next -= 4;
+    }
+    if (positionContext.invalidationRisk === "AT_RISK") {
+      next -= 10;
+    }
+    if (
+      normalizedAction === "TRIM" &&
+      ["MATURE_GAIN", "OVEREXTENDED_GAIN"].includes(positionContext.pnlZone)
+    ) {
+      next += 4;
     }
     return clamp(Math.round(next), 25, 95);
   }
@@ -288,8 +415,33 @@ export class WatchlistPortfolioManagerService {
   private computeScore(
     card: TimingCardDraft,
     action: TimingAction,
-    hasPosition: boolean,
+    marketContextAnalysis: MarketContextAnalysis,
+    positionContext: TimingPositionContext,
+    feedbackContext: TimingFeedbackContext | undefined,
+    presetConfig: TimingPresetConfig,
   ) {
+    const contextWeights = presetConfig.contextWeights ?? {};
+    const positionAdjustment =
+      this.positionContextService.scoreAdjustment(positionContext);
+    const marketScore =
+      marketContextAnalysis.state === "RISK_ON"
+        ? 16
+        : marketContextAnalysis.state === "RISK_OFF"
+          ? -10
+          : 4;
+    const transitionScore =
+      marketContextAnalysis.transition === "PIVOT_UP"
+        ? 10
+        : marketContextAnalysis.transition === "PIVOT_DOWN"
+          ? -12
+          : marketContextAnalysis.transition === "IMPROVING"
+            ? 6
+            : marketContextAnalysis.transition === "DETERIORATING"
+              ? -6
+              : 0;
+    const feedbackScore = feedbackContext?.adoptedSuggestionCount
+      ? Math.min(feedbackContext.adoptedSuggestionCount * 2, 8)
+      : 0;
     const actionScore: Record<TimingAction, number> = {
       WATCH: 20,
       PROBE: 55,
@@ -301,9 +453,11 @@ export class WatchlistPortfolioManagerService {
 
     return (
       actionScore[action] +
-      card.confidence +
-      card.reasoning.signalStrength * 0.45 +
-      (hasPosition ? 6 : 0)
+      card.confidence * (contextWeights.signalContext ?? 1) +
+      (marketScore + transitionScore) * (contextWeights.marketContext ?? 0.9) +
+      positionAdjustment * (contextWeights.positionContext ?? 0.8) +
+      feedbackScore * (contextWeights.feedbackContext ?? 0.6) +
+      card.reasoning.signalContext.signalStrength * 0.35
     );
   }
 
@@ -330,12 +484,17 @@ export class WatchlistPortfolioManagerService {
 
   private buildActionRationale(
     candidate: Candidate,
-    marketRegimeAnalysis: MarketRegimeAnalysis,
+    marketContextAnalysis: MarketContextAnalysis,
+    positionContext: TimingPositionContext,
   ) {
     const heldText = candidate.heldPosition
-      ? `Existing weight is ${round(candidate.heldPosition.currentWeightPct)}%.`
-      : "This name is not currently held.";
+      ? `当前持仓 ${round(candidate.heldPosition.currentWeightPct)}%。`
+      : "当前未持仓。";
+    const invalidationText =
+      positionContext.invalidationRisk === "UNKNOWN"
+        ? "失效位未设置。"
+        : `失效风险 ${positionContext.invalidationRisk}，距失效位 ${positionContext.distanceToInvalidationPct ?? "-"}%。`;
 
-    return `${candidate.card.reasoning.actionRationale} ${heldText} ${marketRegimeAnalysis.summary}`;
+    return `${candidate.card.reasoning.actionRationale} ${heldText} ${invalidationText} ${marketContextAnalysis.summary}`;
   }
 }

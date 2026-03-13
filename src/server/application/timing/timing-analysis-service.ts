@@ -4,35 +4,60 @@ import { TimingConfidencePolicy } from "~/server/domain/timing/services/timing-c
 import type {
   TechnicalAssessment,
   TimingCardDraft,
-  TimingFactorBreakdownItem,
+  TimingEngineBreakdownItem,
   TimingPresetConfig,
   TimingRiskFlag,
   TimingSignalData,
+  TimingSignalEngineResult,
   TimingSourceType,
 } from "~/server/domain/timing/types";
 import { TechnicalSignalSet } from "~/server/domain/timing/value-objects/technical-signal-set";
 
 function uniqueFlags(flags: string[]): TimingRiskFlag[] {
-  return [...new Set(flags)] as TimingRiskFlag[];
+  return [...new Set(flags)].filter((flag): flag is TimingRiskFlag =>
+    [
+      "HIGH_VOLATILITY",
+      "OVERBOUGHT",
+      "OVERSOLD",
+      "TREND_WEAKENING",
+      "HIGH_CORRELATION",
+      "CROWDING_RISK",
+      "EVENT_UNCERTAINTY",
+      "WEAK_RELATIVE_STRENGTH",
+      "THIN_LIQUIDITY",
+      "FAILED_BREAKOUT",
+      "NEAR_INVALIDATION",
+    ].includes(flag),
+  );
 }
 
-function summarizeFactorLabel(factor: TimingFactorBreakdownItem) {
-  return `${factor.label}：${factor.detail}`;
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
-function applyFactorWeight(
-  factor: TimingFactorBreakdownItem,
-  presetConfig: TimingPresetConfig,
+function summarizeBreakdownLabel(item: TimingEngineBreakdownItem) {
+  return `${item.label}: ${item.detail}`;
+}
+
+function toStatus(score: number): TimingEngineBreakdownItem["status"] {
+  if (score >= 20) {
+    return "positive";
+  }
+  if (score <= -20) {
+    return "negative";
+  }
+  return "neutral";
+}
+
+function scaleEngineScore(
+  engine: TimingSignalEngineResult,
+  nextWeight: number,
 ) {
-  const weight =
-    presetConfig.factorWeights?.[
-      factor.key as keyof NonNullable<TimingPresetConfig["factorWeights"]>
-    ] ?? 1;
+  if (engine.weight <= 0) {
+    return engine.score;
+  }
 
-  return {
-    ...factor,
-    score: Math.round(factor.score * weight),
-  };
+  return clamp((engine.score * nextWeight) / engine.weight, -100, 100);
 }
 
 export class TimingAnalysisService {
@@ -80,7 +105,7 @@ export class TimingAnalysisService {
       const snapshot = snapshotByCode.get(assessment.stockCode);
 
       if (!snapshot) {
-        throw new Error(`缺少 ${assessment.stockCode} 的信号快照`);
+        throw new Error(`Missing timing snapshot for ${assessment.stockCode}`);
       }
 
       const actionBias = this.actionPolicy.decide(
@@ -95,10 +120,16 @@ export class TimingAnalysisService {
 
       const actionRationale =
         actionBias === "ADD"
-          ? "趋势、量能与动量同时站在有利一侧，适合从观察升级到加仓候选。"
+          ? "多周期、相对强弱与结构质量同步支持进攻型动作。"
           : actionBias === "PROBE"
-            ? "信号已具备试仓条件，但仍需等待更多确认。"
-            : "当前更适合继续观察，等待趋势和量能继续验证。";
+            ? "信号已具备试仓条件，但仍需观察市场与位置上下文的确认。"
+            : actionBias === "WATCH"
+              ? "当前更适合维持观察，等待结构或环境进一步改善。"
+              : actionBias === "TRIM"
+                ? "信号与风险提示开始偏向防守，适合先收缩风险暴露。"
+                : actionBias === "EXIT"
+                  ? "负向结构已超过容错区间，应优先退出。"
+                  : "当前信号更偏向持有与等待。";
 
       return {
         userId: params.userId,
@@ -107,23 +138,19 @@ export class TimingAnalysisService {
         presetId: params.presetId,
         stockCode: assessment.stockCode,
         stockName: assessment.stockName,
+        asOfDate: assessment.asOfDate,
         sourceType: params.sourceType,
         sourceId: params.sourceId,
         actionBias,
         confidence: assessment.confidence,
-        summary: `${assessment.stockName} 当前偏向${actionBias}，核心依据是${assessment.explanation}`,
+        summary: `${assessment.stockName} 当前偏向 ${actionBias}，核心依据是 ${assessment.signalContext.summary}`,
         triggerNotes: assessment.triggerNotes,
         invalidationNotes: assessment.invalidationNotes,
         riskFlags: assessment.riskFlags,
         reasoning: {
-          direction: assessment.direction,
-          signalStrength: assessment.signalStrength,
-          confidence: assessment.confidence,
-          factorBreakdown: assessment.factorBreakdown,
-          explanation: assessment.explanation,
+          signalContext: assessment.signalContext,
           actionRationale,
           indicators: snapshot.indicators,
-          ruleSummary: snapshot.ruleSummary,
         },
       };
     });
@@ -137,236 +164,123 @@ export class TimingAnalysisService {
     const indicators = TechnicalSignalSet.create(
       snapshot.indicators,
     ).toObject();
-    const volatilityRatio =
-      indicators.atr14 / Math.max(indicators.close, 0.0001);
 
-    const factorBreakdown: TimingFactorBreakdownItem[] = [
-      indicators.close >= indicators.ema20 &&
-      indicators.ema20 >= indicators.ema60
-        ? {
-            key: "trend",
-            label: "趋势结构",
-            status: "positive",
-            score: 18,
-            detail: "收盘价站上 EMA20，且 EMA20 位于 EMA60 上方。",
-          }
-        : indicators.close <= indicators.ema20 &&
-            indicators.ema20 <= indicators.ema60
-          ? {
-              key: "trend",
-              label: "趋势结构",
-              status: "negative",
-              score: -18,
-              detail: "收盘价跌破 EMA20，且 EMA20 位于 EMA60 下方。",
-            }
-          : {
-              key: "trend",
-              label: "趋势结构",
-              status: "neutral",
-              score: 0,
-              detail: "短中期均线与收盘价尚未形成明确同向结构。",
-            },
-      indicators.macd.histogram > 0 && indicators.macd.dif > indicators.macd.dea
-        ? {
-            key: "macd",
-            label: "动量共振",
-            status: "positive",
-            score: 16,
-            detail: "MACD 红柱扩张，DIF 位于 DEA 上方。",
-          }
-        : indicators.macd.histogram < 0 &&
-            indicators.macd.dif < indicators.macd.dea
-          ? {
-              key: "macd",
-              label: "动量共振",
-              status: "negative",
-              score: -16,
-              detail: "MACD 绿柱占优，DIF 位于 DEA 下方。",
-            }
-          : {
-              key: "macd",
-              label: "动量共振",
-              status: "neutral",
-              score: 0,
-              detail: "MACD 动量方向不够集中。",
-            },
-      indicators.rsi.value >= 52 && indicators.rsi.value <= 68
-        ? {
-            key: "rsi",
-            label: "强弱区间",
-            status: "positive",
-            score: 12,
-            detail: `RSI 处于 ${indicators.rsi.value.toFixed(1)}，强势但未明显过热。`,
-          }
-        : indicators.rsi.value <= 45
-          ? {
-              key: "rsi",
-              label: "强弱区间",
-              status: "negative",
-              score: -12,
-              detail: `RSI 仅 ${indicators.rsi.value.toFixed(1)}，买盘强度偏弱。`,
-            }
-          : {
-              key: "rsi",
-              label: "强弱区间",
-              status: "neutral",
-              score: 0,
-              detail: `RSI 为 ${indicators.rsi.value.toFixed(1)}，多空尚未拉开。`,
-            },
-      indicators.bollinger.closePosition >= 0.58
-        ? {
-            key: "bollinger",
-            label: "波段位置",
-            status: "positive",
-            score: 10,
-            detail: "价格位于布林中上轨，更接近主动进攻区域。",
-          }
-        : indicators.bollinger.closePosition <= 0.42
-          ? {
-              key: "bollinger",
-              label: "波段位置",
-              status: "negative",
-              score: -10,
-              detail: "价格靠近布林中下轨，反弹确认不足。",
-            }
-          : {
-              key: "bollinger",
-              label: "波段位置",
-              status: "neutral",
-              score: 0,
-              detail: "价格位于布林中性区域，暂无明显突破。",
-            },
-      indicators.volumeRatio20 >= 1.15
-        ? {
-            key: "volume",
-            label: "量能确认",
-            status: "positive",
-            score: 12,
-            detail: `量比 ${indicators.volumeRatio20.toFixed(2)}，资金参与度高于 20 日均值。`,
-          }
-        : indicators.volumeRatio20 <= 0.85
-          ? {
-              key: "volume",
-              label: "量能确认",
-              status: "negative",
-              score: -10,
-              detail: `量比 ${indicators.volumeRatio20.toFixed(2)}，量能配合不足。`,
-            }
-          : {
-              key: "volume",
-              label: "量能确认",
-              status: "neutral",
-              score: 0,
-              detail: `量比 ${indicators.volumeRatio20.toFixed(2)}，量能基本持平。`,
-            },
-      indicators.obv.slope > 0
-        ? {
-            key: "obv",
-            label: "资金流向",
-            status: "positive",
-            score: 10,
-            detail: "OBV 斜率上行，资金净流向仍在改善。",
-          }
-        : indicators.obv.slope < 0
-          ? {
-              key: "obv",
-              label: "资金流向",
-              status: "negative",
-              score: -10,
-              detail: "OBV 斜率转负，资金面开始走弱。",
-            }
-          : {
-              key: "obv",
-              label: "资金流向",
-              status: "neutral",
-              score: 0,
-              detail: "OBV 方向不明显。",
-            },
-      volatilityRatio <= 0.035
-        ? {
-            key: "volatility",
-            label: "波动风险",
-            status: "positive",
-            score: 8,
-            detail: "ATR 相对收盘价处于可控区间。",
-          }
-        : volatilityRatio >= 0.055
-          ? {
-              key: "volatility",
-              label: "波动风险",
-              status: "negative",
-              score: -12,
-              detail: "ATR 占比偏高，走势容错率较低。",
-            }
-          : {
-              key: "volatility",
-              label: "波动风险",
-              status: "neutral",
-              score: 0,
-              detail: "波动水平中性。",
-            },
-    ];
+    const engineBreakdown = snapshot.signalContext.engines.map((engine) => {
+      const nextWeight =
+        resolvedPresetConfig.signalEngineWeights?.[engine.key] ?? engine.weight;
+      const nextScore = scaleEngineScore(engine, nextWeight);
 
-    const weightedFactorBreakdown = factorBreakdown.map((factor) =>
-      applyFactorWeight(factor, resolvedPresetConfig),
-    );
-    const signalStrength = Math.max(
+      return {
+        key: engine.key,
+        label: engine.label,
+        status: toStatus(nextScore),
+        score: Math.round(nextScore),
+        confidence: Math.round(engine.confidence * 100) / 100,
+        weight: Math.round(nextWeight * 100) / 100,
+        detail: engine.detail,
+      } satisfies TimingEngineBreakdownItem;
+    });
+
+    const weightedScoreNumerator = engineBreakdown.reduce(
+      (sum, item) => sum + item.score * item.weight * item.confidence,
       0,
-      Math.min(
-        100,
-        Math.round(
-          snapshot.ruleSummary.signalStrength *
-            (resolvedPresetConfig.agentWeights?.technicalSignal ?? 1),
-        ),
-      ),
     );
+    const weightedScoreDenominator = engineBreakdown.reduce(
+      (sum, item) => sum + item.weight * item.confidence,
+      0,
+    );
+    const compositeScore =
+      weightedScoreDenominator > 0
+        ? weightedScoreNumerator / weightedScoreDenominator
+        : snapshot.signalContext.composite.score;
+    const direction =
+      compositeScore > 20
+        ? "bullish"
+        : compositeScore < -20
+          ? "bearish"
+          : "neutral";
+    const signalStrength = Math.round(Math.abs(compositeScore));
+
+    const riskFlags = uniqueFlags(
+      snapshot.signalContext.engines.flatMap((engine) => engine.warnings),
+    );
+    if (indicators.rsi.value >= 72) {
+      riskFlags.push("OVERBOUGHT");
+    }
+    if (indicators.rsi.value <= 28) {
+      riskFlags.push("OVERSOLD");
+    }
+    if (
+      indicators.close < indicators.ema20 ||
+      snapshot.signalContext.composite.score <= -20
+    ) {
+      riskFlags.push("TREND_WEAKENING");
+    }
 
     const confidence = this.confidencePolicy.calculate(
       {
-        direction: snapshot.ruleSummary.direction,
+        direction,
         signalStrength,
-        factorBreakdown: weightedFactorBreakdown,
-        riskFlags: uniqueFlags(snapshot.ruleSummary.warnings),
+        factorBreakdown: engineBreakdown,
+        riskFlags: uniqueFlags(riskFlags),
       },
       resolvedPresetConfig,
     );
 
-    const positiveFactors = weightedFactorBreakdown.filter(
-      (factor) => factor.status === "positive",
-    );
-    const negativeFactors = weightedFactorBreakdown.filter(
-      (factor) => factor.status === "negative",
-    );
+    const positiveFactors = engineBreakdown
+      .filter((item) => item.status === "positive")
+      .sort((left, right) => right.score - left.score);
+    const negativeFactors = engineBreakdown
+      .filter((item) => item.status === "negative")
+      .sort((left, right) => left.score - right.score);
 
     const triggerNotes = positiveFactors
       .slice(0, 3)
-      .map((factor) => summarizeFactorLabel(factor));
+      .map((item) => summarizeBreakdownLabel(item));
     const invalidationNotes = negativeFactors.length
-      ? negativeFactors
-          .slice(0, 3)
-          .map((factor) => summarizeFactorLabel(factor))
-      : ["若收盘价重新跌破 EMA20 且量能无法放大，本次择时假设需要重评。"];
+      ? negativeFactors.slice(0, 3).map((item) => summarizeBreakdownLabel(item))
+      : ["若多周期结构破坏且相对强弱继续下滑，本次择时假设需要重评。"];
 
-    const riskFlags = uniqueFlags(snapshot.ruleSummary.warnings);
+    const topPositive = positiveFactors[0]?.label ?? "暂无明显优势";
+    const topNegative = negativeFactors[0]?.label ?? "暂无显著拖累";
     const explanation =
-      snapshot.ruleSummary.direction === "bullish"
-        ? "趋势、动量与量能整体偏正向"
-        : snapshot.ruleSummary.direction === "bearish"
-          ? "弱势信号占优，仍需等待结构修复"
-          : "多空因子相互拉扯，宜以观察为主";
+      direction === "bullish"
+        ? `优势集中在 ${topPositive}，且负面拖累主要来自 ${topNegative}。`
+        : direction === "bearish"
+          ? `负面集中在 ${topNegative}，当前需要等待结构修复。`
+          : `正负因子拉扯，最强优势是 ${topPositive}，主要拖累是 ${topNegative}。`;
+    const summary =
+      direction === "bullish"
+        ? `Composite ${compositeScore.toFixed(1)}，多子引擎整体偏多。`
+        : direction === "bearish"
+          ? `Composite ${compositeScore.toFixed(1)}，多子引擎整体偏空。`
+          : `Composite ${compositeScore.toFixed(1)}，当前多空分歧较大。`;
 
     return {
       stockCode: snapshot.stockCode,
       stockName: snapshot.stockName,
       asOfDate: snapshot.asOfDate,
-      direction: snapshot.ruleSummary.direction,
+      direction,
+      compositeScore: Math.round(compositeScore * 100) / 100,
       signalStrength,
       confidence,
-      factorBreakdown: weightedFactorBreakdown,
+      engineBreakdown,
       triggerNotes,
       invalidationNotes,
-      riskFlags,
+      riskFlags: uniqueFlags(riskFlags),
       explanation,
+      signalContext: {
+        direction,
+        compositeScore: Math.round(compositeScore * 100) / 100,
+        signalStrength,
+        confidence,
+        engineBreakdown,
+        triggerNotes,
+        invalidationNotes,
+        riskFlags: uniqueFlags(riskFlags),
+        explanation,
+        summary,
+      },
     };
   }
 }

@@ -1,6 +1,7 @@
 import type {
   TimingPresetConfig,
   TimingReviewHorizon,
+  TimingSignalEngineKey,
 } from "~/server/domain/timing/types";
 
 export const DEFAULT_TIMING_REVIEW_HORIZONS: TimingReviewHorizon[] = [
@@ -9,18 +10,36 @@ export const DEFAULT_TIMING_REVIEW_HORIZONS: TimingReviewHorizon[] = [
   "T20",
 ];
 
+const DEFAULT_SIGNAL_ENGINE_WEIGHTS: Record<TimingSignalEngineKey, number> = {
+  multiTimeframeAlignment: 0.24,
+  relativeStrength: 0.2,
+  volatilityPercentile: 0.14,
+  liquidityStructure: 0.14,
+  breakoutFailure: 0.14,
+  gapVolumeQuality: 0.14,
+};
+
 export const DEFAULT_TIMING_PRESET_CONFIG: TimingPresetConfig = {
-  factorWeights: {
-    trend: 1,
-    macd: 1,
-    rsi: 1,
-    bollinger: 1,
-    volume: 1,
-    obv: 1,
-    volatility: 1,
+  contextWeights: {
+    signalContext: 1,
+    marketContext: 0.9,
+    positionContext: 0.8,
+    feedbackContext: 0.6,
   },
-  agentWeights: {
-    technicalSignal: 1,
+  signalEngineWeights: DEFAULT_SIGNAL_ENGINE_WEIGHTS,
+  positionWeights: {
+    invalidationRiskPenalty: 12,
+    matureGainTrimBoost: 10,
+    lossNearInvalidationPenalty: 14,
+    earlyEntryBonus: 4,
+  },
+  feedbackPolicy: {
+    lookbackDays: 180,
+    minimumSamples: 12,
+    weightStep: 0.15,
+    actionThresholdStep: 3,
+    successRateDeltaThreshold: 8,
+    averageReturnDeltaThreshold: 2,
   },
   confidenceThresholds: {
     signalStrengthWeight: 0.55,
@@ -48,13 +67,21 @@ export function resolveTimingPresetConfig(
   value?: TimingPresetConfig | null,
 ): TimingPresetConfig {
   return {
-    factorWeights: {
-      ...DEFAULT_TIMING_PRESET_CONFIG.factorWeights,
-      ...value?.factorWeights,
+    contextWeights: {
+      ...DEFAULT_TIMING_PRESET_CONFIG.contextWeights,
+      ...value?.contextWeights,
     },
-    agentWeights: {
-      ...DEFAULT_TIMING_PRESET_CONFIG.agentWeights,
-      ...value?.agentWeights,
+    signalEngineWeights: {
+      ...DEFAULT_TIMING_PRESET_CONFIG.signalEngineWeights,
+      ...value?.signalEngineWeights,
+    },
+    positionWeights: {
+      ...DEFAULT_TIMING_PRESET_CONFIG.positionWeights,
+      ...value?.positionWeights,
+    },
+    feedbackPolicy: {
+      ...DEFAULT_TIMING_PRESET_CONFIG.feedbackPolicy,
+      ...value?.feedbackPolicy,
     },
     confidenceThresholds: {
       ...DEFAULT_TIMING_PRESET_CONFIG.confidenceThresholds,

@@ -11,10 +11,14 @@ export class TechnicalSignalSet {
 
   static create(indicators: TimingIndicators) {
     assertFiniteNumber(indicators.close, "close");
+    assertFiniteNumber(indicators.ema5, "ema5");
     assertFiniteNumber(indicators.ema20, "ema20");
     assertFiniteNumber(indicators.ema60, "ema60");
+    assertFiniteNumber(indicators.ema120, "ema120");
     assertFiniteNumber(indicators.atr14, "atr14");
     assertFiniteNumber(indicators.volumeRatio20, "volumeRatio20");
+    assertFiniteNumber(indicators.realizedVol20, "realizedVol20");
+    assertFiniteNumber(indicators.realizedVol120, "realizedVol120");
     assertFiniteNumber(indicators.macd.dif, "macd.dif");
     assertFiniteNumber(indicators.macd.dea, "macd.dea");
     assertFiniteNumber(indicators.macd.histogram, "macd.histogram");
