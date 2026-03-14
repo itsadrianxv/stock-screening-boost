@@ -557,8 +557,7 @@ export function ScreeningStudioClient() {
       name:
         strategyDetailQuery.data?.name ??
         strategySummary?.name ??
-        strategyForm.name.trim() ??
-        "未命名筛选器",
+        (strategyForm.name.trim() || "未命名筛选器"),
       description:
         strategyDetailQuery.data?.description ??
         strategySummary?.description ??
@@ -581,8 +580,17 @@ export function ScreeningStudioClient() {
     strategyMode,
   ]);
   const draftTags = useMemo(
-    () => parseTags(strategyForm.tagsText).slice(0, 3),
+    () => parseTags(strategyForm.tagsText),
     [strategyForm.tagsText],
+  );
+  const strategySummaryTags =
+    strategyMode === "create"
+      ? draftTags
+      : (selectedStrategySummary?.tags ?? []);
+  const visibleStrategySummaryTags = strategySummaryTags.slice(0, 3);
+  const hiddenStrategySummaryTagCount = Math.max(
+    strategySummaryTags.length - visibleStrategySummaryTags.length,
+    0,
   );
 
   const resetStrategyForm = () => {
@@ -690,20 +698,22 @@ export function ScreeningStudioClient() {
                 value={selectedStrategyId ?? ""}
                 onChange={(event) => {
                   const nextId = event.target.value;
-                  setSelectedStrategyId(nextId || null);
-                  setStrategyMode(nextId ? "update" : "create");
+
+                  if (!nextId) {
+                    resetStrategyForm();
+                    return;
+                  }
+
+                  selectStrategyForEditing(nextId);
                 }}
                 className="app-select mt-2"
               >
-                {strategies.length === 0 ? (
-                  <option value="">暂无筛选器</option>
-                ) : (
-                  strategies.map((strategy: StrategyListItem) => (
-                    <option key={strategy.id} value={strategy.id}>
-                      {strategy.name}
-                    </option>
-                  ))
-                )}
+                <option value="">新建筛选器（草稿）</option>
+                {strategies.map((strategy: StrategyListItem) => (
+                  <option key={strategy.id} value={strategy.id}>
+                    {strategy.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="min-w-[220px] flex-1 rounded-[14px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.82)] px-4 py-3">
@@ -977,71 +987,211 @@ export function ScreeningStudioClient() {
             </span>
           </summary>
           <div className="mt-4">
-            <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-              <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
-                    筛选器库
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={resetStrategyForm}
-                    className="rounded-full border border-[#d2e5f9]/20 bg-[#0f2137]/88 px-3 py-1.5 text-xs font-medium text-[#d2e5f9]"
-                  >
-                    新建筛选器
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3">
-                  {strategies.map((strategy: StrategyListItem) => (
-                    <article
-                      key={strategy.id}
-                      className={`rounded-2xl border p-4 ${strategy.id === selectedStrategyId ? "border-[#49ddb8] bg-[#123f35]" : "border-[#35526f]/35 bg-[#10253c]/90"}`}
+            <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-start">
+              <aside className="xl:sticky xl:top-6">
+                <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#7f99b4]">
+                        筛选器库
+                      </p>
+                      <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
+                        策略导航
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetStrategyForm}
+                      className="rounded-full border border-[#d2e5f9]/20 bg-[#0f2137]/88 px-3 py-1.5 text-xs font-medium text-[#d2e5f9]"
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedStrategyId(strategy.id);
-                          setStrategyMode("update");
-                        }}
-                        className="w-full text-left"
-                      >
-                        <p className="truncate text-sm font-semibold text-[#eff8ff]">
-                          {strategy.name}
+                      新建筛选器
+                    </button>
+                  </div>
+
+                  <section className="mt-5 rounded-[22px] border border-[#35526f]/35 bg-[#10253c]/92 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#7f99b4]">
+                          {strategyMode === "create" ? "当前状态" : "当前选中"}
                         </p>
-                        <p className="mt-1 line-clamp-2 text-xs text-[#97afc7]">
-                          {strategy.description ?? "未填写"}
-                        </p>
-                      </button>
-                      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            executeStrategyMutation.mutate({
-                              strategyId: strategy.id,
-                            })
-                          }
-                          className="rounded-full border border-[#2fa889]/25 bg-[#103830] px-3 py-1 text-[#5cefc4]"
-                        >
-                          加入执行队列
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteStrategyMutation.mutate({ id: strategy.id })
-                          }
-                          className="rounded-full border border-[#ff8d9b]/25 bg-[#4b2331] px-3 py-1 text-[#ff8d9b]"
-                        >
-                          删除
-                        </button>
+                        <h3 className="mt-2 truncate text-lg font-semibold text-[#eef6ff]">
+                          {strategyMode === "create"
+                            ? strategyForm.name.trim() || "新建筛选器"
+                            : (selectedStrategySummary?.name ?? "未选中筛选器")}
+                        </h3>
                       </div>
-                    </article>
-                  ))}
+                      <span className="rounded-full border border-[#e1eeff]/20 px-3 py-1 text-[11px] text-[#cfe4f8]">
+                        {strategyMode === "create"
+                          ? "草稿"
+                          : selectedStrategySummary?.isTemplate
+                            ? "模板"
+                            : "策略"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#97afc7]">
+                      {strategyMode === "create"
+                        ? strategyForm.description.trim() ||
+                          "当前处于新建模式。你可以直接在右侧搭建筛选条件，保存后会自动进入策略库。"
+                        : (selectedStrategySummary?.description ??
+                          "当前策略暂无说明，可在右侧补充筛选思路与备注。")}
+                    </p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      <div className="rounded-[14px] border border-[#35526f]/35 bg-[#0c1f33] px-4 py-3">
+                        <p className="text-xs text-[#7f99b4]">筛选条件</p>
+                        <p className="mt-2 text-lg font-semibold text-[#eef6ff]">
+                          {countConditions(strategyForm.filters)}
+                        </p>
+                      </div>
+                      <div className="rounded-[14px] border border-[#35526f]/35 bg-[#0c1f33] px-4 py-3">
+                        <p className="text-xs text-[#7f99b4]">评分指标</p>
+                        <p className="mt-2 text-lg font-semibold text-[#eef6ff]">
+                          {strategyForm.scoringRules.length}
+                        </p>
+                      </div>
+                    </div>
+                    {visibleStrategySummaryTags.length > 0 ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {visibleStrategySummaryTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full border border-[#e1eeff]/16 bg-[#11253b] px-3 py-1 text-[11px] text-[#d4e7f8]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {hiddenStrategySummaryTagCount > 0 ? (
+                          <span className="rounded-full border border-[#e1eeff]/12 px-3 py-1 text-[11px] text-[#8fb0cc]">
+                            +{hiddenStrategySummaryTagCount}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {strategyMode === "update" &&
+                    selectedStrategySummary?.updatedAt ? (
+                      <p className="mt-4 text-xs text-[#7f99b4]">
+                        最近更新：
+                        {formatDate(selectedStrategySummary.updatedAt)}
+                      </p>
+                    ) : null}
+                  </section>
+
+                  <div className="mt-5 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-[#eef6ff]">
+                      已保存筛选器
+                    </h3>
+                    <span className="rounded-full border border-[#e1eeff]/20 px-3 py-1 text-[11px] text-[#8fb0cc]">
+                      {strategies.length} 个
+                    </span>
+                  </div>
+
+                  {strategies.length === 0 ? (
+                    <div className="mt-3 rounded-[18px] border border-[#35526f]/35 bg-[#10253c]/88 p-4 text-sm leading-6 text-[#97afc7]">
+                      还没有已保存的筛选器。先在右侧创建一个，保存后会自动出现在这里。
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid gap-3 xl:max-h-[calc(100vh-20rem)] xl:overflow-y-auto xl:pr-1">
+                      {strategies.map((strategy: StrategyListItem) => {
+                        const isActive =
+                          strategyMode === "update" &&
+                          strategy.id === selectedStrategyId;
+                        const visibleTags = strategy.tags.slice(0, 2);
+
+                        return (
+                          <article
+                            key={strategy.id}
+                            className={`rounded-2xl border p-4 ${isActive ? "border-[#49ddb8] bg-[#123f35]" : "border-[#35526f]/35 bg-[#10253c]/90"}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                selectStrategyForEditing(strategy.id)
+                              }
+                              className="w-full text-left"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="truncate text-sm font-semibold text-[#eff8ff]">
+                                  {strategy.name}
+                                </p>
+                                {strategy.isTemplate ? (
+                                  <span className="rounded-full border border-[#d8e9fa]/18 px-2.5 py-1 text-[10px] text-[#d8e9fa]">
+                                    模板
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#97afc7]">
+                                {strategy.description ?? "未填写"}
+                              </p>
+                            </button>
+
+                            {visibleTags.length > 0 ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {visibleTags.map((tag) => (
+                                  <span
+                                    key={`${strategy.id}-${tag}`}
+                                    className="rounded-full border border-[#e1eeff]/14 bg-[#11253b] px-2.5 py-1 text-[10px] text-[#cfe1f3]"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                                {strategy.tags.length > visibleTags.length ? (
+                                  <span className="rounded-full border border-[#e1eeff]/12 px-2.5 py-1 text-[10px] text-[#8fb0cc]">
+                                    +{strategy.tags.length - visibleTags.length}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            <p className="mt-3 text-[11px] text-[#7f99b4]">
+                              更新于 {formatDate(strategy.updatedAt)}
+                            </p>
+
+                            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  executeStrategyMutation.mutate({
+                                    strategyId: strategy.id,
+                                  })
+                                }
+                                className="rounded-full border border-[#2fa889]/25 bg-[#103830] px-3 py-1 text-[#5cefc4]"
+                              >
+                                加入执行队列
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  deleteStrategyMutation.mutate({
+                                    id: strategy.id,
+                                  })
+                                }
+                                className="rounded-full border border-[#ff8d9b]/25 bg-[#4b2331] px-3 py-1 text-[#ff8d9b]"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </aside>
+              <section className="min-w-0 rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
+                      筛选器设置
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-[#97afc7]">
+                      {strategyMode === "create"
+                        ? "从零搭建新的筛选器。保存后会自动进入左侧策略库，便于后续复用与执行。"
+                        : `正在编辑：${selectedStrategySummary?.name ?? (strategyForm.name.trim() || "当前筛选器")}`}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-[#e1eeff]/20 px-3 py-1 text-[11px] text-[#cfe4f8]">
+                    {strategyMode === "create" ? "新建" : "编辑中"}
+                  </span>
                 </div>
-              </section>
-              <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
-                <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
-                  筛选器设置
-                </h2>
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
                   <input
                     value={strategyForm.name}
