@@ -3,7 +3,6 @@ import Link from "next/link";
 import {
   ActionBanner,
   EmptyState,
-  KpiCard,
   Panel,
   StatusPill,
   statusTone,
@@ -56,8 +55,6 @@ export default async function Home() {
 
   let loadError: string | null = null;
 
-  let strategyCount = 0;
-  let watchListCount = 0;
   let workflowRuns:
     | Awaited<ReturnType<typeof api.workflow.listRuns>>["items"]
     | null = null;
@@ -73,29 +70,14 @@ export default async function Home() {
 
   if (signedIn) {
     try {
-      const [
-        strategies,
-        watchLists,
-        workflowRunResult,
-        sessions,
-        latestRecommendations,
-        portfolios,
-      ] = await Promise.all([
-        api.screening.listStrategies({ limit: 100, offset: 0 }),
-        api.watchlist.list({
-          limit: 50,
-          offset: 0,
-          sortBy: "updatedAt",
-          sortDirection: "desc",
-        }),
-        api.workflow.listRuns({ limit: 12 }),
-        api.screening.listRecentSessions({ limit: 8, offset: 0 }),
-        api.timing.listRecommendations({ limit: 12 }),
-        api.timing.listPortfolioSnapshots(),
-      ]);
+      const [workflowRunResult, sessions, latestRecommendations, portfolios] =
+        await Promise.all([
+          api.workflow.listRuns({ limit: 12 }),
+          api.screening.listRecentSessions({ limit: 8, offset: 0 }),
+          api.timing.listRecommendations({ limit: 12 }),
+          api.timing.listPortfolioSnapshots(),
+        ]);
 
-      strategyCount = strategies.length;
-      watchListCount = watchLists.length;
       workflowRuns = workflowRunResult.items;
       screeningSessions = sessions;
       recommendations = latestRecommendations;
@@ -169,49 +151,6 @@ export default async function Home() {
             >
               {signedIn ? "退出登录" : "登录研究空间"}
             </Link>
-          </>
-        }
-        summary={
-          <>
-            <KpiCard
-              label="今日重点建议"
-              value={
-                priorityRecommendation ? latestRecommendations.length : "--"
-              }
-              hint={
-                priorityRecommendation
-                  ? `${actionLabelMap[priorityRecommendation.action] ?? priorityRecommendation.action} 已生成`
-                  : "暂无新建议"
-              }
-              tone="success"
-            />
-            <KpiCard
-              label="进行中的研究"
-              value={liveRuns.length + liveScreeningSessions.length}
-              hint="研究与筛选"
-              tone="warning"
-            />
-            <KpiCard
-              label="机会池清单"
-              value={signedIn ? watchListCount : "--"}
-              hint={`策略 ${signedIn ? strategyCount : "--"} 条`}
-              tone="info"
-            />
-            <KpiCard
-              label="组合风险预算"
-              value={
-                latestRecommendations[0]?.riskBudgetPct !== undefined
-                  ? formatPct(latestRecommendations[0]?.riskBudgetPct)
-                  : portfolioSnapshot
-                    ? formatPct(
-                        portfolioSnapshot.riskPreferences
-                          .maxPortfolioRiskBudgetPct,
-                      )
-                    : "--"
-              }
-              hint="当前上限"
-              tone="neutral"
-            />
           </>
         }
       >
