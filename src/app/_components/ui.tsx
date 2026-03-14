@@ -25,32 +25,32 @@ const navItems: Array<{
   {
     key: "home",
     href: "/",
-    label: "今日看板",
-    detail: "优先事项、研究动态与组合语境",
+    label: "0. 今日看板",
+    detail: "集中查看优先事项与盘面提醒",
   },
   {
     key: "screening",
     href: "/screening",
-    label: "机会池",
-    detail: "筛选命中、自选清单与候选沉淀",
+    label: "1. 股票海选",
+    detail: "从全市场初筛可继续跟踪的标的",
   },
   {
     key: "workflows",
     href: "/workflows",
-    label: "行业判断",
-    detail: "赛道热度、机会验证与后续跟进",
+    label: "2. 行业研究",
+    detail: "对比赛道景气、催化与结构变化",
   },
   {
     key: "companyResearch",
     href: "/company-research",
-    label: "公司判断",
-    detail: "证据、结论、风险与核验动作",
+    label: "3. 公司研究",
+    detail: "拆解公司质地、证据与核心假设",
   },
   {
     key: "timing",
     href: "/timing",
-    label: "择时组合",
-    detail: "信号、仓位建议、复盘与预算",
+    label: "5. 择时组合",
+    detail: "结合信号与仓位做出组合决策",
   },
 ];
 
@@ -117,8 +117,11 @@ export function WorkspaceShell(props: {
                         : "border-transparent text-[var(--app-text-muted)] hover:border-[var(--app-border)] hover:bg-[rgba(14,19,26,0.82)] hover:text-[var(--app-text)]",
                     )}
                   >
-                    <span className="block text-sm font-medium">
+                    <span className="block text-sm font-medium text-[inherit]">
                       {item.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--app-text-soft)]">
+                      {item.detail}
                     </span>
                   </Link>
                 );
