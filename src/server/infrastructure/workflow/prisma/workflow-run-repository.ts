@@ -644,17 +644,51 @@ export class PrismaWorkflowRunRepository {
     cursor?: string;
     status?: WorkflowRunStatus;
     templateCode?: string;
+    templateCodes?: string[];
+    search?: string;
   }) {
+    const templateCodes = [
+      params.templateCode,
+      ...(params.templateCodes ?? []),
+    ].filter((value, index, values): value is string => {
+      return Boolean(value) && values.indexOf(value) === index;
+    });
+
     const records = await this.prisma.workflowRun.findMany({
       where: {
         userId: params.userId,
         status: params.status,
-        template: params.templateCode
-          ? {
-              is: {
-                code: params.templateCode,
+        template:
+          templateCodes.length > 0
+            ? {
+                is: {
+                  code: {
+                    in: templateCodes,
+                  },
+                },
+              }
+            : undefined,
+        OR: params.search
+          ? [
+              {
+                query: {
+                  contains: params.search,
+                  mode: "insensitive",
+                },
               },
-            }
+              {
+                currentNodeKey: {
+                  contains: params.search,
+                  mode: "insensitive",
+                },
+              },
+              {
+                errorMessage: {
+                  contains: params.search,
+                  mode: "insensitive",
+                },
+              },
+            ]
           : undefined,
       },
       include: {

@@ -346,6 +346,9 @@ export function CompanyResearchClient() {
           <Link href="/" className="app-button">
             返回看板
           </Link>
+          <Link href="/company-research/history" className="app-button">
+            历史记录
+          </Link>
           <Link href="/workflows" className="app-button app-button-primary">
             打开行业判断
           </Link>

@@ -77,6 +77,8 @@ function Notice({ notice }: { notice: NoticeState | null }) {
 export function ScreeningStudioClient() {
   const utils = api.useUtils();
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [hasInitializedStrategySelection, setHasInitializedStrategySelection] =
+    useState(false);
   const [strategyMode, setStrategyMode] = useState<"create" | "update">(
     "create",
   );
@@ -149,6 +151,7 @@ export function ScreeningStudioClient() {
 
   const createStrategyMutation = api.screening.createStrategy.useMutation({
     onSuccess: async (created) => {
+      setHasInitializedStrategySelection(true);
       setStrategyMode("update");
       setSelectedStrategyId(created.id);
       setNotice({ tone: "success", text: `策略「${created.name}」已创建` });
@@ -173,7 +176,24 @@ export function ScreeningStudioClient() {
   });
 
   const deleteStrategyMutation = api.screening.deleteStrategy.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (_deleted, variables) => {
+      const remainingStrategies = strategies.filter(
+        (strategy) => strategy.id !== variables.id,
+      );
+
+      if (selectedStrategyId === variables.id) {
+        if (remainingStrategies[0]) {
+          setHasInitializedStrategySelection(true);
+          setSelectedStrategyId(remainingStrategies[0].id);
+          setStrategyMode("update");
+        } else {
+          setHasInitializedStrategySelection(true);
+          setSelectedStrategyId(null);
+          setStrategyMode("create");
+          setStrategyForm(createDefaultStrategyForm());
+        }
+      }
+
       setNotice({ tone: "success", text: "策略已删除" });
       await Promise.all([
         utils.screening.listStrategies.invalidate(),
@@ -403,10 +423,53 @@ export function ScreeningStudioClient() {
   }, [notice]);
 
   useEffect(() => {
-    if (strategies.length > 0 && !selectedStrategyId) {
-      setSelectedStrategyId(strategies[0]?.id ?? null);
+    if (!strategiesQuery.isFetched) {
+      return;
     }
-  }, [selectedStrategyId, strategies]);
+
+    const selectedStillExists =
+      selectedStrategyId !== null &&
+      strategies.some((strategy) => strategy.id === selectedStrategyId);
+
+    if (selectedStillExists) {
+      if (!hasInitializedStrategySelection) {
+        setHasInitializedStrategySelection(true);
+      }
+
+      return;
+    }
+
+    if (selectedStrategyId !== null) {
+      if (strategies[0]) {
+        setHasInitializedStrategySelection(true);
+        setSelectedStrategyId(strategies[0].id);
+        setStrategyMode("update");
+      } else {
+        setHasInitializedStrategySelection(true);
+        setSelectedStrategyId(null);
+        setStrategyMode("create");
+        setStrategyForm(createDefaultStrategyForm());
+      }
+
+      return;
+    }
+
+    if (!hasInitializedStrategySelection) {
+      if (strategies[0]) {
+        setSelectedStrategyId(strategies[0].id);
+        setStrategyMode("update");
+      } else {
+        setStrategyMode("create");
+      }
+
+      setHasInitializedStrategySelection(true);
+    }
+  }, [
+    hasInitializedStrategySelection,
+    selectedStrategyId,
+    strategies,
+    strategiesQuery.isFetched,
+  ]);
 
   useEffect(() => {
     if (sessions.length > 0 && !selectedSessionId) {
@@ -478,10 +541,61 @@ export function ScreeningStudioClient() {
   const liveSessionCount = sessions.filter((session) =>
     isLiveSession(session.status),
   ).length;
+  const selectedStrategySummary = useMemo(() => {
+    if (strategyMode !== "update" || !selectedStrategyId) {
+      return null;
+    }
+
+    const strategySummary =
+      strategies.find((strategy) => strategy.id === selectedStrategyId) ?? null;
+
+    if (!strategySummary && !strategyDetailQuery.data) {
+      return null;
+    }
+
+    return {
+      name:
+        strategyDetailQuery.data?.name ??
+        strategySummary?.name ??
+        strategyForm.name.trim() ??
+        "未命名筛选器",
+      description:
+        strategyDetailQuery.data?.description ??
+        strategySummary?.description ??
+        strategyForm.description,
+      tags: strategyDetailQuery.data?.tags ?? strategySummary?.tags ?? [],
+      isTemplate:
+        strategyDetailQuery.data?.isTemplate ??
+        strategySummary?.isTemplate ??
+        strategyForm.isTemplate,
+      updatedAt:
+        strategyDetailQuery.data?.updatedAt ?? strategySummary?.updatedAt,
+    };
+  }, [
+    selectedStrategyId,
+    strategies,
+    strategyDetailQuery.data,
+    strategyForm.description,
+    strategyForm.isTemplate,
+    strategyForm.name,
+    strategyMode,
+  ]);
+  const draftTags = useMemo(
+    () => parseTags(strategyForm.tagsText).slice(0, 3),
+    [strategyForm.tagsText],
+  );
 
   const resetStrategyForm = () => {
+    setHasInitializedStrategySelection(true);
+    setSelectedStrategyId(null);
     setStrategyMode("create");
     setStrategyForm(createDefaultStrategyForm());
+  };
+
+  const selectStrategyForEditing = (strategyId: string) => {
+    setHasInitializedStrategySelection(true);
+    setSelectedStrategyId(strategyId);
+    setStrategyMode("update");
   };
 
   const handleSubmitStrategy = async () => {
@@ -545,6 +659,9 @@ export function ScreeningStudioClient() {
           <Link href="/" className="app-button">
             返回看板
           </Link>
+          <Link href="/screening/history" className="app-button">
+            历史会话
+          </Link>
           <Link href="/timing" className="app-button app-button-primary">
             打开择时组合
           </Link>
@@ -589,7 +706,20 @@ export function ScreeningStudioClient() {
                 )}
               </select>
             </div>
-            <div className="min-w-[220px] flex-1">
+            <div className="min-w-[220px] flex-1 rounded-[14px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.82)] px-4 py-3">
+              <p className="text-xs text-[var(--app-text-soft)]">当前会话</p>
+              <p className="mt-2 text-sm font-medium text-[var(--app-text)]">
+                {selectedSessionSummary
+                  ? selectedSessionSummary.strategyName
+                  : "暂无选中会话"}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-[var(--app-text-muted)]">
+                {selectedSessionSummary
+                  ? `${sessionStatusLabelMap[selectedSessionSummary.status] ?? selectedSessionSummary.status} · ${selectedSessionSummary.currentStep ?? "等待结果"}`
+                  : "历史会话已迁移到独立页面，可在下方查看最近记录。"}
+              </p>
+            </div>
+            <div className="hidden min-w-[220px] flex-1">
               <label
                 htmlFor="screening-session"
                 className="text-xs text-[var(--app-text-soft)]"
@@ -657,6 +787,9 @@ export function ScreeningStudioClient() {
               >
                 执行筛选
               </button>
+              <Link href="/screening/history" className="app-button">
+                浏览历史会话
+              </Link>
               <button
                 type="button"
                 onClick={() => {

@@ -311,6 +311,9 @@ export function WorkflowsClient() {
           <Link href="/" className="app-button">
             返回看板
           </Link>
+          <Link href="/workflows/history" className="app-button">
+            历史记录
+          </Link>
           <Link
             href="/company-research"
             className="app-button app-button-primary"

@@ -40,6 +40,12 @@ import { PrismaScreeningStrategyRepository } from "~/server/infrastructure/scree
 /**
  * 领域异常到 TRPCError 的映射
  */
+const screeningHistoryInput = z.object({
+  limit: z.number().int().min(1).max(50).default(24),
+  offset: z.number().int().min(0).default(0),
+  search: z.string().trim().min(1).max(120).optional(),
+});
+
 function mapDomainError(error: unknown): TRPCError {
   if (error instanceof InvalidStrategyError) {
     return new TRPCError({
@@ -403,6 +409,22 @@ export const screeningRouter = createTRPCRouter({
           matchedCount: session.countMatched(),
           executionTime: session.executionTime,
         }));
+      } catch (error) {
+        throw mapDomainError(error);
+      }
+    }),
+
+  listSessionHistory: protectedProcedure
+    .input(screeningHistoryInput)
+    .query(async ({ ctx, input }) => {
+      try {
+        const repository = new PrismaScreeningSessionRepository(ctx.db);
+        return await repository.searchHistoryForUser({
+          userId: ctx.session.user.id,
+          limit: input.limit,
+          offset: input.offset,
+          search: input.search,
+        });
       } catch (error) {
         throw mapDomainError(error);
       }

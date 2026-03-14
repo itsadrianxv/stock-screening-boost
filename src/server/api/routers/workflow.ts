@@ -1,6 +1,6 @@
+import { WorkflowRunStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { WorkflowRunStatus } from "@prisma/client";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { WorkflowCommandService } from "~/server/application/workflow/command-service";
 import { WorkflowQueryService } from "~/server/application/workflow/query-service";
@@ -210,6 +210,8 @@ const listRunsInput = z.object({
   cursor: z.string().cuid().optional(),
   status: z.nativeEnum(WorkflowRunStatus).optional(),
   templateCode: z.string().optional(),
+  templateCodes: z.array(z.string().min(1)).max(8).optional(),
+  search: z.string().trim().min(1).max(120).optional(),
 });
 
 const cancelRunInput = z.object({
@@ -548,6 +550,8 @@ export const workflowRouter = createTRPCRouter({
           cursor: input.cursor,
           status: input.status,
           templateCode: input.templateCode,
+          templateCodes: input.templateCodes,
+          search: input.search,
         });
       } catch (error) {
         throw mapWorkflowError(error);

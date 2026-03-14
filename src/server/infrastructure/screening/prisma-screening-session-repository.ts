@@ -2,7 +2,7 @@
  * PrismaScreeningSessionRepository 实现
  */
 
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { ScreeningSession } from "~/server/domain/screening/aggregates/screening-session";
 import { FilterGroup } from "~/server/domain/screening/entities/filter-group";
 import { ScreeningSessionStatus } from "~/server/domain/screening/enums/screening-session-status";
@@ -15,6 +15,78 @@ export class PrismaScreeningSessionRepository
   implements IScreeningSessionRepository
 {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async searchHistoryForUser(params: {
+    userId: string;
+    limit: number;
+    offset: number;
+    search?: string;
+  }) {
+    const searchTerm = params.search ? `%${params.search}%` : undefined;
+    const whereClauses = [Prisma.sql`"userId" = ${params.userId}`];
+
+    if (searchTerm) {
+      whereClauses.push(Prisma.sql`
+        (
+          "strategyName" ILIKE ${searchTerm}
+          OR COALESCE("currentStep", '') ILIKE ${searchTerm}
+          OR COALESCE("errorMessage", '') ILIKE ${searchTerm}
+          OR COALESCE("topStocks"::text, '') ILIKE ${searchTerm}
+          OR COALESCE(array_to_string("otherStockCodes", ' '), '') ILIKE ${searchTerm}
+          OR COALESCE("filtersSnapshot"::text, '') ILIKE ${searchTerm}
+          OR COALESCE("scoringConfigSnapshot"::text, '') ILIKE ${searchTerm}
+        )
+      `);
+    }
+
+    const whereSql = Prisma.join(whereClauses, " AND ");
+
+    const [items, countResult] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{
+          id: string;
+          strategyId: string | null;
+          strategyName: string;
+          executedAt: Date;
+          status: string;
+          progressPercent: number;
+          currentStep: string | null;
+          errorMessage: string | null;
+          totalScanned: number;
+          matchedCount: number;
+          executionTime: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          id,
+          "strategyId",
+          "strategyName",
+          "executedAt",
+          status::text AS status,
+          "progressPercent",
+          "currentStep",
+          "errorMessage",
+          "totalScanned",
+          jsonb_array_length(COALESCE("topStocks", '[]'::jsonb))::int AS "matchedCount",
+          "executionTime"
+        FROM "ScreeningSession"
+        WHERE ${whereSql}
+        ORDER BY "executedAt" DESC, id DESC
+        LIMIT ${params.limit}
+        OFFSET ${params.offset}
+      `),
+      this.prisma.$queryRaw<Array<{ totalCount: number }>>(Prisma.sql`
+        SELECT COUNT(*)::int AS "totalCount"
+        FROM "ScreeningSession"
+        WHERE ${whereSql}
+      `),
+    ]);
+
+    return {
+      items,
+      totalCount: countResult[0]?.totalCount ?? 0,
+    };
+  }
 
   async save(session: ScreeningSession): Promise<void> {
     const data = {

@@ -474,6 +474,9 @@ export function TimingClient() {
           <Link href="/workflows" className="app-button">
             查看研究详情
           </Link>
+          <Link href="/timing/history" className="app-button">
+            历史记录
+          </Link>
           <Link href="/screening" className="app-button app-button-success">
             返回机会池
           </Link>

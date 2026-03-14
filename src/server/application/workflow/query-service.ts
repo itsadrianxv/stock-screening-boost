@@ -64,6 +64,8 @@ export class WorkflowQueryService {
     cursor?: string;
     status?: WorkflowRunStatus;
     templateCode?: string;
+    templateCodes?: string[];
+    search?: string;
   }) {
     const records = await this.repository.listRunsForUser(params);
 
@@ -75,6 +77,7 @@ export class WorkflowQueryService {
         progressPercent: run.progressPercent,
         currentNodeKey: run.currentNodeKey,
         errorCode: run.errorCode,
+        errorMessage: run.errorMessage,
         createdAt: run.createdAt,
         startedAt: run.startedAt,
         completedAt: run.completedAt,
