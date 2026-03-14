@@ -19,9 +19,9 @@ def test_get_v1_stock_evidence_batch_success():
         concept = kwargs.get("concept")
         return {
             "stockCode": stock_code,
-            "companyName": f"公司{stock_code}",
-            "concept": concept or "算力",
-            "evidenceSummary": "测试证据",
+            "companyName": f"Company {stock_code}",
+            "concept": concept or "AI",
+            "evidenceSummary": "Test evidence summary",
             "catalysts": [],
             "risks": [],
             "credibilityScore": 70,
@@ -34,7 +34,7 @@ def test_get_v1_stock_evidence_batch_success():
     ):
         response = client.post(
             "/api/v1/intelligence/stocks/evidence/batch",
-            json={"stockCodes": ["603019", "300308"], "concept": "算力"},
+            json={"stockCodes": ["603019", "300308"], "concept": "AI"},
         )
 
     assert response.status_code == 200
@@ -43,19 +43,19 @@ def test_get_v1_stock_evidence_batch_success():
     assert payload["data"]["errors"] == []
 
 
-def test_intelligence_gateway_does_not_use_stale_cache_when_provider_fails():
+def test_intelligence_gateway_prefers_mock_fallback_over_stale_cache_when_provider_fails():
     cache_key = build_cache_key(
         dataset="theme_news",
         provider="akshare",
-        params={"theme": "算力", "days": 7, "limit": 20},
+        params={"theme": "AI", "days": 7, "limit": 20},
     )
     gateway_cache.set(
         key=cache_key,
         value=[
             {
                 "id": "stale-1",
-                "title": "过期缓存",
-                "summary": "旧数据",
+                "title": "Stale cached headline",
+                "summary": "Stale cached summary",
                 "source": "cache",
                 "publishedAt": "2026-03-01T08:00:00+00:00",
                 "sentiment": "neutral",
@@ -68,9 +68,15 @@ def test_intelligence_gateway_does_not_use_stale_cache_when_provider_fails():
     )
 
     with patch(
-        "app.providers.akshare.client.AkShareProviderClient.get_theme_news",
+        "app.services.intelligence_data_adapter._fetch_theme_news_from_akshare",
         side_effect=Exception("provider down"),
     ):
-        response = client.get("/api/v1/intelligence/themes/算力/news")
+        response = client.get("/api/v1/intelligence/themes/AI/news")
 
-    assert response.status_code == 503
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["cacheHit"] is False
+    assert payload["meta"]["isStale"] is False
+    assert payload["data"]["theme"] == "AI"
+    assert payload["data"]["newsItems"][0]["source"] == "intelligence-fallback"
+    assert payload["data"]["newsItems"][0]["id"] != "stale-1"

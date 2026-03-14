@@ -142,14 +142,33 @@ class IntelligenceDataAdapter:
         normalized_days = max(1, min(days, 30))
         normalized_limit = max(1, min(limit, 50))
 
-        news_items = _fetch_theme_news_from_akshare(
-            theme=normalized_theme,
-            days=normalized_days,
-            limit=normalized_limit,
-            allow_candidate_spot_fallback=False,
-        )
+        news_items: list[dict] = []
+        try:
+            news_items = _fetch_theme_news_from_akshare(
+                theme=normalized_theme,
+                days=normalized_days,
+                limit=normalized_limit,
+                allow_candidate_spot_fallback=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Strict theme news fetch failed for %s: %s",
+                normalized_theme,
+                exc,
+            )
         if news_items:
             return news_items
+
+        if _ENABLE_MOCK_FALLBACK:
+            LOGGER.warning(
+                "Using mock theme news fallback for %s in strict mode",
+                normalized_theme,
+            )
+            return _build_mock_theme_news(
+                normalized_theme,
+                normalized_days,
+                normalized_limit,
+            )
 
         raise ValueError(f"主题“{normalized_theme}”暂无可用资讯数据")
 
