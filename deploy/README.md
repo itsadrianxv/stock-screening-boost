@@ -1,53 +1,73 @@
 # Docker Desktop 部署说明
 
-本目录提供一套完整的 Docker Compose 编排，用于启动以下服务：
+本目录提供完整的 Docker Compose 编排，用于启动以下服务：
 
-- `web`：Next.js 主站
-- `python-service`：FastAPI 金融数据服务
-- `workflow-worker`：LangGraph 工作流异步执行 Worker
-- `screening-worker`：筛选任务异步执行 Worker
-- `redis`：运行时事件与缓存
+- `web`：Next.js 应用
+- `python-service`：FastAPI 金融与情报数据网关
+- `workflow-worker`：工作流执行器
+- `screening-worker`：筛选任务执行器
+- `redis`：运行时缓存与队列状态
 - `postgres`：PostgreSQL 数据库
 
-## 1. 前置条件
+## 前置条件
 
 - 已安装并启动 Docker Desktop
-- 如果你在 WSL 中执行命令，Docker Desktop 已开启对应发行版的 WSL Integration
-- 可正常执行 `docker version` 与 `docker compose version`
+- `docker version` 与 `docker compose version` 可正常执行
 
-## 2. 环境配置
+## 1. 准备环境变量
 
-首次部署前，复制环境文件：
+先创建本地部署配置：
 
 ```bash
 cp deploy/.env.example deploy/.env
 ```
 
-至少检查以下变量：
+最低必填项：
 
 - `AUTH_SECRET`
 - `POSTGRES_PASSWORD`
 - `WEB_PORT` / `PYTHON_SERVICE_PORT` / `POSTGRES_PORT`
 
-如果你希望“公司研究任务中心”真正调用 Firecrawl 抓取网页证据，请额外配置：
+如需尽可能启用完整能力，建议同时配置：
 
-- `FIRECRAWL_API_KEY`
-- `FIRECRAWL_BASE_URL`（默认 `https://api.firecrawl.dev`）
-- `FIRECRAWL_TIMEOUT_MS`（默认 `15000`）
+- `DEEPSEEK_API_KEY`：启用工作流总结、Insight 归档等增强摘要能力
+- `FIRECRAWL_API_KEY`：启用公司研究中的网页搜索与抓取
+- `ZHIPU_API_KEY`：启用主题到概念映射的智谱 Web Search
+- `IFIND_USERNAME` / `IFIND_PASSWORD`：启用 iFinD 作为主筛选数据源
+- `REFCHECKER_*`：启用 RefChecker 可信度分析，而不是仅使用 heuristic fallback
 
-如果你希望工作流中的总结与结构化整理使用 DeepSeek，请配置：
+## 2. 可选的 iFinD 厂商安装包
 
-- `DEEPSEEK_API_KEY`
-- `DEEPSEEK_BASE_URL`
+公共 PyPI 当前没有可直接安装的 `iFinDPy` 发行版，因此 Docker 不能仅靠公网依赖把 iFinD 跑起来。
+如果你要在 Linux 容器内真正启用 iFinD，请把厂商提供的安装包放到：
 
-说明：
+```text
+deploy/python/vendor/
+```
 
-- 未配置 `FIRECRAWL_API_KEY` 时，公司研究流仍可运行，但会退化为“生成研究框架 + 待核验问题”，不会抓取网页证据。
-- 未配置 `DEEPSEEK_API_KEY` 时，系统会使用内置 fallback 文本与结构，不会阻塞任务执行。
+支持的包格式：
 
-## 3. 启动服务
+- `*.whl`
+- `*.tar.gz`
+- `*.zip`
 
-在项目根目录执行：
+如果该目录中没有厂商包，Python 服务仍然可以正常构建，并按 `SCREENING_ENABLE_AKSHARE_FALLBACK`
+退回到 AkShare。
+
+## 3. 规则持久化
+
+主题概念规则现在会持久化到 Docker 命名卷 `python_theme_rules_data`。
+默认写入路径为：
+
+```text
+/data/theme-concept-rules/theme_concept_rules.json
+```
+
+如有需要，也可以通过 `INTELLIGENCE_THEME_CONCEPT_RULES_FILE` 覆盖该路径。
+
+## 4. 启动服务
+
+在仓库根目录执行：
 
 ```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
@@ -55,17 +75,17 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 
 启动后：
 
-- `web` 会先执行 `npm run db:push`，再启动 Next.js
-- `workflow-worker` 会自动轮询并执行行业/公司研究任务
-- `screening-worker` 会自动轮询筛选任务
+- `web` 会依次执行 `npm run validate:runtime`、`npm run db:push`、`npm run start`
+- `workflow-worker` 会轮询并执行工作流任务
+- `screening-worker` 会轮询并执行筛选任务
 
-## 4. 访问地址
+## 5. 访问地址
 
 - Web：`http://localhost:3000`
 - Python API Docs：`http://localhost:8000/docs`
-- PostgreSQL：`localhost:5432`
+- PostgreSQL：默认 `localhost:5432`，如果改了 `POSTGRES_PORT` 则以该端口为准
 
-## 5. 常用命令
+## 6. 常用命令
 
 查看全部日志：
 
@@ -91,7 +111,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml down
 ```
 
-停止并清空数据库卷：
+停止服务并删除数据卷：
 
 ```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v
