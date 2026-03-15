@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.providers.akshare.client import AkShareProviderClient
+from app.services.akshare_adapter import AkShareAdapter
 
 
 @patch("app.providers.akshare.client.ak.stock_zh_a_hist")
@@ -33,3 +34,74 @@ def test_get_stock_bars_normalizes_start_and_end_dates(mock_hist):
         end_date="20250301",
         adjust="qfq",
     )
+
+
+@patch("app.providers.akshare.client.ak.stock_zh_a_hist")
+@patch("app.providers.akshare.client.ak.fund_etf_hist_em")
+def test_get_stock_bars_routes_etf_codes_to_fund_history(
+    mock_etf_hist,
+    mock_stock_hist,
+):
+    mock_etf_hist.return_value = pd.DataFrame(
+        {
+            "日期": ["2025-01-02"],
+            "开盘": [4.0],
+            "收盘": [4.1],
+            "最高": [4.2],
+            "最低": [3.9],
+            "成交量": [1000],
+        }
+    )
+
+    client = AkShareProviderClient()
+    client.get_stock_bars(
+        stock_code="510300",
+        start_date="2025-01-01",
+        end_date="2025-03-01",
+        adjust="qfq",
+    )
+
+    mock_etf_hist.assert_called_once_with(
+        symbol="510300",
+        period="daily",
+        start_date="20250101",
+        end_date="20250301",
+        adjust="qfq",
+    )
+    mock_stock_hist.assert_not_called()
+
+
+@patch("app.services.akshare_adapter.ak.stock_board_concept_cons_em")
+@patch("app.services.akshare_adapter.ak.stock_board_concept_name_em")
+def test_concept_loaders_reuse_shared_adapter_cache(mock_catalog, mock_constituents):
+    AkShareAdapter.clear_caches()
+    mock_catalog.return_value = pd.DataFrame(
+        {
+            "板块名称": ["AI"],
+            "板块代码": ["BK1234"],
+            "涨跌幅": [1.2],
+            "领涨股票": ["603019"],
+            "上涨家数": [8],
+            "下跌家数": [2],
+        }
+    )
+    mock_constituents.return_value = pd.DataFrame(
+        {
+            "代码": ["603019"],
+            "名称": ["中科曙光"],
+            "最新价": [45.0],
+            "涨跌幅": [2.1],
+            "换手率": [1.8],
+        }
+    )
+
+    client = AkShareProviderClient()
+    catalog_one = client.get_concept_catalog()
+    catalog_two = client.get_concept_catalog()
+    members_one = client.get_concept_constituents("AI", concept_code="BK1234")
+    members_two = client.get_concept_constituents("AI", concept_code="BK1234")
+
+    assert catalog_one == catalog_two
+    assert members_one == members_two
+    mock_catalog.assert_called_once()
+    mock_constituents.assert_called_once_with(symbol="BK1234")

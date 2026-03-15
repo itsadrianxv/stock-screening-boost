@@ -17,6 +17,8 @@ _DATASET_POLICIES: dict[str, CachePolicy] = {
     "stock_snapshot": CachePolicy(fresh_ttl_seconds=30, stale_ttl_seconds=120),
     "stock_batch": CachePolicy(fresh_ttl_seconds=30, stale_ttl_seconds=120),
     "stock_universe": CachePolicy(fresh_ttl_seconds=86400, stale_ttl_seconds=259200),
+    "stock_industries": CachePolicy(fresh_ttl_seconds=86400, stale_ttl_seconds=259200),
+    "indicator_history": CachePolicy(fresh_ttl_seconds=21600, stale_ttl_seconds=86400),
     "timing_bars": CachePolicy(fresh_ttl_seconds=300, stale_ttl_seconds=1800),
     "timing_signal": CachePolicy(fresh_ttl_seconds=300, stale_ttl_seconds=1800),
     "theme_candidates": CachePolicy(fresh_ttl_seconds=300, stale_ttl_seconds=1800),

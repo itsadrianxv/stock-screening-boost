@@ -15,26 +15,46 @@ from app.contracts.market import MarketStock, ThemeCandidate
 
 
 def infer_exchange(stock_code: str) -> str:
-    if stock_code.startswith(("60", "68")):
+    if stock_code.startswith(("60", "68", "50", "51", "52", "56", "58")):
         return "SSE"
-    if stock_code.startswith(("00", "30")):
+    if stock_code.startswith(("00", "30", "15", "16", "18", "159")):
         return "SZSE"
     if stock_code.startswith(("4", "8")):
         return "BSE"
     return "UNKNOWN"
 
 
+def infer_security_type(raw: dict, stock_code: str) -> str:
+    security_type = str(raw.get("securityType") or "").strip().lower()
+    if security_type:
+        return security_type
+    if stock_code.startswith(("15", "16", "18", "50", "51", "52", "56", "58", "159")):
+        return "etf"
+    return "equity"
+
+
+def infer_market(raw: dict, security_type: str) -> str:
+    market = str(raw.get("market") or "").strip()
+    if market:
+        return market
+    if security_type == "etf":
+        return "CN-ETF"
+    return "CN-A"
+
+
 def to_market_stock(raw: dict, provider: str) -> MarketStock:
     stock_code = str(raw.get("code") or raw.get("stockCode") or "").strip()
     as_of = str(raw.get("dataDate") or raw.get("asOf") or _iso_now())
+    security_type = infer_security_type(raw, stock_code)
 
     return MarketStock(
         stockCode=stock_code,
         exchange=infer_exchange(stock_code),
-        market="CN-A",
-        securityType="equity",
+        market=infer_market(raw, security_type),
+        securityType=security_type,
         stockName=str(raw.get("name") or raw.get("stockName") or "").strip(),
         industry=str(raw.get("industry") or "未知").strip() or "未知",
+        sector=str(raw.get("sector") or "").strip() or None,
         concepts=list(raw.get("concepts") or []),
         marketCap=raw.get("marketCap"),
         floatMarketCap=raw.get("floatMarketCap"),

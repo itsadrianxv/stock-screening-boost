@@ -18,6 +18,53 @@ def setup_function() -> None:
     metrics_recorder.clear()
 
 
+def test_get_v1_market_stock_codes_success() -> None:
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_all_stock_codes",
+        return_value=["600519", "000001"],
+    ):
+        response = client.get("/api/v1/market/stocks/codes")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["provider"] == "akshare"
+    assert payload["data"]["codes"] == ["600519", "000001"]
+    assert payload["data"]["total"] == 2
+
+
+def test_get_v1_market_industries_success() -> None:
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_available_industries",
+        return_value=["白酒", "银行"],
+    ):
+        response = client.get("/api/v1/market/stocks/industries")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["industries"] == ["白酒", "银行"]
+    assert payload["data"]["total"] == 2
+
+
+def test_get_v1_indicator_history_success() -> None:
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_indicator_history",
+        return_value=[
+            {"date": "2023-12-31", "value": 1000.0, "isEstimated": False},
+            {"date": "2024-12-31", "value": 1200.0, "isEstimated": False},
+        ],
+    ):
+        response = client.get(
+            "/api/v1/market/stocks/600519/history",
+            params={"indicator": "REVENUE", "years": 2},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["stockCode"] == "600519"
+    assert payload["data"]["indicator"] == "REVENUE"
+    assert payload["data"]["points"][0]["date"] == "2023-12-31"
+
+
 def test_get_v1_market_stock_success() -> None:
     with patch(
         "app.providers.akshare.client.AkShareProviderClient.get_stock_snapshot",
@@ -25,6 +72,7 @@ def test_get_v1_market_stock_success() -> None:
             "code": "600519",
             "name": "贵州茅台",
             "industry": "白酒",
+            "sector": "主板",
             "marketCap": 21000.0,
             "floatMarketCap": 20500.0,
             "pe": 35.5,
@@ -42,6 +90,7 @@ def test_get_v1_market_stock_success() -> None:
     assert payload["data"]["stockCode"] == "600519"
     assert payload["data"]["exchange"] == "SSE"
     assert payload["data"]["stockName"] == "贵州茅台"
+    assert payload["data"]["sector"] == "主板"
 
 
 def test_get_v1_market_batch_reports_partial_errors() -> None:
@@ -52,6 +101,7 @@ def test_get_v1_market_batch_reports_partial_errors() -> None:
                 "code": "600519",
                 "name": "贵州茅台",
                 "industry": "白酒",
+                "sector": "主板",
                 "dataDate": "2026-03-08",
             }
         ],
@@ -140,6 +190,7 @@ def test_market_gateway_uses_stale_cache_when_provider_fails() -> None:
             "securityType": "equity",
             "stockName": "贵州茅台",
             "industry": "白酒",
+            "sector": "主板",
             "concepts": [],
             "marketCap": 21000.0,
             "floatMarketCap": 20500.0,

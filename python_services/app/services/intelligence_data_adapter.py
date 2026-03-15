@@ -54,17 +54,6 @@ def _env_bool(name: str, default: bool) -> bool:
 
 _CACHE_TTL_SECONDS = _env_int("INTELLIGENCE_CACHE_TTL_SECONDS", 300, 10)
 _CACHE_STALE_SECONDS = _env_int("INTELLIGENCE_CACHE_STALE_SECONDS", 1800, 30)
-_SPOT_CACHE_TTL_SECONDS = _env_int("INTELLIGENCE_SPOT_CACHE_TTL_SECONDS", 120, 10)
-_CONCEPT_CATALOG_CACHE_TTL_SECONDS = _env_int(
-    "INTELLIGENCE_CONCEPT_CATALOG_CACHE_TTL_SECONDS",
-    900,
-    30,
-)
-_CONCEPT_CONSTITUENTS_CACHE_TTL_SECONDS = _env_int(
-    "INTELLIGENCE_CONCEPT_CONSTITUENTS_CACHE_TTL_SECONDS",
-    600,
-    30,
-)
 _AKSHARE_RETRY_POLICY = RetryPolicy(
     max_attempts=_env_int("INTELLIGENCE_AKSHARE_RETRY_ATTEMPTS", 3, 1),
     base_delay_ms=_env_int("INTELLIGENCE_AKSHARE_RETRY_BASE_DELAY_MS", 400, 0),
@@ -95,8 +84,6 @@ class _CacheEntry:
 
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[str, _CacheEntry] = {}
-_SPOT_CACHE_LOCK = threading.Lock()
-_SPOT_CACHE: tuple[pd.DataFrame, float] | None = None
 
 
 POSITIVE_KEYWORDS = (
@@ -384,23 +371,9 @@ def _write_cache(cache_key: str, value: Any, ttl_seconds: int | None = None) -> 
 
 
 def _get_spot_snapshot() -> pd.DataFrame:
-    global _SPOT_CACHE
-    now = time.time()
-
-    with _SPOT_CACHE_LOCK:
-        if _SPOT_CACHE and now - _SPOT_CACHE[1] <= _SPOT_CACHE_TTL_SECONDS:
-            return _SPOT_CACHE[0]
-
-    latest = _call_akshare_with_retry(
-        "stock_zh_a_spot_em",
-        ak.stock_zh_a_spot_em,
-    )
+    latest = AkShareAdapter.get_a_share_spot_frame()
     if latest.empty:
         raise ValueError("AkShare spot snapshot is empty")
-
-    with _SPOT_CACHE_LOCK:
-        _SPOT_CACHE = (latest, now)
-
     return latest
 
 
@@ -501,11 +474,9 @@ def _fetch_candidates_from_akshare(
 
 def _load_concept_constituents(concept: dict) -> pd.DataFrame:
     concept_symbol = concept.get("conceptCode") or concept.get("concept")
-    return _load_cached_akshare_payload(
-        cache_key=f"concept-constituents:{concept_symbol}",
-        ttl_seconds=_CONCEPT_CONSTITUENTS_CACHE_TTL_SECONDS,
-        operation_name=f"stock_board_concept_cons_em:{concept_symbol}",
-        fetch_fn=lambda: ak.stock_board_concept_cons_em(symbol=str(concept_symbol)),
+    return AkShareAdapter.get_concept_constituents_frame(
+        str(concept.get("concept") or concept_symbol),
+        concept_code=str(concept_symbol),
     )
 
 
@@ -943,12 +914,7 @@ def _select_concepts_with_source(theme: str, top_n: int) -> tuple[list[dict], st
 
 
 def _load_concept_rows_from_akshare(theme: str) -> list[dict]:
-    concept_df = _load_cached_akshare_payload(
-        cache_key="concept-catalog",
-        ttl_seconds=_CONCEPT_CATALOG_CACHE_TTL_SECONDS,
-        operation_name="stock_board_concept_name_em",
-        fetch_fn=ak.stock_board_concept_name_em,
-    )
+    concept_df = AkShareAdapter.get_concept_catalog_frame()
     if concept_df.empty:
         return []
 

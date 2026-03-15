@@ -6,8 +6,11 @@ from fastapi import APIRouter, Query, Request
 
 from app.contracts.common import StockBatchRequest
 from app.contracts.market import (
+    IndicatorHistoryResponse,
+    IndustriesResponse,
     MarketStockBatchResponse,
     MarketStockResponse,
+    StockCodesResponse,
     ThemeCandidatesResponse,
 )
 from app.gateway.common import GatewayError, is_valid_stock_code
@@ -15,13 +18,66 @@ from app.gateway.market_gateway import market_gateway
 
 router = APIRouter(prefix="/api/v1/market")
 
+_VALID_HISTORY_INDICATORS = {
+    "ROE",
+    "PE",
+    "PB",
+    "EPS",
+    "REVENUE",
+    "NET_PROFIT",
+    "DEBT_RATIO",
+}
+
+
+@router.get("/stocks/codes", response_model=StockCodesResponse)
+async def get_stock_codes(request: Request):
+    return market_gateway.get_stock_codes(request_id=request.state.request_id)
+
+
+@router.get("/stocks/industries", response_model=IndustriesResponse)
+async def get_stock_industries(request: Request):
+    return market_gateway.get_available_industries(request_id=request.state.request_id)
+
+
+@router.get("/stocks/{stock_code}/history", response_model=IndicatorHistoryResponse)
+async def get_stock_indicator_history(
+    request: Request,
+    stock_code: str,
+    indicator: str = Query(..., description="Indicator name, e.g. ROE or REVENUE"),
+    years: int = Query(3, ge=1, le=10),
+):
+    if not is_valid_stock_code(stock_code):
+        raise GatewayError(
+            code="invalid_stock_code",
+            message=f"无效的证券代码格式: {stock_code}",
+            status_code=400,
+        )
+
+    normalized_indicator = indicator.strip().upper()
+    if normalized_indicator not in _VALID_HISTORY_INDICATORS:
+        raise GatewayError(
+            code="invalid_indicator",
+            message=(
+                "不支持的指标: "
+                f"{indicator}，支持的指标: {', '.join(sorted(_VALID_HISTORY_INDICATORS))}"
+            ),
+            status_code=400,
+        )
+
+    return market_gateway.get_indicator_history(
+        request_id=request.state.request_id,
+        stock_code=stock_code,
+        indicator=normalized_indicator,
+        years=years,
+    )
+
 
 @router.get("/stocks/{stock_code}", response_model=MarketStockResponse)
 async def get_stock_snapshot(request: Request, stock_code: str):
     if not is_valid_stock_code(stock_code):
         raise GatewayError(
             code="invalid_stock_code",
-            message=f"无效的股票代码格式: {stock_code}",
+            message=f"无效的证券代码格式: {stock_code}",
             status_code=400,
         )
 
@@ -37,7 +93,7 @@ async def get_stock_batch(request: Request, body: StockBatchRequest):
     if invalid_codes:
         raise GatewayError(
             code="invalid_stock_code",
-            message=f"无效的股票代码格式: {', '.join(invalid_codes)}",
+            message=f"无效的证券代码格式: {', '.join(invalid_codes)}",
             status_code=400,
         )
 
@@ -66,4 +122,3 @@ async def get_theme_candidates(
         theme=normalized_theme,
         limit=limit,
     )
-

@@ -15,6 +15,7 @@ class MarketStock(BaseModel):
     securityType: str
     stockName: str
     industry: str
+    sector: str | None = None
     concepts: list[str] = Field(default_factory=list)
     marketCap: float | None = None
     floatMarketCap: float | None = None
@@ -39,6 +40,29 @@ class ThemeCandidate(BaseModel):
     heat: float = Field(..., ge=0, le=100)
 
 
+class IndicatorHistoryPoint(BaseModel):
+    date: str
+    value: float | None = None
+    isEstimated: bool = False
+
+
+class StockCodesData(BaseModel):
+    codes: list[str]
+    total: int
+
+
+class IndustriesData(BaseModel):
+    industries: list[str]
+    total: int
+
+
+class IndicatorHistoryData(BaseModel):
+    stockCode: str
+    indicator: str
+    years: int
+    points: list[IndicatorHistoryPoint]
+
+
 class MarketStockBatchData(BaseModel):
     items: list[MarketStock]
     errors: list[BatchItemError] = Field(default_factory=list)
@@ -60,3 +84,14 @@ class MarketStockBatchResponse(GatewayResponse[MarketStockBatchData]):
 class ThemeCandidatesResponse(GatewayResponse[ThemeCandidatesData]):
     pass
 
+
+class StockCodesResponse(GatewayResponse[StockCodesData]):
+    pass
+
+
+class IndustriesResponse(GatewayResponse[IndustriesData]):
+    pass
+
+
+class IndicatorHistoryResponse(GatewayResponse[IndicatorHistoryData]):
+    pass

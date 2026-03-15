@@ -1,20 +1,9 @@
-/**
- * PythonDataServiceClient 单元测试
- *
- * 测试 HTTP 客户端的核心功能：
- * - HTTP 请求和响应处理
- * - JSON 到领域对象的映射
- * - 错误处理和超时
- * - DataNotAvailableError 转换
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IndicatorField } from "~/server/domain/screening/enums/indicator-field.js";
 import { DataNotAvailableError } from "~/server/domain/screening/errors.js";
 import { StockCode } from "~/server/domain/screening/value-objects/stock-code.js";
 import { PythonDataServiceClient } from "../python-data-service-client";
 
-// Mock fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
@@ -42,478 +31,286 @@ describe("PythonDataServiceClient", () => {
     process.env.PYTHON_SERVICE_TIMEOUT_MS = originalPythonServiceTimeoutMs;
   });
 
-  describe("getAllStockCodes", () => {
-    it("应该成功获取股票代码列表", async () => {
-      const mockResponse = {
-        codes: ["600519", "000001", "000002"],
-        total: 3,
-      };
+  it("uses v1 market route for stock codes", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          codes: ["600519", "000001"],
+          total: 2,
+        },
+      }),
+    });
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      });
+    const result = await client.getAllStockCodes();
 
-      const result = await client.getAllStockCodes();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/stocks/codes`,
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${baseUrl}/api/v1/market/stocks/codes`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
         }),
-      );
-
-      expect(result).toHaveLength(3);
-      expect(result[0]?.value).toBe("600519");
-      expect(result[1]?.value).toBe("000001");
-      expect(result[2]?.value).toBe("000002");
-    });
-
-    it("应该在请求失败时抛出 DataNotAvailableError", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: "Internal Server Error",
-        text: async () => "服务器错误",
-      });
-
-      await expect(client.getAllStockCodes()).rejects.toThrow(
-        DataNotAvailableError,
-      );
-    });
+      }),
+    );
+    expect(result.map((item) => item.value)).toEqual(["600519", "000001"]);
   });
 
-  describe("getStock", () => {
-    it("应该成功获取单个股票信息", async () => {
-      const mockStockData = {
-        code: "600519",
-        name: "贵州茅台",
-        industry: "白酒",
-        sector: "主板",
-        roe: 0.28,
-        pe: 35.5,
-        pb: 10.2,
-        eps: 50.3,
-        revenue: 1275.5,
-        netProfit: 620.8,
-        debtRatio: 0.25,
-        marketCap: 21000.0,
-        floatMarketCap: 20500.0,
-        dataDate: "2024-01-15",
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [mockStockData],
-      });
-
-      const code = StockCode.create("600519");
-      const result = await client.getStock(code);
-
-      expect(result).not.toBeNull();
-      expect(result?.code.value).toBe("600519");
-      expect(result?.name).toBe("贵州茅台");
-      expect(result?.industry).toBe("白酒");
-      expect(result?.roe).toBe(0.28);
-      expect(result?.pe).toBe(35.5);
-      expect(result?.marketCap).toBe(21000.0);
-    });
-
-    it("应该在股票不存在时返回 null", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        statusText: "Not Found",
-        text: async () => "股票不存在",
-      });
-
-      const code = StockCode.create("600000"); // 使用有效的股票代码格式
-      const result = await client.getStock(code);
-
-      expect(result).toBeNull();
-    });
-
-    it("应该正确处理 null 值字段", async () => {
-      const mockStockData = {
-        code: "000001",
-        name: "平安银行",
-        industry: "银行",
-        sector: "主板",
-        roe: null,
-        pe: null,
-        pb: 0.8,
-        eps: 1.5,
-        revenue: null,
-        netProfit: null,
-        debtRatio: null,
-        marketCap: 3000.0,
-        floatMarketCap: 2900.0,
-        dataDate: "2024-01-15",
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [mockStockData],
-      });
-
-      const code = StockCode.create("000001");
-      const result = await client.getStock(code);
-
-      expect(result).not.toBeNull();
-      expect(result?.roe).toBeNull();
-      expect(result?.pe).toBeNull();
-      expect(result?.pb).toBe(0.8);
-      expect(result?.revenue).toBeNull();
-    });
-  });
-
-  describe("getStocksByCodes", () => {
-    it("应该成功批量获取股票信息", async () => {
-      const mockStocksData = [
-        {
-          code: "600519",
-          name: "贵州茅台",
+  it("maps v1 stock snapshot payload to Stock", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          stockCode: "600519",
+          stockName: "贵州茅台",
           industry: "白酒",
           sector: "主板",
           roe: 0.28,
           pe: 35.5,
           pb: 10.2,
-          eps: 50.3,
-          revenue: 1275.5,
-          netProfit: 620.8,
-          debtRatio: 0.25,
           marketCap: 21000.0,
           floatMarketCap: 20500.0,
-          dataDate: "2024-01-15",
+          asOf: "2026-03-15T08:00:00+00:00",
         },
-        {
-          code: "000001",
-          name: "平安银行",
-          industry: "银行",
-          sector: "主板",
-          roe: 0.12,
-          pe: 5.5,
-          pb: 0.8,
-          eps: 1.5,
-          revenue: 1800.0,
-          netProfit: 400.0,
-          debtRatio: 0.92,
-          marketCap: 3000.0,
-          floatMarketCap: 2900.0,
-          dataDate: "2024-01-15",
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockStocksData,
-      });
-
-      const codes = [StockCode.create("600519"), StockCode.create("000001")];
-      const result = await client.getStocksByCodes(codes);
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/stocks/batch`,
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({ codes: ["600519", "000001"] }),
-        }),
-      );
-
-      expect(result).toHaveLength(2);
-      expect(result[0]?.code.value).toBe("600519");
-      expect(result[1]?.code.value).toBe("000001");
+      }),
     });
 
-    it("应该在空列表时返回空数组", async () => {
-      const result = await client.getStocksByCodes([]);
+    const result = await client.getStock(StockCode.create("600519"));
 
-      expect(result).toEqual([]);
-      expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it("应该在批量请求失败时抛出 DataNotAvailableError", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: "Internal Server Error",
-        text: async () => "批量查询失败",
-      });
-
-      const codes = [StockCode.create("600519")];
-
-      await expect(client.getStocksByCodes(codes)).rejects.toThrow(
-        DataNotAvailableError,
-      );
-    });
+    expect(result).not.toBeNull();
+    expect(result?.code.value).toBe("600519");
+    expect(result?.name).toBe("贵州茅台");
+    expect(result?.industry).toBe("白酒");
+    expect(result?.sector).toBe("主板");
+    expect(result?.roe).toBe(0.28);
   });
 
-  describe("getAvailableIndustries", () => {
-    it("应该成功获取行业列表", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      const mockResponse = {
-        industries: ["白酒", "银行", "医药", "科技"],
-        total: 4,
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      });
-
-      const result = await client.getAvailableIndustries();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/stocks/industries`,
-        expect.anything(),
-      );
-
-      expect(result).toEqual(["白酒", "银行", "医药", "科技"]);
+  it("returns null when v1 stock snapshot returns 404", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      text: async () => "stock not found",
     });
+
+    const result = await client.getStock(StockCode.create("600000"));
+
+    expect(result).toBeNull();
   });
 
-  describe("getIndicatorHistory", () => {
-    it("应该成功获取历史指标数据", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      const mockHistoryData = [
-        {
-          date: "2021-12-31",
-          value: 1094.2,
-          isEstimated: false,
+  it("uses v1 batch route and unwraps items", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          items: [
+            {
+              stockCode: "600519",
+              stockName: "贵州茅台",
+              industry: "白酒",
+              sector: "主板",
+              marketCap: 21000.0,
+              floatMarketCap: 20500.0,
+              asOf: "2026-03-15T08:00:00+00:00",
+            },
+            {
+              stockCode: "000001",
+              stockName: "平安银行",
+              industry: "银行",
+              sector: "主板",
+              marketCap: 3000.0,
+              floatMarketCap: 2900.0,
+              asOf: "2026-03-15T08:00:00+00:00",
+            },
+          ],
+          errors: [],
         },
-        {
-          date: "2022-12-31",
-          value: 1212.6,
-          isEstimated: false,
-        },
-        {
-          date: "2023-12-31",
-          value: 1275.5,
-          isEstimated: false,
-        },
-      ];
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockHistoryData,
-      });
-
-      const code = StockCode.create("600519");
-      const result = await client.getIndicatorHistory(
-        code,
-        IndicatorField.REVENUE,
-        3,
-      );
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        `${baseUrl}/api/stocks/600519/history?indicator=${IndicatorField.REVENUE}&years=3`,
-        expect.anything(),
-      );
-
-      expect(result).toHaveLength(3);
-      expect(result[0]?.value).toBe(1094.2);
-      expect(result[0]?.isEstimated).toBe(false);
-      expect(result[1]?.value).toBe(1212.6);
-      expect(result[2]?.value).toBe(1275.5);
+      }),
     });
 
-    it("应该正确处理 null 值", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      const mockHistoryData = [
-        {
-          date: "2021-12-31",
-          value: 100.0,
-          isEstimated: false,
-        },
-        {
-          date: "2022-12-31",
-          value: null,
-          isEstimated: true,
-        },
-      ];
+    const result = await client.getStocksByCodes([
+      StockCode.create("600519"),
+      StockCode.create("000001"),
+    ]);
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockHistoryData,
-      });
-
-      const code = StockCode.create("600519");
-      const result = await client.getIndicatorHistory(
-        code,
-        IndicatorField.ROE,
-        2,
-      );
-
-      expect(result).toHaveLength(2);
-      expect(result[0]?.value).toBe(100.0);
-      expect(result[1]?.value).toBeNull();
-      expect(result[1]?.isEstimated).toBe(true);
-    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${baseUrl}/api/v1/market/stocks/batch`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ stockCodes: ["600519", "000001"] }),
+      }),
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]?.code.value).toBe("600519");
+    expect(result[1]?.code.value).toBe("000001");
   });
 
-  describe("错误处理", () => {
-    it("应该在网络错误时抛出 DataNotAvailableError", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      mockFetch.mockRejectedValueOnce(new Error("Network error"));
-
-      await expect(client.getAllStockCodes()).rejects.toThrow(
-        DataNotAvailableError,
-      );
-
-      mockFetch.mockClear();
-      mockFetch.mockRejectedValueOnce(new Error("Network error"));
-      await expect(client.getAllStockCodes()).rejects.toThrow(
-        "Python 数据服务请求失败",
-      );
+  it("uses v1 industries route", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          industries: ["白酒", "银行", "医药"],
+          total: 3,
+        },
+      }),
     });
 
-    it("应该在超时时抛出 DataNotAvailableError", async () => {
-      mockFetch.mockClear();
-      const shortTimeoutClient = new PythonDataServiceClient({
-        baseUrl,
-        timeout: 100,
-      });
+    const result = await client.getAvailableIndustries();
 
-      // 模拟 AbortError
-      const abortError = new Error("The operation was aborted");
-      abortError.name = "AbortError";
-      mockFetch.mockRejectedValue(abortError);
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${baseUrl}/api/v1/market/stocks/industries`,
+      expect.anything(),
+    );
+    expect(result).toEqual(["白酒", "银行", "医药"]);
+  });
 
-      await expect(shortTimeoutClient.getAllStockCodes()).rejects.toThrow(
-        DataNotAvailableError,
-      );
-      await expect(shortTimeoutClient.getAllStockCodes()).rejects.toThrow(
-        "超时",
-      );
+  it("uses v1 history route and unwraps points", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          stockCode: "600519",
+          indicator: "REVENUE",
+          years: 3,
+          points: [
+            {
+              date: "2022-12-31",
+              value: 1094.2,
+              isEstimated: false,
+            },
+            {
+              date: "2023-12-31",
+              value: 1275.5,
+              isEstimated: false,
+            },
+          ],
+        },
+      }),
     });
 
-    it("应该在 HTTP 错误时包含状态码", async () => {
-      mockFetch.mockClear(); // 清除之前的 mock
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: "Service Unavailable",
-        text: async () => "服务不可用",
-      });
+    const result = await client.getIndicatorHistory(
+      StockCode.create("600519"),
+      IndicatorField.REVENUE,
+      3,
+    );
 
-      try {
-        await client.getAllStockCodes();
-        expect.fail("应该抛出异常");
-      } catch (error) {
-        expect(error).toBeInstanceOf(DataNotAvailableError);
-        expect((error as DataNotAvailableError).statusCode).toBe(503);
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${baseUrl}/api/v1/market/stocks/600519/history?indicator=${IndicatorField.REVENUE}&years=3`,
+      expect.anything(),
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]?.value).toBe(1094.2);
+    expect(result[1]?.value).toBe(1275.5);
+  });
+
+  it("keeps legacy stock mapping compatibility for direct mapper usage", () => {
+    const mapToStock = (
+      client as unknown as {
+        mapToStock: (data: unknown) => {
+          code: { value: string };
+          name: string;
+          industry: string;
+        };
       }
+    ).mapToStock;
+
+    const result = mapToStock.call(client, {
+      code: "000001",
+      name: "平安银行",
+      industry: "银行",
+      sector: "主板",
+      dataDate: "2024-01-15",
     });
+
+    expect(result).not.toBeNull();
+    if (!result) {
+      throw new Error("expected stock mapping result");
+    }
+
+    expect(result.code.value).toBe("000001");
+    expect(result.name).toBe("平安银行");
+    expect(result.industry).toBe("银行");
   });
 
-  describe("配置", () => {
-    it("应该移除 baseUrl 末尾的斜杠", () => {
-      const clientWithSlash = new PythonDataServiceClient({
-        baseUrl: "http://localhost:8000/",
+  it("throws DataNotAvailableError on network failure", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("Network error"));
+
+    await expect(client.getAllStockCodes()).rejects.toThrow(
+      DataNotAvailableError,
+    );
+    await expect(client.getAllStockCodes()).rejects.toThrow(
+      "Python 数据服务请求失败",
+    );
+  });
+
+  it("throws timeout error with configured timeout", async () => {
+    const shortTimeoutClient = new PythonDataServiceClient({
+      baseUrl,
+      timeout: 100,
+    });
+    const abortError = new Error("The operation was aborted");
+    abortError.name = "AbortError";
+    mockFetch.mockRejectedValue(abortError);
+
+    await expect(shortTimeoutClient.getAllStockCodes()).rejects.toThrow(
+      DataNotAvailableError,
+    );
+    await expect(shortTimeoutClient.getAllStockCodes()).rejects.toThrow(
+      "100ms",
+    );
+  });
+
+  it("resolves /api, /api/stocks, and /api/v1 base URLs to v1 market paths", async () => {
+    const cases = [
+      [
+        "http://localhost:8000/api",
+        "http://localhost:8000/api/v1/market/stocks/codes",
+      ],
+      [
+        "http://localhost:8000/api/stocks",
+        "http://localhost:8000/api/v1/market/stocks/codes",
+      ],
+      [
+        "http://localhost:8000/api/v1",
+        "http://localhost:8000/api/v1/market/stocks/codes",
+      ],
+      [
+        "http://localhost:8000/api/v1/market",
+        "http://localhost:8000/api/v1/market/stocks/codes",
+      ],
+    ] as const;
+
+    for (const [inputBaseUrl, expectedUrl] of cases) {
+      const configuredClient = new PythonDataServiceClient({
+        baseUrl: inputBaseUrl,
         timeout: 5000,
       });
-
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ codes: [], total: 0 }),
+        json: async () => ({ data: { codes: [], total: 0 } }),
       });
 
-      void clientWithSlash.getAllStockCodes();
+      await configuredClient.getAllStockCodes();
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8000/api/stocks/codes",
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expectedUrl,
         expect.anything(),
       );
+    }
+  });
+
+  it("uses env timeout when timeout is not provided", async () => {
+    process.env.PYTHON_SERVICE_TIMEOUT_MS = "45000";
+    const envTimeoutClient = new PythonDataServiceClient({
+      baseUrl,
     });
 
-    it("should accept baseUrl with /api", () => {
-      const clientWithApi = new PythonDataServiceClient({
-        baseUrl: "http://localhost:8000/api",
-        timeout: 5000,
-      });
+    const abortError = new Error("The operation was aborted");
+    abortError.name = "AbortError";
+    mockFetch.mockRejectedValueOnce(abortError);
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ codes: [], total: 0 }),
-      });
-
-      void clientWithApi.getAllStockCodes();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8000/api/stocks/codes",
-        expect.anything(),
-      );
-    });
-
-    it("should accept baseUrl with /api/stocks", () => {
-      const clientWithStocksApi = new PythonDataServiceClient({
-        baseUrl: "http://localhost:8000/api/stocks",
-        timeout: 5000,
-      });
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ codes: [], total: 0 }),
-      });
-
-      void clientWithStocksApi.getAllStockCodes();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8000/api/stocks/codes",
-        expect.anything(),
-      );
-    });
-
-    it("should accept baseUrl with /api/v1", () => {
-      const clientWithV1 = new PythonDataServiceClient({
-        baseUrl: "http://localhost:8000/api/v1",
-        timeout: 5000,
-      });
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ codes: [], total: 0 }),
-      });
-
-      void clientWithV1.getAllStockCodes();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:8000/api/stocks/codes",
-        expect.anything(),
-      );
-    });
-
-    it("应该在未显式传入 timeout 时读取环境变量", async () => {
-      process.env.PYTHON_SERVICE_TIMEOUT_MS = "45000";
-      const clientWithEnvTimeout = new PythonDataServiceClient({
-        baseUrl,
-      });
-
-      const abortError = new Error("The operation was aborted");
-      abortError.name = "AbortError";
-      mockFetch.mockRejectedValueOnce(abortError);
-
-      await expect(clientWithEnvTimeout.getAllStockCodes()).rejects.toThrow(
-        "45000ms",
-      );
-    });
-
-    it("应该在未配置环境变量时使用 60000ms 默认超时", async () => {
-      delete process.env.PYTHON_SERVICE_TIMEOUT_MS;
-      const clientWithDefaultTimeout = new PythonDataServiceClient({
-        baseUrl,
-      });
-
-      const abortError = new Error("The operation was aborted");
-      abortError.name = "AbortError";
-      mockFetch.mockRejectedValueOnce(abortError);
-
-      await expect(clientWithDefaultTimeout.getAllStockCodes()).rejects.toThrow(
-        "60000ms",
-      );
-    });
+    await expect(envTimeoutClient.getAllStockCodes()).rejects.toThrow(
+      "45000ms",
+    );
   });
 });

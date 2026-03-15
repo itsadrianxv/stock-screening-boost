@@ -1,15 +1,7 @@
 /**
  * PythonDataServiceClient
  *
- * 基础设施层 HTTP 客户端，调用 Python FastAPI 数据服务。
- * 实现 IMarketDataRepository 和 IHistoricalDataProvider 接口。
- *
- * 职责：
- * - 通过 HTTP 调用 Python 数据服务的 REST API
- * - 将 JSON 响应映射为领域层的 Stock 实体和 IndicatorDataPoint 值对象
- * - 处理超时和网络错误，转换为 DataNotAvailableError
- *
- * Requirements: 6.4, 6.5
+ * Infrastructure HTTP client for the Python FastAPI market gateway.
  */
 
 import { Stock } from "~/server/domain/screening/entities/stock";
@@ -24,10 +16,7 @@ import { StockCode } from "~/server/domain/screening/value-objects/stock-code";
 
 const DEFAULT_PYTHON_SERVICE_TIMEOUT_MS = 60_000;
 
-/**
- * Python 服务的 StockData 响应接口
- */
-interface StockDataResponse {
+interface LegacyStockDataResponse {
   code: string;
   name: string;
   industry: string;
@@ -44,51 +33,72 @@ interface StockDataResponse {
   dataDate: string;
 }
 
-/**
- * Python 服务的 IndicatorDataPoint 响应接口
- */
+interface MarketStockResponseBody {
+  stockCode: string;
+  stockName: string;
+  industry: string;
+  sector?: string | null;
+  roe?: number | null;
+  pe?: number | null;
+  pb?: number | null;
+  eps?: number | null;
+  revenue?: number | null;
+  netProfit?: number | null;
+  debtRatio?: number | null;
+  marketCap?: number | null;
+  floatMarketCap?: number | null;
+  asOf: string;
+  securityType?: string;
+}
+
 interface IndicatorDataPointResponse {
   date: string;
   value: number | null;
   isEstimated: boolean;
 }
 
-/**
- * Python 服务的股票代码列表响应接口
- */
-interface StockCodesResponse {
+interface StockCodesDataResponse {
   codes: string[];
   total: number;
 }
 
-/**
- * Python 服务的行业列表响应接口
- */
-interface IndustriesResponse {
+interface IndustriesDataResponse {
   industries: string[];
   total: number;
 }
 
-/**
- * 批量查询股票请求体
- */
-interface BatchStockRequest {
-  codes: string[];
+interface IndicatorHistoryDataResponse {
+  stockCode: string;
+  indicator: string;
+  years: number;
+  points: IndicatorDataPointResponse[];
 }
 
-/**
- * PythonDataServiceClient 配置
- */
+interface StockBatchGatewayDataResponse {
+  items: MarketStockResponseBody[];
+  errors: Array<{
+    stockCode: string;
+    code: string;
+    message: string;
+  }>;
+}
+
+interface BatchStockRequest {
+  stockCodes: string[];
+}
+
+type GatewayResponse<T> = {
+  data: T;
+};
+
 export interface PythonDataServiceClientConfig {
-  /** Python 服务的基础 URL */
   baseUrl: string;
-  /** 请求超时时间（毫秒），默认 60000 */
   timeout?: number;
 }
 
 type ScreeningServiceBasePath = {
   baseUrl: string;
-  stocksBasePath: string;
+  marketBasePath: string;
 };
 
 function resolveScreeningServiceBasePath(
@@ -96,30 +106,37 @@ function resolveScreeningServiceBasePath(
 ): ScreeningServiceBasePath {
   const normalizedBaseUrl = rawBaseUrl.replace(/\/$/, "");
 
-  if (normalizedBaseUrl.endsWith("/api/stocks")) {
+  if (normalizedBaseUrl.endsWith("/api/v1/market")) {
     return {
       baseUrl: normalizedBaseUrl,
-      stocksBasePath: "",
+      marketBasePath: "",
+    };
+  }
+
+  if (normalizedBaseUrl.endsWith("/api/stocks")) {
+    return {
+      baseUrl: normalizedBaseUrl.replace(/\/stocks$/, ""),
+      marketBasePath: "/v1/market",
     };
   }
 
   if (normalizedBaseUrl.endsWith("/api/v1")) {
     return {
-      baseUrl: normalizedBaseUrl.slice(0, -3),
-      stocksBasePath: "/stocks",
+      baseUrl: normalizedBaseUrl,
+      marketBasePath: "/market",
     };
   }
 
   if (normalizedBaseUrl.endsWith("/api")) {
     return {
       baseUrl: normalizedBaseUrl,
-      stocksBasePath: "/stocks",
+      marketBasePath: "/v1/market",
     };
   }
 
   return {
     baseUrl: normalizedBaseUrl,
-    stocksBasePath: "/api/stocks",
+    marketBasePath: "/api/v1/market",
   };
 }
 
@@ -141,41 +158,26 @@ function resolveScreeningServiceTimeoutMs(explicitTimeout?: number): number {
   return parsedTimeout;
 }
 
-/**
- * Python 数据服务 HTTP 客户端
- *
- * 实现 IMarketDataRepository 和 IHistoricalDataProvider 接口，
- * 通过 HTTP 调用 Python FastAPI 服务获取股票数据。
- */
+type StockLikeResponse = LegacyStockDataResponse | MarketStockResponseBody;
+
 export class PythonDataServiceClient
   implements IMarketDataRepository, IHistoricalDataProvider
 {
   private readonly baseUrl: string;
-  private readonly stocksBasePath: string;
+  private readonly marketBasePath: string;
   private readonly timeout: number;
 
-  /**
-   * 构造函数
-   * @param config 客户端配置
-   */
   constructor(config: PythonDataServiceClientConfig) {
     const resolvedBaseUrl = resolveScreeningServiceBasePath(config.baseUrl);
     this.baseUrl = resolvedBaseUrl.baseUrl;
-    this.stocksBasePath = resolvedBaseUrl.stocksBasePath;
+    this.marketBasePath = resolvedBaseUrl.marketBasePath;
     this.timeout = resolveScreeningServiceTimeoutMs(config.timeout);
   }
 
-  private stocksPath(path: string) {
-    return `${this.stocksBasePath}${path}`;
+  private marketPath(path: string) {
+    return `${this.marketBasePath}${path}`;
   }
 
-  /**
-   * 执行 HTTP 请求的通用方法
-   * @param path API 路径
-   * @param options fetch 选项
-   * @returns 响应 JSON
-   * @throws DataNotAvailableError 当请求失败或超时时
-   */
   private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
@@ -226,17 +228,20 @@ export class PythonDataServiceClient
     }
   }
 
-  /**
-   * 将 StockDataResponse 映射为 Stock 实体
-   * @param data Python 服务返回的股票数据
-   * @returns Stock 实体
-   */
-  private mapToStock(data: StockDataResponse): Stock {
+  private mapToStock(data: StockLikeResponse): Stock {
+    const code = "stockCode" in data ? data.stockCode : data.code;
+    const name = "stockName" in data ? data.stockName : data.name;
+    const sector =
+      ("sector" in data ? data.sector : undefined) ??
+      ("securityType" in data && data.securityType === "etf" ? "ETF" : null) ??
+      "主板";
+    const dataDate = "asOf" in data ? data.asOf : data.dataDate;
+
     return new Stock({
-      code: StockCode.create(data.code),
-      name: data.name,
+      code: StockCode.create(code),
+      name,
       industry: data.industry,
-      sector: data.sector,
+      sector,
       roe: data.roe ?? null,
       pe: data.pe ?? null,
       pb: data.pb ?? null,
@@ -246,15 +251,10 @@ export class PythonDataServiceClient
       debtRatio: data.debtRatio ?? null,
       marketCap: data.marketCap ?? null,
       floatMarketCap: data.floatMarketCap ?? null,
-      dataDate: new Date(data.dataDate),
+      dataDate: new Date(dataDate),
     });
   }
 
-  /**
-   * 将 IndicatorDataPointResponse 映射为 IndicatorDataPoint
-   * @param data Python 服务返回的指标数据点
-   * @returns IndicatorDataPoint
-   */
   private mapToIndicatorDataPoint(
     data: IndicatorDataPointResponse,
   ): IndicatorDataPoint {
@@ -265,30 +265,22 @@ export class PythonDataServiceClient
     };
   }
 
-  // ========== IMarketDataRepository 接口实现 ==========
-
-  /**
-   * 获取全市场 A 股股票代码列表
-   * @returns 股票代码列表
-   */
   async getAllStockCodes(): Promise<StockCode[]> {
-    const response = await this.fetch<StockCodesResponse>(
-      this.stocksPath("/codes"),
-    );
-    return response.codes.map((code) => StockCode.create(code));
+    const response = await this.fetch<
+      StockCodesDataResponse | GatewayResponse<StockCodesDataResponse>
+    >(this.marketPath("/stocks/codes"));
+    const payload = "data" in response ? response.data : response;
+    return payload.codes.map((code) => StockCode.create(code));
   }
 
-  /**
-   * 根据股票代码获取股票信息
-   * @param code 股票代码
-   * @returns 股票实例或 null（如果不存在）
-   */
   async getStock(code: StockCode): Promise<Stock | null> {
     try {
-      const stocks = await this.getStocksByCodes([code]);
-      return stocks[0] ?? null;
+      const response = await this.fetch<
+        MarketStockResponseBody | GatewayResponse<MarketStockResponseBody>
+      >(this.marketPath(`/stocks/${code.value}`));
+      const payload = "data" in response ? response.data : response;
+      return this.mapToStock(payload);
     } catch (error) {
-      // 如果是 404 或数据不存在，返回 null
       if (error instanceof DataNotAvailableError && error.statusCode === 404) {
         return null;
       }
@@ -296,73 +288,53 @@ export class PythonDataServiceClient
     }
   }
 
-  /**
-   * 批量获取股票信息
-   * @param codes 股票代码列表
-   * @returns 股票实例列表
-   */
   async getStocksByCodes(codes: StockCode[]): Promise<Stock[]> {
     if (codes.length === 0) {
       return [];
     }
 
     const request: BatchStockRequest = {
-      codes: codes.map((code) => code.value),
+      stockCodes: codes.map((code) => code.value),
     };
 
-    const response = await this.fetch<StockDataResponse[]>(
-      this.stocksPath("/batch"),
-      {
-        method: "POST",
-        body: JSON.stringify(request),
-      },
-    );
+    const response = await this.fetch<
+      | StockBatchGatewayDataResponse
+      | GatewayResponse<StockBatchGatewayDataResponse>
+    >(this.marketPath("/stocks/batch"), {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    const payload = "data" in response ? response.data : response;
 
-    return response.map((data) => this.mapToStock(data));
+    return payload.items.map((data) => this.mapToStock(data));
   }
 
-  /**
-   * 获取可用的行业列表
-   * @returns 行业名称列表
-   */
   async getAvailableIndustries(): Promise<string[]> {
-    const response = await this.fetch<IndustriesResponse>(
-      this.stocksPath("/industries"),
-    );
-    return response.industries;
+    const response = await this.fetch<
+      IndustriesDataResponse | GatewayResponse<IndustriesDataResponse>
+    >(this.marketPath("/stocks/industries"));
+    const payload = "data" in response ? response.data : response;
+    return payload.industries;
   }
 
-  // ========== IHistoricalDataProvider 接口实现 ==========
-
-  /**
-   * 获取指定股票的历史指标数据
-   *
-   * @param stockCode 股票代码
-   * @param indicator 指标字段
-   * @param years 获取最近 N 年的数据
-   * @returns 指标数据点列表（按时间升序排列）
-   */
   async getIndicatorHistory(
     stockCode: StockCode,
     indicator: IndicatorField,
     years: number,
   ): Promise<IndicatorDataPoint[]> {
-    const path = this.stocksPath(
-      `/${stockCode.value}/history?indicator=${indicator}&years=${years}`,
+    const path = this.marketPath(
+      `/${["stocks", stockCode.value, "history"].join("/")}?indicator=${indicator}&years=${years}`,
     );
-    const response = await this.fetch<IndicatorDataPointResponse[]>(path);
+    const response = await this.fetch<
+      | IndicatorHistoryDataResponse
+      | GatewayResponse<IndicatorHistoryDataResponse>
+    >(path);
+    const payload = "data" in response ? response.data : response;
 
-    return response.map((data) => this.mapToIndicatorDataPoint(data));
+    return payload.points.map((data) => this.mapToIndicatorDataPoint(data));
   }
 }
 
-/**
- * 创建 PythonDataServiceClient 实例的工厂函数
- *
- * @param baseUrl Python 服务的基础 URL，默认从环境变量 PYTHON_SERVICE_URL 读取
- * @param timeout 请求超时时间（毫秒），默认读取 PYTHON_SERVICE_TIMEOUT_MS，否则使用 60000
- * @returns PythonDataServiceClient 实例
- */
 export function createPythonDataServiceClient(
   baseUrl?: string,
   timeout?: number,

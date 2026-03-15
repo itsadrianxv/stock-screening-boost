@@ -3,12 +3,18 @@ import { env } from "~/env";
 import type { InsightArchiveService } from "~/server/application/intelligence/insight-archive-service";
 import type { ScreeningInsightPipelineDispatcher } from "~/server/application/workflow/screening-insight-pipeline-dispatcher";
 import { ScreeningSession } from "~/server/domain/screening/aggregates/screening-session";
+import type { IndicatorField } from "~/server/domain/screening/enums/indicator-field";
 import { NoCandidateStocksError } from "~/server/domain/screening/errors";
+import type {
+  IHistoricalDataProvider,
+  IndicatorDataPoint,
+} from "~/server/domain/screening/repositories/historical-data-provider";
 import type { IScreeningSessionRepository } from "~/server/domain/screening/repositories/screening-session-repository";
 import type { IScreeningStrategyRepository } from "~/server/domain/screening/repositories/screening-strategy-repository";
 import { IndicatorCalculationService } from "~/server/domain/screening/services/indicator-calculation-service";
 import { ScoringService } from "~/server/domain/screening/services/scoring-service";
 import { ScreeningResult } from "~/server/domain/screening/value-objects/screening-result";
+import type { StockCode } from "~/server/domain/screening/value-objects/stock-code";
 import { PythonDataServiceClient } from "~/server/infrastructure/screening/python-data-service-client";
 
 function chunkArray<T>(items: readonly T[], size: number): T[][] {
@@ -19,6 +25,28 @@ function chunkArray<T>(items: readonly T[], size: number): T[][] {
   }
 
   return chunks;
+}
+
+class SessionMemoizedHistoricalDataProvider implements IHistoricalDataProvider {
+  private readonly cache = new Map<string, Promise<IndicatorDataPoint[]>>();
+
+  constructor(private readonly inner: IHistoricalDataProvider) {}
+
+  getIndicatorHistory(
+    stockCode: StockCode,
+    indicator: IndicatorField,
+    years: number,
+  ): Promise<IndicatorDataPoint[]> {
+    const cacheKey = `${stockCode.value}:${indicator}:${years}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const request = this.inner.getIndicatorHistory(stockCode, indicator, years);
+    this.cache.set(cacheKey, request);
+    return request;
+  }
 }
 
 export type ScreeningExecutionServiceDependencies = {
@@ -32,11 +60,10 @@ export class ScreeningExecutionService {
   private readonly sessionRepository: IScreeningSessionRepository;
   private readonly strategyRepository: IScreeningStrategyRepository;
   private readonly dataClient: PythonDataServiceClient;
-  private readonly calcService: IndicatorCalculationService;
   private readonly scoringService: ScoringService;
   private readonly insightArchiveService?: InsightArchiveService;
   private readonly pipelineDispatcher?: ScreeningInsightPipelineDispatcher;
-  private readonly chunkSize = 120;
+  private readonly chunkSize = 200;
 
   constructor(dependencies: ScreeningExecutionServiceDependencies) {
     this.sessionRepository = dependencies.sessionRepository;
@@ -45,7 +72,6 @@ export class ScreeningExecutionService {
       baseUrl: env.PYTHON_SERVICE_URL,
       timeout: env.PYTHON_SERVICE_TIMEOUT_MS,
     });
-    this.calcService = new IndicatorCalculationService(this.dataClient);
     this.scoringService = new ScoringService();
     this.insightArchiveService = dependencies.insightArchiveService;
     this.pipelineDispatcher = dependencies.pipelineDispatcher;
@@ -82,7 +108,7 @@ export class ScreeningExecutionService {
     }
 
     if (existing.userId !== userId) {
-      throw new Error("无权限重试此会话");
+      throw new Error("无权重试此会话");
     }
 
     const retrySession = ScreeningSession.createPending({
@@ -107,7 +133,7 @@ export class ScreeningExecutionService {
     }
 
     if (session.userId !== userId) {
-      throw new Error("无权限取消此会话");
+      throw new Error("无权取消此会话");
     }
 
     session.requestCancellation();
@@ -139,6 +165,9 @@ export class ScreeningExecutionService {
 
   private async executeSession(session: ScreeningSession): Promise<void> {
     const startedAt = performance.now();
+    const calcService = new IndicatorCalculationService(
+      new SessionMemoizedHistoricalDataProvider(this.dataClient),
+    );
 
     try {
       session.markRunning("拉取候选股票列表");
@@ -170,9 +199,7 @@ export class ScreeningExecutionService {
 
         const stocks = await this.dataClient.getStocksByCodes(chunk);
         for (const stock of stocks) {
-          if (
-            await latest.filtersSnapshot.matchAsync(stock, this.calcService)
-          ) {
+          if (await latest.filtersSnapshot.matchAsync(stock, calcService)) {
             matchedStocks.push(stock);
           }
         }
@@ -208,7 +235,7 @@ export class ScreeningExecutionService {
       const scoredStocks = await this.scoringService.scoreStocks(
         matchedStocks,
         beforeScore.scoringConfigSnapshot,
-        this.calcService,
+        calcService,
       );
 
       const result = ScreeningResult.create(

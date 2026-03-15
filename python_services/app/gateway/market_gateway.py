@@ -6,9 +6,16 @@ import time
 
 from app.contracts.common import BatchItemError
 from app.contracts.market import (
+    IndicatorHistoryData,
+    IndicatorHistoryPoint,
+    IndicatorHistoryResponse,
+    IndustriesData,
+    IndustriesResponse,
     MarketStockBatchData,
     MarketStockBatchResponse,
     MarketStockResponse,
+    StockCodesData,
+    StockCodesResponse,
     ThemeCandidatesData,
     ThemeCandidatesResponse,
 )
@@ -27,6 +34,115 @@ class MarketGateway:
         self._retry_policy = RetryPolicy()
         self._theme_retry_policy = RetryPolicy(max_attempts=1)
         self._cache = gateway_cache
+
+    def get_stock_codes(
+        self,
+        request_id: str,
+        force_refresh: bool = False,
+    ) -> StockCodesResponse:
+        started_at = time.perf_counter()
+        result = execute_cached(
+            dataset="stock_universe",
+            provider=self._provider_client.provider_name,
+            params={"scope": "all", "limit": 0},
+            fetcher=lambda: self._build_stock_codes_data(),
+            cache_policy=get_cache_policy("stock_universe"),
+            retry_policy=self._retry_policy,
+            cache=self._cache,
+            force_refresh=force_refresh,
+        )
+
+        return StockCodesResponse(
+            meta=build_meta(
+                request_id=request_id,
+                provider=result.provider,
+                started_at=started_at,
+                cache_hit=result.cache_hit,
+                is_stale=result.is_stale,
+                warnings=result.warnings,
+                as_of=result.as_of,
+            ),
+            data=result.data,
+        )
+
+    def get_available_industries(
+        self,
+        request_id: str,
+        force_refresh: bool = False,
+    ) -> IndustriesResponse:
+        started_at = time.perf_counter()
+        result = execute_cached(
+            dataset="stock_industries",
+            provider=self._provider_client.provider_name,
+            params={"scope": "all"},
+            fetcher=lambda: self._build_industries_data(),
+            cache_policy=get_cache_policy("stock_industries"),
+            retry_policy=self._retry_policy,
+            cache=self._cache,
+            force_refresh=force_refresh,
+        )
+
+        return IndustriesResponse(
+            meta=build_meta(
+                request_id=request_id,
+                provider=result.provider,
+                started_at=started_at,
+                cache_hit=result.cache_hit,
+                is_stale=result.is_stale,
+                warnings=result.warnings,
+                as_of=result.as_of,
+            ),
+            data=result.data,
+        )
+
+    def get_indicator_history(
+        self,
+        request_id: str,
+        stock_code: str,
+        indicator: str,
+        years: int,
+        force_refresh: bool = False,
+    ) -> IndicatorHistoryResponse:
+        started_at = time.perf_counter()
+        result = execute_cached(
+            dataset="indicator_history",
+            provider=self._provider_client.provider_name,
+            params={
+                "stockCode": stock_code,
+                "indicator": indicator,
+                "years": years,
+            },
+            fetcher=lambda: IndicatorHistoryData(
+                stockCode=stock_code,
+                indicator=indicator,
+                years=years,
+                points=[
+                    IndicatorHistoryPoint(**point)
+                    for point in self._provider_client.get_indicator_history(
+                        stock_code,
+                        indicator,
+                        years,
+                    )
+                ],
+            ),
+            cache_policy=get_cache_policy("indicator_history"),
+            retry_policy=self._retry_policy,
+            cache=self._cache,
+            force_refresh=force_refresh,
+        )
+
+        return IndicatorHistoryResponse(
+            meta=build_meta(
+                request_id=request_id,
+                provider=result.provider,
+                started_at=started_at,
+                cache_hit=result.cache_hit,
+                is_stale=result.is_stale,
+                warnings=result.warnings,
+                as_of=result.as_of,
+            ),
+            data=result.data,
+        )
 
     def get_stock(
         self,
@@ -88,7 +204,7 @@ class MarketGateway:
             BatchItemError(
                 stockCode=stock_code,
                 code="stock_not_found",
-                message=f"未找到股票 {stock_code}",
+                message=f"未找到证券 {stock_code}",
             )
             for stock_code in stock_codes
             if stock_code not in found_codes
@@ -99,7 +215,7 @@ class MarketGateway:
             warnings.append(
                 GatewayWarning(
                     code="partial_results",
-                    message="批量请求部分成功，未命中的股票已在 data.errors 中返回",
+                    message="批量请求部分成功，未命中的证券已在 data.errors 中返回",
                 )
             )
 
@@ -159,6 +275,14 @@ class MarketGateway:
             ),
             data=ThemeCandidatesData(theme=theme, candidates=result.data),
         )
+
+    def _build_stock_codes_data(self) -> StockCodesData:
+        codes = self._provider_client.get_all_stock_codes()
+        return StockCodesData(codes=codes, total=len(codes))
+
+    def _build_industries_data(self) -> IndustriesData:
+        industries = self._provider_client.get_available_industries()
+        return IndustriesData(industries=industries, total=len(industries))
 
 
 market_gateway = MarketGateway()

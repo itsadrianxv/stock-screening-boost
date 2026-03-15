@@ -36,7 +36,7 @@ class RefreshUniverseJob:
             dataset="stock_universe",
             provider=self._provider_client.provider_name,
             params={"scope": "all", "limit": limit or 0},
-            value={"stockCodes": stock_codes, "count": len(stock_codes)},
+            value={"codes": stock_codes, "total": len(stock_codes)},
             cache_policy=get_cache_policy("stock_universe"),
             cache=gateway_cache,
             as_of=as_of,
@@ -85,4 +85,3 @@ class RefreshUniverseJob:
                 "snapshotCacheWrites": snapshot_cache_writes,
             },
         )
-
