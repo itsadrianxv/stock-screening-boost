@@ -1,9 +1,13 @@
 import Link from "next/link";
 
 import {
-  ActionBanner,
+  ActionStrip,
   EmptyState,
-  Panel,
+  InlineNotice,
+  MetricTile,
+  MiniTrendChart,
+  ProgressBar,
+  SectionCard,
   StatusPill,
   statusTone,
   WorkspaceShell,
@@ -91,15 +95,14 @@ export default async function Home() {
     (run) => run.status === "PENDING" || run.status === "RUNNING",
   );
   const liveScreeningSessions = (screeningSessions ?? []).filter(
-    (session) => session.status === "PENDING" || session.status === "RUNNING",
+    (item) => item.status === "PENDING" || item.status === "RUNNING",
   );
-
   const latestRecommendationRunId = recommendations?.[0]?.workflowRunId;
   const latestRecommendations = latestRecommendationRunId
     ? (recommendations ?? []).filter(
         (item) => item.workflowRunId === latestRecommendationRunId,
       )
-    : (recommendations ?? []).slice(0, 4);
+    : (recommendations ?? []).slice(0, 6);
   const portfolioSnapshot = portfolioSnapshots?.[0] ?? null;
 
   const priorityRecommendation = latestRecommendations[0] ?? null;
@@ -108,53 +111,99 @@ export default async function Home() {
     liveScreeningSessions[0] ?? screeningSessions?.[0] ?? null;
 
   const priorityTitle = !signedIn
-    ? "登录研究空间"
+    ? "登录后查看今日决策与运行状态"
     : priorityRecommendation
-      ? `${priorityRecommendation.stockName}：${actionLabelMap[priorityRecommendation.action] ?? priorityRecommendation.action}`
+      ? `${priorityRecommendation.stockName} · ${
+          actionLabelMap[priorityRecommendation.action] ??
+          priorityRecommendation.action
+        }`
       : priorityResearch
-        ? `继续处理：${priorityResearch.query}`
+        ? `继续处理 ${priorityResearch.query}`
         : priorityScreening
-          ? `查看最新机会池：${priorityScreening.strategyName}`
-          : "暂无优先事项";
+          ? `查看最新机会池 ${priorityScreening.strategyName}`
+          : "当前没有待处理的高优先级事项";
 
   const priorityDescription = !signedIn
-    ? "登录后同步研究数据。"
+    ? "登录后可以同步研究流程、筛选结果和组合建议，在同一工作台里完成今天的判断。"
     : priorityRecommendation
-      ? `${priorityRecommendation.reasoning.actionRationale} 当前风险预算上限 ${formatPct(priorityRecommendation.riskBudgetPct)}，建议区间 ${formatPct(priorityRecommendation.suggestedMinPct)} ~ ${formatPct(priorityRecommendation.suggestedMaxPct)}。`
+      ? `${priorityRecommendation.reasoning.actionRationale} 当前风险预算上限 ${formatPct(priorityRecommendation.riskBudgetPct)}，建议区间 ${formatPct(priorityRecommendation.suggestedMinPct)} 至 ${formatPct(priorityRecommendation.suggestedMaxPct)}。`
       : priorityResearch
         ? `${getTemplateLabel(priorityResearch.templateCode)} · ${priorityResearch.progressPercent}%`
         : priorityScreening
           ? `${priorityScreening.strategyName} · ${priorityScreening.currentStep ?? "等待结果"}`
-          : "暂无进行中的流程。";
+          : "工作台已空闲，可以发起新的研究或筛选。";
+
+  const chartValues = [
+    ...liveRuns.slice(0, 4).map((item) => item.progressPercent),
+    ...liveScreeningSessions.slice(0, 4).map((item) => item.progressPercent),
+  ];
+  const opportunityScale = Math.max(
+    ...latestRecommendations.map((item) => item.suggestedMaxPct ?? 0),
+    1,
+  );
 
   return (
     <HydrateClient>
       <WorkspaceShell
         section="home"
-        eyebrow="今日看板"
-        title="今日投资看板"
-        description="聚合重点建议、风险约束和在跑流程。"
+        title="投资决策工作台"
+        description="围绕今日优先事项、风险约束和运行中的研究，快速完成从筛选到组合建议的判断。"
         actions={
           <>
-            <Link href="/screening" className="app-button app-button-success">
-              查看机会池
+            <Link href="/screening" className="app-button app-button-primary">
+              打开股票筛选
             </Link>
-            <Link href="/workflows" className="app-button app-button-primary">
-              形成行业判断
+            <Link href="/workflows" className="app-button">
+              发起行业研究
             </Link>
-            <Link href="/timing" className="app-button app-button-primary">
-              打开择时组合
+            <Link href="/timing" className="app-button">
+              查看组合建议
             </Link>
             <Link
               href={signedIn ? "/api/auth/signout" : "/login"}
               className="app-button"
             >
-              {signedIn ? "退出登录" : "登录研究空间"}
+              {signedIn ? "退出登录" : "登录"}
             </Link>
           </>
         }
+        summary={
+          <>
+            <MetricTile
+              label="进行中的研究"
+              value={signedIn ? liveRuns.length : "-"}
+              hint={signedIn ? "行业与公司研究运行数" : "登录后同步"}
+              tone="info"
+            />
+            <MetricTile
+              label="进行中的筛选"
+              value={signedIn ? liveScreeningSessions.length : "-"}
+              hint={signedIn ? "机会池执行会话" : "登录后同步"}
+              tone="warning"
+            />
+            <MetricTile
+              label="最新组合建议"
+              value={signedIn ? latestRecommendations.length : "-"}
+              hint={signedIn ? "来自最近一次择时流程" : "登录后同步"}
+              tone="success"
+            />
+            <MetricTile
+              label="组合风险上限"
+              value={
+                signedIn && portfolioSnapshot
+                  ? formatPct(
+                      portfolioSnapshot.riskPreferences
+                        .maxPortfolioRiskBudgetPct,
+                    )
+                  : "-"
+              }
+              hint={signedIn ? "当前组合风险预算" : "登录后同步"}
+              tone="neutral"
+            />
+          </>
+        }
       >
-        <ActionBanner
+        <ActionStrip
           title={priorityTitle}
           description={priorityDescription}
           tone={
@@ -164,12 +213,12 @@ export default async function Home() {
                 ? "success"
                 : priorityResearch || priorityScreening
                   ? "info"
-                  : "warning"
+                  : "neutral"
           }
           actions={
             !signedIn ? (
               <Link href="/login" className="app-button app-button-primary">
-                立即登录
+                进入工作台
               </Link>
             ) : priorityRecommendation?.workflowRunId ? (
               <Link
@@ -186,314 +235,377 @@ export default async function Home() {
                 继续处理
               </Link>
             ) : priorityScreening ? (
-              <Link href="/screening" className="app-button app-button-success">
-                回到机会池
+              <Link href="/screening" className="app-button app-button-primary">
+                返回机会池
               </Link>
-            ) : undefined
+            ) : (
+              <Link href="/workflows" className="app-button app-button-primary">
+                发起研究
+              </Link>
+            )
           }
         />
 
-        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <Panel title="今日优先处理">
-            {!signedIn ? (
-              <EmptyState
-                title="登录后查看投资看板"
-                actions={
-                  <Link href="/login" className="app-button app-button-primary">
-                    登录研究空间
-                  </Link>
-                }
-              />
-            ) : (
-              <div className="grid gap-3">
-                <article className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill
-                      label={priorityRecommendation ? "组合建议" : "优先事项"}
-                      tone={priorityRecommendation ? "success" : "info"}
-                    />
-                    {priorityRecommendation ? (
-                      <StatusPill
-                        label={
-                          actionLabelMap[priorityRecommendation.action] ??
-                          priorityRecommendation.action
-                        }
-                        tone="success"
-                      />
-                    ) : null}
-                  </div>
-                  <p className="mt-3 text-lg font-medium text-[var(--app-text)]">
-                    {priorityTitle}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                    {priorityDescription}
-                  </p>
-                </article>
+        {loadError ? (
+          <InlineNotice tone="warning" description={loadError} />
+        ) : null}
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <article className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4">
-                    <p className="market-kicker">研究</p>
-                    {priorityResearch ? (
-                      <>
-                        <p className="mt-3 text-base font-medium text-[var(--app-text)]">
-                          {priorityResearch.query}
-                        </p>
-                        <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-                          {getTemplateLabel(priorityResearch.templateCode)} ·{" "}
-                          {priorityResearch.progressPercent}% ·{" "}
-                          {formatDate(priorityResearch.createdAt)}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="mt-3 text-sm text-[var(--app-text-muted)]">
-                        暂无进行中的研究。
-                      </p>
-                    )}
-                  </article>
-
-                  <article className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4">
-                    <p className="market-kicker">机会池</p>
-                    {priorityScreening ? (
-                      <>
-                        <p className="mt-3 text-base font-medium text-[var(--app-text)]">
-                          {priorityScreening.strategyName}
-                        </p>
-                        <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-                          {priorityScreening.currentStep ?? "等待查看筛选结果"}{" "}
-                          · {priorityScreening.progressPercent}%
-                        </p>
-                      </>
-                    ) : (
-                      <p className="mt-3 text-sm text-[var(--app-text-muted)]">
-                        暂无新的筛选刷新。
-                      </p>
-                    )}
-                  </article>
-                </div>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="风险预算 / 组合语境">
-            {!signedIn ? (
-              <EmptyState title="登录后查看组合语境" />
-            ) : portfolioSnapshot ? (
-              <div className="grid gap-3">
-                <article className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-base font-medium text-[var(--app-text)]">
-                        {portfolioSnapshot.name}
-                      </p>
-                      <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-                        更新于 {formatDate(portfolioSnapshot.updatedAt)}
-                      </p>
-                    </div>
-                    <StatusPill
-                      label={`预算上限 ${formatPct(
-                        portfolioSnapshot.riskPreferences
-                          .maxPortfolioRiskBudgetPct,
-                      )}`}
-                      tone="warning"
-                    />
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
-                      <div className="text-xs text-[var(--app-text-soft)]">
-                        总资金
-                      </div>
-                      <div className="app-data mt-2 text-lg text-[var(--app-text)]">
-                        {portfolioSnapshot.totalCapital.toFixed(2)}{" "}
-                        {portfolioSnapshot.baseCurrency}
-                      </div>
-                    </div>
-                    <div className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3">
-                      <div className="text-xs text-[var(--app-text-soft)]">
-                        可用现金
-                      </div>
-                      <div className="app-data mt-2 text-lg text-[var(--app-text)]">
-                        {portfolioSnapshot.cash.toFixed(2)}{" "}
-                        {portfolioSnapshot.baseCurrency}
-                      </div>
-                    </div>
-                  </div>
-                </article>
-
-                {priorityRecommendation ? (
-                  <article className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusPill
-                        label={
-                          marketRegimeLabelMap[
-                            priorityRecommendation.marketState
-                          ] ?? priorityRecommendation.marketState
-                        }
-                        tone="info"
-                      />
-                      <StatusPill
-                        label={`单票上限 ${formatPct(
-                          priorityRecommendation.reasoning.riskPlan
-                            .maxSingleNamePct,
-                        )}`}
-                        tone="neutral"
-                      />
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {priorityRecommendation.reasoning.marketContext.summary}
-                    </p>
-                  </article>
-                ) : null}
-              </div>
-            ) : (
-              <EmptyState
-                title="还没有组合快照"
-                actions={
-                  <Link
-                    href="/timing"
-                    className="app-button app-button-primary"
-                  >
-                    去维护组合快照
-                  </Link>
-                }
-              />
-            )}
-          </Panel>
-        </div>
-
-        <Panel
-          title="最新择时建议"
-          actions={
-            <Link href="/timing" className="app-button app-button-primary">
-              打开择时组合
-            </Link>
-          }
-        >
-          {!signedIn ? (
-            <EmptyState title="登录后查看组合建议" />
-          ) : latestRecommendations.length === 0 ? (
-            <EmptyState title="还没有新的择时建议" />
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {latestRecommendations.slice(0, 4).map((recommendation) => (
-                <article
-                  key={recommendation.id}
-                  className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill
-                      label={
-                        actionLabelMap[recommendation.action] ??
-                        recommendation.action
-                      }
-                      tone="success"
-                    />
-                    <StatusPill
-                      label={`优先级 ${recommendation.priority}`}
-                      tone="warning"
-                    />
-                  </div>
-                  <p className="mt-3 text-lg font-medium text-[var(--app-text)]">
-                    {recommendation.stockName}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--app-text-soft)]">
-                    {recommendation.stockCode}
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
-                    {recommendation.reasoning.actionRationale}
-                  </p>
-                  <div className="mt-4 grid gap-2 text-xs text-[var(--app-text-soft)]">
-                    <div>
-                      建议区间 {formatPct(recommendation.suggestedMinPct)} ~{" "}
-                      {formatPct(recommendation.suggestedMaxPct)}
-                    </div>
-                    <div>
-                      风险预算 {formatPct(recommendation.riskBudgetPct)}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="进行中的研究">
-          {!signedIn ? (
-            <EmptyState title="登录后查看研究动态" />
-          ) : liveRuns.length === 0 && liveScreeningSessions.length === 0 ? (
-            <EmptyState title="当前没有进行中的研究" />
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {liveRuns.map((run) => (
-                <article
-                  key={run.id}
-                  className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill
-                      label={getTemplateLabel(run.templateCode)}
-                      tone="info"
-                    />
-                    <StatusPill
-                      label={`${run.progressPercent}%`}
-                      tone={statusTone(run.status)}
-                    />
-                  </div>
-                  <p className="mt-3 text-base font-medium text-[var(--app-text)]">
-                    {run.query}
-                  </p>
-                  <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-                    {run.currentNodeKey ?? "等待结果更新"}
-                  </p>
-                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[var(--app-text-soft)]">
-                    <span>{formatDate(run.createdAt)}</span>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+          <div className="grid gap-6">
+            <SectionCard
+              title="机会排序"
+              description="聚焦当前建议区间和动作理由，快速筛出今天最值得继续跟进的标的。"
+            >
+              {!signedIn ? (
+                <EmptyState
+                  title="登录后查看最新机会排序"
+                  description="登录后会合并机会池、组合建议和研究结论。"
+                  actions={
                     <Link
-                      href={`/workflows/${run.id}`}
-                      className="text-[var(--app-accent-strong)]"
+                      href="/login"
+                      className="app-button app-button-primary"
                     >
-                      查看详情
+                      登录
                     </Link>
-                  </div>
-                </article>
-              ))}
-
-              {liveScreeningSessions.map((session) => (
-                <article
-                  key={session.id}
-                  className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.86)] p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill label="机会池" tone="success" />
-                    <StatusPill
-                      label={`${session.progressPercent}%`}
-                      tone={statusTone(session.status)}
-                    />
-                  </div>
-                  <p className="mt-3 text-base font-medium text-[var(--app-text)]">
-                    {session.strategyName}
-                  </p>
-                  <p className="mt-2 text-sm text-[var(--app-text-muted)]">
-                    {session.currentStep ?? "等待结果更新"}
-                  </p>
-                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[var(--app-text-soft)]">
-                    <span>{formatDate(session.executedAt)}</span>
+                  }
+                />
+              ) : latestRecommendations.length === 0 ? (
+                <EmptyState
+                  title="还没有新的组合建议"
+                  description="可以先去筛选页执行策略，或在行业研究里补充结论。"
+                  actions={
                     <Link
                       href="/screening"
-                      className="text-[var(--app-accent-strong)]"
+                      className="app-button app-button-primary"
                     >
-                      查看机会池
+                      打开筛选
                     </Link>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+                  }
+                />
+              ) : (
+                <div className="grid gap-4">
+                  {latestRecommendations.slice(0, 5).map((item) => {
+                    const width = Math.max(
+                      14,
+                      ((item.suggestedMaxPct ?? 0) / opportunityScale) * 100,
+                    );
 
-          {loadError ? (
-            <div className="mt-4 rounded-[12px] border border-[rgba(191,154,96,0.34)] bg-[rgba(77,58,27,0.2)] px-4 py-3 text-sm text-[var(--app-warning)]">
-              {loadError}
-            </div>
-          ) : null}
-        </Panel>
+                    return (
+                      <article
+                        key={item.id}
+                        className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="text-sm font-medium text-[var(--app-text-strong)]">
+                                {item.stockName}
+                              </div>
+                              <div className="text-xs text-[var(--app-text-subtle)]">
+                                {item.stockCode}
+                              </div>
+                              <StatusPill
+                                label={
+                                  actionLabelMap[item.action] ?? item.action
+                                }
+                                tone="success"
+                              />
+                              <StatusPill
+                                label={`优先级 ${item.priority}`}
+                                tone="warning"
+                              />
+                            </div>
+                            <div className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
+                              {item.reasoning.actionRationale}
+                            </div>
+                          </div>
+                          <div className="w-full max-w-[220px]">
+                            <div className="flex items-center justify-between gap-3 text-xs text-[var(--app-text-subtle)]">
+                              <span>建议上限</span>
+                              <span className="app-data text-[var(--app-text-strong)]">
+                                {formatPct(item.suggestedMaxPct)}
+                              </span>
+                            </div>
+                            <div className="mt-2 h-2 rounded-full bg-[rgba(255,255,255,0.06)]">
+                              <div
+                                className="h-2 rounded-full bg-[var(--app-brand)]"
+                                style={{ width: `${width}%` }}
+                              />
+                            </div>
+                            <div className="mt-2 text-xs text-[var(--app-text-subtle)]">
+                              风险预算 {formatPct(item.riskBudgetPct)} ·
+                              建议区间 {formatPct(item.suggestedMinPct)} 至{" "}
+                              {formatPct(item.suggestedMaxPct)}
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="研究执行队列"
+              description="统一查看运行中的行业研究和机会池会话，避免在多个页面之间切换。"
+            >
+              {!signedIn ? (
+                <EmptyState title="登录后查看运行队列" />
+              ) : liveRuns.length === 0 &&
+                liveScreeningSessions.length === 0 ? (
+                <EmptyState
+                  title="当前没有进行中的流程"
+                  description="可以发起新的行业研究，或执行一次股票筛选。"
+                />
+              ) : (
+                <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+                  <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                    <div className="text-sm font-medium text-[var(--app-text-strong)]">
+                      最近运行进度
+                    </div>
+                    <MiniTrendChart
+                      values={chartValues}
+                      className="mt-5"
+                      tone="info"
+                    />
+                    <div className="mt-3 text-xs leading-6 text-[var(--app-text-muted)]">
+                      趋势线基于当前运行中的行业研究与筛选会话进度，帮助快速判断队列是否接近完成。
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {liveRuns.map((run) => (
+                      <article
+                        key={run.id}
+                        className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <StatusPill
+                                label={getTemplateLabel(run.templateCode)}
+                                tone="info"
+                              />
+                              <StatusPill
+                                label={`${run.progressPercent}%`}
+                                tone={statusTone(run.status)}
+                              />
+                            </div>
+                            <div className="mt-3 text-sm font-medium text-[var(--app-text-strong)]">
+                              {run.query}
+                            </div>
+                            <div className="mt-1 text-sm text-[var(--app-text-muted)]">
+                              {run.currentNodeKey ?? "等待结果更新"}
+                            </div>
+                          </div>
+                          <div className="text-xs text-[var(--app-text-subtle)]">
+                            {formatDate(run.createdAt)}
+                          </div>
+                        </div>
+                        <ProgressBar
+                          value={run.progressPercent}
+                          tone={statusTone(run.status)}
+                          className="mt-4"
+                        />
+                      </article>
+                    ))}
+
+                    {liveScreeningSessions.map((item) => (
+                      <article
+                        key={item.id}
+                        className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <StatusPill label="机会池" tone="success" />
+                              <StatusPill
+                                label={`${item.progressPercent}%`}
+                                tone={statusTone(item.status)}
+                              />
+                            </div>
+                            <div className="mt-3 text-sm font-medium text-[var(--app-text-strong)]">
+                              {item.strategyName}
+                            </div>
+                            <div className="mt-1 text-sm text-[var(--app-text-muted)]">
+                              {item.currentStep ?? "等待结果更新"}
+                            </div>
+                          </div>
+                          <div className="text-xs text-[var(--app-text-subtle)]">
+                            {formatDate(item.executedAt)}
+                          </div>
+                        </div>
+                        <ProgressBar
+                          value={item.progressPercent}
+                          tone={statusTone(item.status)}
+                          className="mt-4"
+                        />
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+
+          <div className="grid gap-6">
+            <SectionCard
+              title="风险框架"
+              description="把当前组合约束和最新市场语境收进同一块，方便判断是否值得立刻行动。"
+            >
+              {!signedIn ? (
+                <EmptyState title="登录后查看风险框架" />
+              ) : portfolioSnapshot ? (
+                <div className="grid gap-3">
+                  <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-[var(--app-text-strong)]">
+                          {portfolioSnapshot.name}
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--app-text-subtle)]">
+                          更新于 {formatDate(portfolioSnapshot.updatedAt)}
+                        </div>
+                      </div>
+                      <StatusPill
+                        label={`风险上限 ${formatPct(
+                          portfolioSnapshot.riskPreferences
+                            .maxPortfolioRiskBudgetPct,
+                        )}`}
+                        tone="warning"
+                      />
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3">
+                        <div className="text-xs text-[var(--app-text-subtle)]">
+                          总资产
+                        </div>
+                        <div className="app-data mt-2 text-lg text-[var(--app-text-strong)]">
+                          {portfolioSnapshot.totalCapital.toFixed(2)}{" "}
+                          {portfolioSnapshot.baseCurrency}
+                        </div>
+                      </div>
+                      <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3">
+                        <div className="text-xs text-[var(--app-text-subtle)]">
+                          可用现金
+                        </div>
+                        <div className="app-data mt-2 text-lg text-[var(--app-text-strong)]">
+                          {portfolioSnapshot.cash.toFixed(2)}{" "}
+                          {portfolioSnapshot.baseCurrency}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {priorityRecommendation ? (
+                    <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill
+                          label={
+                            marketRegimeLabelMap[
+                              priorityRecommendation.marketState
+                            ] ?? priorityRecommendation.marketState
+                          }
+                          tone="info"
+                        />
+                        <StatusPill
+                          label={`单票上限 ${formatPct(
+                            priorityRecommendation.reasoning.riskPlan
+                              .maxSingleNamePct,
+                          )}`}
+                          tone="neutral"
+                        />
+                      </div>
+                      <div className="mt-3 text-sm leading-6 text-[var(--app-text-muted)]">
+                        {priorityRecommendation.reasoning.marketContext.summary}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <EmptyState
+                  title="还没有组合快照"
+                  actions={
+                    <Link
+                      href="/timing"
+                      className="app-button app-button-primary"
+                    >
+                      去维护组合
+                    </Link>
+                  }
+                />
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="今日优先处理"
+              description="把下一步动作压缩到最少，降低切换成本。"
+            >
+              {!signedIn ? (
+                <EmptyState title="登录后查看优先事项" />
+              ) : (
+                <div className="grid gap-3">
+                  <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill
+                        label={priorityRecommendation ? "组合建议" : "优先事项"}
+                        tone={priorityRecommendation ? "success" : "info"}
+                      />
+                      {priorityRecommendation ? (
+                        <StatusPill
+                          label={
+                            actionLabelMap[priorityRecommendation.action] ??
+                            priorityRecommendation.action
+                          }
+                          tone="success"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-3 text-base font-medium text-[var(--app-text-strong)]">
+                      {priorityTitle}
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
+                      {priorityDescription}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                      <div className="text-xs text-[var(--app-text-subtle)]">
+                        行业研究
+                      </div>
+                      <div className="mt-2 text-sm font-medium text-[var(--app-text-strong)]">
+                        {priorityResearch?.query ?? "当前没有进行中的行业研究"}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--app-text-muted)]">
+                        {priorityResearch
+                          ? `${getTemplateLabel(priorityResearch.templateCode)} · ${priorityResearch.progressPercent}%`
+                          : "空闲"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+                      <div className="text-xs text-[var(--app-text-subtle)]">
+                        机会池
+                      </div>
+                      <div className="mt-2 text-sm font-medium text-[var(--app-text-strong)]">
+                        {priorityScreening?.strategyName ??
+                          "当前没有进行中的筛选会话"}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--app-text-muted)]">
+                        {priorityScreening
+                          ? `${priorityScreening.currentStep ?? "等待结果"} · ${priorityScreening.progressPercent}%`
+                          : "空闲"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
       </WorkspaceShell>
     </HydrateClient>
   );

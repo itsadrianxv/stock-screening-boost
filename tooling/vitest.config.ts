@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 
+// Tests import server modules that validate runtime env eagerly.
+process.env.SKIP_ENV_VALIDATION = process.env.SKIP_ENV_VALIDATION ?? "1";
+
 export default defineConfig({
   test: {
     globals: true,

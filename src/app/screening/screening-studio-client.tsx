@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { WorkspaceShell } from "~/app/_components/ui";
+import {
+  ActionStrip,
+  InlineNotice,
+  StatusPill,
+  statusTone,
+  WorkspaceShell,
+} from "~/app/_components/ui";
 import {
   type CreateStrategyInput,
   type FilterGroupInput,
@@ -28,7 +34,6 @@ import {
   type StrategyFormState,
   scoringConfigToRules,
   scoringRulesToConfig,
-  sessionStatusClassMap,
   sessionStatusLabelMap,
 } from "./screening-ui";
 
@@ -58,19 +63,17 @@ function Notice({ notice }: { notice: NoticeState | null }) {
     return null;
   }
 
-  const className =
-    notice.tone === "success"
-      ? "border-[rgba(120,211,173,0.34)] bg-[rgba(26,68,54,0.2)] text-[var(--app-success)]"
-      : notice.tone === "error"
-        ? "border-[rgba(239,142,157,0.34)] bg-[rgba(97,39,50,0.2)] text-[var(--app-danger)]"
-        : "border-[rgba(226,181,111,0.34)] bg-[rgba(86,60,23,0.2)] text-[var(--app-warning)]";
-
   return (
-    <p
-      className={`studio-rise rounded-[12px] border px-4 py-3 text-sm ${className}`}
-    >
-      {notice.text}
-    </p>
+    <InlineNotice
+      tone={
+        notice.tone === "success"
+          ? "success"
+          : notice.tone === "error"
+            ? "danger"
+            : "warning"
+      }
+      description={notice.text}
+    />
   );
 }
 
@@ -676,8 +679,52 @@ export function ScreeningStudioClient() {
         </>
       }
     >
-      <div className="grid gap-6">
-        <section className="app-panel p-4 sm:p-5">
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+        <ActionStrip
+          title={
+            strategyMode === "create"
+              ? strategyForm.name.trim() || "新建筛选策略"
+              : (selectedStrategySummary?.name ?? "未选择策略")
+          }
+          description={
+            selectedSessionSummary
+              ? `当前会话：${selectedSessionSummary.strategyName} · ${sessionStatusLabelMap[selectedSessionSummary.status] ?? selectedSessionSummary.status} · ${selectedSessionSummary.currentStep ?? "等待结果"}`
+              : "先选择策略并执行筛选，再把结果同步到右侧观察清单。"
+          }
+          tone={
+            selectedSessionSummary
+              ? statusTone(selectedSessionSummary.status)
+              : "info"
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedStrategyId) {
+                    executeStrategyMutation.mutate({
+                      strategyId: selectedStrategyId,
+                    });
+                  }
+                }}
+                disabled={!selectedStrategyId}
+                className="app-button app-button-primary"
+              >
+                执行筛选
+              </button>
+              <button
+                type="button"
+                onClick={resetStrategyForm}
+                className="app-button"
+              >
+                新建策略
+              </button>
+            </>
+          }
+          className="xl:col-span-3"
+        />
+
+        <section className="app-panel p-4 sm:p-5 xl:col-span-3">
           <div className="flex flex-wrap items-end gap-4">
             <div className="min-w-[220px] flex-1">
               <label
@@ -815,7 +862,7 @@ export function ScreeningStudioClient() {
 
         <Notice notice={notice} />
 
-        <section className="app-panel p-4 sm:p-5">
+        <section className="app-panel p-4 sm:p-5 xl:col-start-2">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-medium text-[var(--app-text)]">
@@ -971,7 +1018,11 @@ export function ScreeningStudioClient() {
           </div>
         </section>
 
-        <details className="app-panel p-4 sm:p-5" id="filters-panel">
+        <details
+          className="app-panel p-4 sm:p-5 xl:col-span-2"
+          id="filters-panel"
+          open
+        >
           <summary className="cursor-pointer text-sm font-medium text-[var(--app-text)]">
             筛选器设置
             <span className="ml-2 text-xs text-[var(--app-text-soft)]">
@@ -982,7 +1033,7 @@ export function ScreeningStudioClient() {
           <div className="mt-4">
             <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-start">
               <aside className="xl:sticky xl:top-6">
-                <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+                <section className="app-section p-5 sm:p-6">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-[#7f99b4]">
@@ -1001,7 +1052,7 @@ export function ScreeningStudioClient() {
                     </button>
                   </div>
 
-                  <section className="mt-5 rounded-[22px] border border-[#35526f]/35 bg-[#10253c]/92 p-4">
+                  <section className="app-subpanel mt-5 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-xs uppercase tracking-[0.18em] text-[#7f99b4]">
@@ -1029,13 +1080,13 @@ export function ScreeningStudioClient() {
                           "当前策略暂无说明，可在右侧补充筛选思路与备注。")}
                     </p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                      <div className="rounded-[14px] border border-[#35526f]/35 bg-[#0c1f33] px-4 py-3">
+                      <div className="app-subpanel px-4 py-3">
                         <p className="text-xs text-[#7f99b4]">筛选条件</p>
                         <p className="mt-2 text-lg font-semibold text-[#eef6ff]">
                           {countConditions(strategyForm.filters)}
                         </p>
                       </div>
-                      <div className="rounded-[14px] border border-[#35526f]/35 bg-[#0c1f33] px-4 py-3">
+                      <div className="app-subpanel px-4 py-3">
                         <p className="text-xs text-[#7f99b4]">评分指标</p>
                         <p className="mt-2 text-lg font-semibold text-[#eef6ff]">
                           {strategyForm.scoringRules.length}
@@ -1078,7 +1129,7 @@ export function ScreeningStudioClient() {
                   </div>
 
                   {strategies.length === 0 ? (
-                    <div className="mt-3 rounded-[18px] border border-[#35526f]/35 bg-[#10253c]/88 p-4 text-sm leading-6 text-[#97afc7]">
+                    <div className="app-subpanel mt-3 p-4 text-sm leading-6 text-[var(--app-text-muted)]">
                       还没有已保存的筛选器。先在右侧创建一个，保存后会自动出现在这里。
                     </div>
                   ) : (
@@ -1169,7 +1220,7 @@ export function ScreeningStudioClient() {
                   )}
                 </section>
               </aside>
-              <section className="min-w-0 rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+              <section className="app-section min-w-0 p-5 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
@@ -1293,7 +1344,11 @@ export function ScreeningStudioClient() {
           </div>
         </details>
 
-        <details className="app-panel p-4 sm:p-5" id="sessions-panel">
+        <details
+          className="app-panel p-4 sm:p-5 xl:col-start-3"
+          id="sessions-panel"
+          open
+        >
           <summary className="cursor-pointer text-sm font-medium text-[var(--app-text)]">
             会话历史与详情
             <span className="ml-2 text-xs text-[var(--app-text-soft)]">
@@ -1301,7 +1356,7 @@ export function ScreeningStudioClient() {
             </span>
           </summary>
           <div className="mt-4">
-            <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+            <section className="app-section p-5 sm:p-6">
               <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
                 最近结果与候选机会
               </h2>
@@ -1310,7 +1365,11 @@ export function ScreeningStudioClient() {
                   {sessions.map((session: SessionListItem) => (
                     <article
                       key={session.id}
-                      className={`rounded-2xl border p-4 ${session.id === selectedSessionId ? "border-[#3dd3b5] bg-[#113d37]" : "border-[#35526f]/35 bg-[#10253c]/90"}`}
+                      className={`rounded-[10px] border p-4 ${
+                        session.id === selectedSessionId
+                          ? "border-[var(--app-border-strong)] bg-[var(--app-bg-floating)]"
+                          : "border-[var(--app-border-soft)] bg-[var(--app-bg-inset)]"
+                      }`}
                     >
                       <button
                         type="button"
@@ -1318,17 +1377,18 @@ export function ScreeningStudioClient() {
                         className="w-full text-left"
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="truncate text-sm font-medium text-[#e1eeff]">
+                          <p className="truncate text-sm font-medium text-[var(--app-text-strong)]">
                             {session.strategyName}
                           </p>
-                          <span
-                            className={`text-xs font-semibold ${sessionStatusClassMap[session.status] ?? "text-[#cde0f4]"}`}
-                          >
-                            {sessionStatusLabelMap[session.status] ??
-                              session.status}
-                          </span>
+                          <StatusPill
+                            tone={statusTone(session.status)}
+                            label={
+                              sessionStatusLabelMap[session.status] ??
+                              session.status
+                            }
+                          />
                         </div>
-                        <p className="mt-1 text-xs text-[#92abc3]">
+                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
                           {session.currentStep ?? "等待状态更新"} ·{" "}
                           {session.progressPercent}%
                         </p>
@@ -1342,7 +1402,7 @@ export function ScreeningStudioClient() {
                                 sessionId: session.id,
                               })
                             }
-                            className="rounded-full border border-[#f6bf63]/70 px-3 py-1 text-[#ffd695]"
+                            className="app-button"
                           >
                             取消
                           </button>
@@ -1354,7 +1414,7 @@ export function ScreeningStudioClient() {
                                 sessionId: session.id,
                               })
                             }
-                            className="rounded-full border border-[#5cd5b8]/28 bg-[#12382f] px-3 py-1 text-[#9cf3d9]"
+                            className="app-button app-button-primary"
                           >
                             重试
                           </button>
@@ -1365,7 +1425,7 @@ export function ScreeningStudioClient() {
                             onClick={() =>
                               deleteSessionMutation.mutate({ id: session.id })
                             }
-                            className="rounded-full border border-[#ff8d9b]/25 bg-[#4b2331] px-3 py-1 text-[#ff8d9b]"
+                            className="app-button app-button-danger"
                           >
                             删除
                           </button>
@@ -1374,31 +1434,34 @@ export function ScreeningStudioClient() {
                     </article>
                   ))}
                 </div>
-                <div className="rounded-2xl border border-[#35526f]/35 bg-[#10263d]/94 p-4">
+                <div className="app-subpanel p-4">
                   {sessionDetailQuery.data ? (
                     <>
                       <div className="grid gap-3 md:grid-cols-2">
-                        <article className="rounded-xl border border-[#e1eeff]/18 bg-[#11253b] px-3 py-3 text-xs text-[#a1b8ce]">
+                        <article className="app-subpanel px-3 py-3 text-xs text-[var(--app-text-muted)]">
                           <p>状态</p>
-                          <p
-                            className={`mt-2 text-sm font-semibold ${sessionStatusClassMap[sessionDetailQuery.data.status] ?? "text-[#d6e8f7]"}`}
-                          >
-                            {sessionStatusLabelMap[
-                              sessionDetailQuery.data.status
-                            ] ?? sessionDetailQuery.data.status}
-                          </p>
-                          <p className="mt-2 text-[11px] text-[#7d9ab4]">
+                          <div className="mt-2">
+                            <StatusPill
+                              tone={statusTone(sessionDetailQuery.data.status)}
+                              label={
+                                sessionStatusLabelMap[
+                                  sessionDetailQuery.data.status
+                                ] ?? sessionDetailQuery.data.status
+                              }
+                            />
+                          </div>
+                          <p className="mt-2 text-[11px] text-[var(--app-text-subtle)]">
                             {sessionDetailQuery.data.currentStep ?? "等待执行"}
                           </p>
                         </article>
-                        <article className="rounded-xl border border-[#e1eeff]/18 bg-[#11253b] px-3 py-3 text-xs text-[#a1b8ce]">
+                        <article className="app-subpanel px-3 py-3 text-xs text-[var(--app-text-muted)]">
                           <p>执行耗时</p>
-                          <p className="mt-2 text-sm font-semibold text-[#eef6ff]">
+                          <p className="mt-2 text-sm font-semibold text-[var(--app-text-strong)]">
                             {formatDuration(
                               sessionDetailQuery.data.executionTime,
                             )}
                           </p>
-                          <p className="mt-2 text-[11px] text-[#7d9ab4]">
+                          <p className="mt-2 text-[11px] text-[var(--app-text-subtle)]">
                             {formatDate(sessionDetailQuery.data.executedAt)}
                           </p>
                         </article>
@@ -1470,7 +1533,11 @@ export function ScreeningStudioClient() {
           </div>
         </details>
 
-        <details className="app-panel p-4 sm:p-5" id="watchlist-panel">
+        <details
+          className="app-panel p-4 sm:p-5 xl:col-start-3"
+          id="watchlist-panel"
+          open
+        >
           <summary className="cursor-pointer text-sm font-medium text-[var(--app-text)]">
             观察清单管理
             <span className="ml-2 text-xs text-[var(--app-text-soft)]">
@@ -1478,13 +1545,13 @@ export function ScreeningStudioClient() {
             </span>
           </summary>
           <div className="mt-4">
-            <section className="rounded-[26px] border border-[#35526f]/35 bg-[#0d1e33]/95 p-5 sm:p-6">
+            <section className="app-section p-5 sm:p-6">
               <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#e9f4ff]">
                 跟踪清单
               </h2>
               <div className="mt-4 grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
                 <div className="grid gap-4">
-                  <section className="rounded-2xl border border-[#35526f]/35 bg-[#10253c]/90 p-4">
+                  <section className="app-subpanel p-4">
                     <input
                       value={newWatchListName}
                       onChange={(event) =>
@@ -1514,7 +1581,7 @@ export function ScreeningStudioClient() {
                       创建清单
                     </button>
                   </section>
-                  <section className="rounded-2xl border border-[#35526f]/35 bg-[#10253c]/90 p-4">
+                  <section className="app-subpanel p-4">
                     {watchLists.map((item: WatchListItem) => (
                       <article
                         key={item.id}
@@ -1536,7 +1603,7 @@ export function ScreeningStudioClient() {
                     ))}
                   </section>
                 </div>
-                <div className="rounded-2xl border border-[#35526f]/35 bg-[#10253c]/90 p-4">
+                <div className="app-subpanel p-4">
                   {watchListDetailQuery.data ? (
                     <>
                       <div className="grid gap-2">

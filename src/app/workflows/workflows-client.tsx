@@ -6,9 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   EmptyState,
+  InlineNotice,
   KeyPointList,
-  Panel,
+  LoadingSkeleton,
   ProgressBar,
+  SectionCard,
   StatusPill,
   statusTone,
   WorkspaceShell,
@@ -38,7 +40,7 @@ const statusLabelMap: Record<string, string> = {
   PENDING: "等待执行",
   RUNNING: "研究进行中",
   SUCCEEDED: "结论已生成",
-  FAILED: "需要重跑",
+  FAILED: "需要重试",
   CANCELLED: "已取消",
 };
 
@@ -80,7 +82,7 @@ function InvestorRunCard({
     run.status === "FAILED" ? "danger" : digest.verdictTone;
 
   return (
-    <article className="rounded-[18px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.88)] p-5">
+    <SectionCard surface="inset" density="compact">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -91,15 +93,15 @@ function InvestorRunCard({
             />
             <StatusPill label={digest.verdictLabel} tone={verdictTone} />
           </div>
-          <p className="mt-3 text-lg font-medium text-[var(--app-text)]">
+          <div className="mt-3 text-lg font-medium text-[var(--app-text-strong)]">
             {run.query}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
+          </div>
+          <div className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
             {digest.summary}
-          </p>
+          </div>
         </div>
 
-        <div className="text-right text-xs text-[var(--app-text-soft)]">
+        <div className="text-right text-xs text-[var(--app-text-subtle)]">
           <p>{formatDate(run.createdAt)}</p>
           {run.status === "RUNNING" || run.status === "PENDING" ? (
             <p className="mt-2">{run.currentNodeKey ?? "等待更新"}</p>
@@ -109,7 +111,7 @@ function InvestorRunCard({
 
       {run.status === "RUNNING" || run.status === "PENDING" ? (
         <div className="mt-4">
-          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-[var(--app-text-soft)]">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-[var(--app-text-subtle)]">
             <span>当前进度</span>
             <span>{run.progressPercent}%</span>
           </div>
@@ -124,12 +126,12 @@ function InvestorRunCard({
         {digest.metrics.slice(0, 4).map((metric) => (
           <div
             key={`${run.id}-${metric.label}`}
-            className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-4 py-3"
+            className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3"
           >
-            <div className="text-xs text-[var(--app-text-soft)]">
+            <div className="text-xs text-[var(--app-text-subtle)]">
               {metric.label}
             </div>
-            <div className="app-data mt-2 text-lg text-[var(--app-text)]">
+            <div className="app-data mt-2 text-lg text-[var(--app-text-strong)]">
               {metric.value}
             </div>
           </div>
@@ -158,7 +160,7 @@ function InvestorRunCard({
       </div>
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-[var(--app-text-soft)]">
+        <div className="text-xs text-[var(--app-text-subtle)]">
           {digest.headline}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -179,7 +181,7 @@ function InvestorRunCard({
           )}
         </div>
       </div>
-    </article>
+    </SectionCard>
   );
 }
 
@@ -295,31 +297,29 @@ export function WorkflowsClient() {
   return (
     <WorkspaceShell
       section="workflows"
-      eyebrow="行业判断"
-      title="行业判断"
+      title="行业研究"
+      description="把研究问题、约束和偏好收在一个入口里，统一查看最近运行与结论摘要。"
       actions={
         <>
           <Link href="/" className="app-button">
-            返回看板
+            返回总览
           </Link>
           <Link href="/workflows/history" className="app-button">
             历史记录
           </Link>
-          <Link
-            href="/company-research"
-            className="app-button app-button-primary"
-          >
-            打开公司判断
+          <Link href="/company-research" className="app-button">
+            公司研究
           </Link>
-          <Link href="/screening" className="app-button app-button-success">
-            查看机会池
+          <Link href="/screening" className="app-button app-button-primary">
+            股票筛选
           </Link>
         </>
       }
     >
-      <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
-        <Panel
-          title="形成行业判断"
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
+        <SectionCard
+          title="发起行业研究"
+          description="直接输入研究问题；如果需要控制证据范围、时效或必答问题，在下方补充约束。"
           actions={
             <button
               type="button"
@@ -327,97 +327,131 @@ export function WorkflowsClient() {
               disabled={startMutation.isPending || !query.trim()}
               className="app-button app-button-primary"
             >
-              {startMutation.isPending ? "正在生成判断" : "开始判断"}
+              {startMutation.isPending ? "正在生成判断" : "开始研究"}
             </button>
           }
         >
           <div className="grid gap-4">
-            <textarea
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="例如：AI 眼镜供应链中，哪几个环节会最先兑现利润？"
-              className="app-textarea min-h-[180px]"
-            />
+            <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+              研究问题
+              <textarea
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="例如：AI 眼镜供应链中，哪些环节会最先兑现利润？"
+                className="app-textarea min-h-[180px]"
+              />
+            </label>
 
-            <details className="rounded-[14px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.82)] p-4">
-              <summary className="cursor-pointer text-sm font-medium text-[var(--app-text)]">
-                高级选项
-              </summary>
-              <div className="mt-4 grid gap-3">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                研究目标
                 <textarea
                   value={researchGoal}
                   onChange={(event) => setResearchGoal(event.target.value)}
-                  placeholder="可选：本次研究的目标"
-                  className="app-textarea min-h-[88px]"
+                  placeholder="可选：本次研究最想得到的判断。"
+                  className="app-textarea min-h-[110px]"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                必答问题
                 <textarea
                   value={mustAnswerQuestions}
                   onChange={(event) =>
                     setMustAnswerQuestions(event.target.value)
                   }
-                  placeholder="可选：必须回答的问题，每行一条"
-                  className="app-textarea min-h-[88px]"
+                  placeholder="可选：每行一个需要回答的问题。"
+                  className="app-textarea min-h-[110px]"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                优先信源
                 <textarea
                   value={preferredSources}
                   onChange={(event) => setPreferredSources(event.target.value)}
-                  placeholder="可选：优先信源，每行一条"
-                  className="app-textarea min-h-[80px]"
+                  placeholder="可选：每行一个优先信源。"
+                  className="app-textarea min-h-[96px]"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                禁用证据类型
                 <textarea
                   value={forbiddenEvidenceTypes}
                   onChange={(event) =>
                     setForbiddenEvidenceTypes(event.target.value)
                   }
-                  placeholder="可选：禁用证据类型，每行一条"
-                  className="app-textarea min-h-[80px]"
+                  placeholder="可选：每行一个禁用证据类型。"
+                  className="app-textarea min-h-[96px]"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                时效窗口（天）
                 <input
                   value={freshnessWindowDays}
                   onChange={(event) =>
                     setFreshnessWindowDays(event.target.value)
                   }
-                  placeholder="可选：时效窗口（天）"
+                  placeholder="例如 180"
                   className="app-input"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
+                幂等键
                 <input
                   value={idempotencyKey}
                   onChange={(event) => setIdempotencyKey(event.target.value)}
-                  placeholder="可选：幂等键，用于避免重复创建"
+                  placeholder="用于避免重复创建"
                   className="app-input"
                 />
-              </div>
-            </details>
+              </label>
+            </div>
 
             {startMutation.error ? (
-              <div className="rounded-[12px] border border-[rgba(201,119,132,0.34)] bg-[rgba(81,33,43,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
-                {startMutation.error.message}
-              </div>
+              <InlineNotice
+                tone="danger"
+                description={startMutation.error.message}
+              />
             ) : null}
           </div>
-        </Panel>
+        </SectionCard>
 
-        <Panel title="问题模板">
+        <SectionCard
+          title="常用问题模板"
+          description="点击填入后可以继续补充约束，再直接发起研究。"
+        >
           <div className="grid gap-3">
             {quickPrompts.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => setQuery(prompt)}
-                className="rounded-[14px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.84)] px-4 py-3 text-left text-sm leading-6 text-[var(--app-text-muted)] transition-colors hover:border-[var(--app-border-strong)] hover:bg-[rgba(16,21,29,0.94)] hover:text-[var(--app-text)]"
+                className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] px-4 py-3 text-left text-sm leading-6 text-[var(--app-text-muted)] transition-colors hover:border-[var(--app-border-strong)] hover:bg-[var(--app-bg-floating)] hover:text-[var(--app-text-strong)]"
               >
                 {prompt}
               </button>
             ))}
-            <p className="text-xs text-[var(--app-text-soft)]">
-              点击填入问题。
-            </p>
+
+            <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4">
+              <div className="text-sm font-medium text-[var(--app-text-strong)]">
+                使用建议
+              </div>
+              <ul className="mt-3 grid gap-2 text-sm leading-6 text-[var(--app-text-muted)]">
+                <li>把问题写成可验证的投资判断，而不是泛泛主题。</li>
+                <li>如果你已经有假设，可以放到“必答问题”里让结果更聚焦。</li>
+                <li>当研究对时效敏感时，缩短时效窗口以减少旧证据干扰。</li>
+              </ul>
+            </div>
           </div>
-        </Panel>
+        </SectionCard>
       </div>
 
-      <Panel
-        title="最新行业判断"
+      <SectionCard
+        title="最近运行"
+        description="按最新时间排序，集中查看行业研究的进度、核心指标和结论摘要。"
         actions={
           <button
             type="button"
@@ -429,9 +463,9 @@ export function WorkflowsClient() {
         }
       >
         {runsQuery.isLoading ? (
-          <EmptyState title="正在加载行业判断" />
+          <LoadingSkeleton rows={3} />
         ) : sortedRuns.length === 0 ? (
-          <EmptyState title="还没有行业判断记录" />
+          <EmptyState title="还没有行业研究记录" />
         ) : (
           <div className="grid gap-4">
             {sortedRuns.map((run) => (
@@ -445,11 +479,13 @@ export function WorkflowsClient() {
         )}
 
         {runsQuery.error ? (
-          <div className="mt-4 rounded-[12px] border border-[rgba(201,119,132,0.34)] bg-[rgba(81,33,43,0.2)] px-4 py-3 text-sm text-[var(--app-danger)]">
-            {runsQuery.error.message}
-          </div>
+          <InlineNotice
+            tone="danger"
+            description={runsQuery.error.message}
+            className="mt-4"
+          />
         ) : null}
-      </Panel>
+      </SectionCard>
     </WorkspaceShell>
   );
 }

@@ -2,19 +2,22 @@
  * PrismaScreeningSessionRepository 单元测试
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { PrismaScreeningSessionRepository } from "../prisma-screening-session-repository";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ScreeningSession } from "../../../domain/screening/aggregates/screening-session";
-import { ScreeningResult } from "../../../domain/screening/value-objects/screening-result";
-import { ScoredStock } from "../../../domain/screening/value-objects/scored-stock";
-import { StockCode } from "../../../domain/screening/value-objects/stock-code";
 import { FilterGroup } from "../../../domain/screening/entities/filter-group";
-import { FilterCondition } from "../../../domain/screening/value-objects/filter-condition";
-import { ScoringConfig, NormalizationMethod } from "../../../domain/screening/value-objects/scoring-config";
-import { IndicatorField } from "../../../domain/screening/enums/indicator-field";
 import { ComparisonOperator } from "../../../domain/screening/enums/comparison-operator";
+import { IndicatorField } from "../../../domain/screening/enums/indicator-field";
 import { LogicalOperator } from "../../../domain/screening/enums/logical-operator";
+import { FilterCondition } from "../../../domain/screening/value-objects/filter-condition";
+import { ScoredStock } from "../../../domain/screening/value-objects/scored-stock";
+import {
+  NormalizationMethod,
+  ScoringConfig,
+} from "../../../domain/screening/value-objects/scoring-config";
+import { ScreeningResult } from "../../../domain/screening/value-objects/screening-result";
+import { StockCode } from "../../../domain/screening/value-objects/stock-code";
+import { PrismaScreeningSessionRepository } from "../prisma-screening-session-repository";
 
 async function canConnectToDatabase(): Promise<boolean> {
   const prisma = new PrismaClient();
@@ -29,7 +32,9 @@ async function canConnectToDatabase(): Promise<boolean> {
   }
 }
 
-const describeDatabase = (await canConnectToDatabase()) ? describe : describe.skip;
+const describeDatabase = (await canConnectToDatabase())
+  ? describe
+  : describe.skip;
 
 describeDatabase("PrismaScreeningSessionRepository", () => {
   let prisma: PrismaClient;
@@ -91,7 +96,7 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
     const condition = FilterCondition.create(
       IndicatorField.ROE,
       ComparisonOperator.GREATER_THAN,
-      { type: "numeric", value: 0.15 }
+      { type: "numeric", value: 0.15 },
     );
     return FilterGroup.create(LogicalOperator.AND, [condition], []);
   }
@@ -99,18 +104,22 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
   function createTestScoringConfig(): ScoringConfig {
     return ScoringConfig.create(
       new Map([[IndicatorField.ROE, 1.0]]),
-      NormalizationMethod.MIN_MAX
+      NormalizationMethod.MIN_MAX,
     );
   }
 
-  function createScoredStock(code: string, name: string, score: number): ScoredStock {
+  function createScoredStock(
+    code: string,
+    name: string,
+    score: number,
+  ): ScoredStock {
     return ScoredStock.create(
       StockCode.create(code),
       name,
       score,
       new Map([[IndicatorField.ROE, score]]),
       new Map([[IndicatorField.ROE, score * 0.3]]),
-      []
+      [],
     );
   }
 
@@ -335,12 +344,14 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
 
       const found = await repository.findByStrategyForUser(
         testStrategyId1,
-        testUserId
+        testUserId,
       );
       expect(found).toHaveLength(1);
       expect(found[0]?.userId).toBe(testUserId);
 
-      await prisma.screeningSession.deleteMany({ where: { userId: anotherUser.id } });
+      await prisma.screeningSession.deleteMany({
+        where: { userId: anotherUser.id },
+      });
       await prisma.user.delete({ where: { id: anotherUser.id } });
     });
   });
@@ -352,45 +363,50 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
 
       const session1 = ScreeningSession.create({
         strategyId: testStrategyId1,
-        strategyName: "策略 1",
+        strategyName: "最近策略 1",
         userId: testUserId,
         result,
         filtersSnapshot: createTestFilterGroup(),
         scoringConfigSnapshot: createTestScoringConfig(),
-        executedAt: new Date("2024-01-01"),
+        executedAt: new Date("2099-01-03"),
       });
 
       const session2 = ScreeningSession.create({
         strategyId: testStrategyId2,
-        strategyName: "策略 2",
+        strategyName: "最近策略 2",
         userId: testUserId,
         result,
         filtersSnapshot: createTestFilterGroup(),
         scoringConfigSnapshot: createTestScoringConfig(),
-        executedAt: new Date("2024-01-03"),
+        executedAt: new Date("2099-01-05"),
       });
 
       const session3 = ScreeningSession.create({
         strategyId: testStrategyId1,
-        strategyName: "策略 3",
+        strategyName: "最近策略 3",
         userId: testUserId,
         result,
         filtersSnapshot: createTestFilterGroup(),
         scoringConfigSnapshot: createTestScoringConfig(),
-        executedAt: new Date("2024-01-02"),
+        executedAt: new Date("2099-01-04"),
       });
 
       await repository.save(session1);
       await repository.save(session2);
       await repository.save(session3);
 
-      const found = await repository.findRecentSessions();
+      const found = await repository.findRecentSessions(3);
       expect(found).toHaveLength(3);
+      expect(found.map((session) => session.strategyName)).toEqual([
+        "最近策略 2",
+        "最近策略 3",
+        "最近策略 1",
+      ]);
       expect(found[0]!.executedAt.getTime()).toBeGreaterThanOrEqual(
-        found[1]!.executedAt.getTime()
+        found[1]!.executedAt.getTime(),
       );
       expect(found[1]!.executedAt.getTime()).toBeGreaterThanOrEqual(
-        found[2]!.executedAt.getTime()
+        found[2]!.executedAt.getTime(),
       );
     });
 
@@ -426,7 +442,7 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
           result,
           filtersSnapshot: createTestFilterGroup(),
           scoringConfigSnapshot: createTestScoringConfig(),
-          executedAt: new Date(`2024-02-0${i}`),
+          executedAt: new Date(`2099-02-0${i}`),
         });
         await repository.save(session);
       }
@@ -470,9 +486,13 @@ describeDatabase("PrismaScreeningSessionRepository", () => {
 
       const found = await repository.findRecentSessionsByUser(testUserId);
       expect(found.length).toBeGreaterThanOrEqual(1);
-      expect(found.every((session) => session.userId === testUserId)).toBe(true);
+      expect(found.every((session) => session.userId === testUserId)).toBe(
+        true,
+      );
 
-      await prisma.screeningSession.deleteMany({ where: { userId: anotherUser.id } });
+      await prisma.screeningSession.deleteMany({
+        where: { userId: anotherUser.id },
+      });
       await prisma.user.delete({ where: { id: anotherUser.id } });
     });
   });

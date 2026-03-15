@@ -83,10 +83,10 @@ export function FilterGroupEditor(props: {
   };
 
   return (
-    <section className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(11,15,20,0.78)] p-4">
+    <section className="app-subpanel p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--app-text-soft)]">
+          <p className="text-xs text-[var(--app-text-soft)]">
             {isRoot ? "根分组" : "子分组"}
           </p>
           <p className="mt-2 text-sm font-medium text-[var(--app-text)]">
@@ -134,7 +134,7 @@ export function FilterGroupEditor(props: {
           return (
             <article
               key={`${group.groupId}-condition-${conditionIndex}`}
-              className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,22,30,0.78)] p-4"
+              className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-bg-inset)] p-4"
             >
               <div className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_1fr_auto]">
                 <label className={labelClass}>
@@ -194,7 +194,7 @@ export function FilterGroupEditor(props: {
                 <div>
                   <div className={labelClass}>
                     说明
-                    <div className="mt-2 rounded-[10px] border border-[var(--app-border)] bg-[rgba(9,12,16,0.86)] px-3 py-2 text-xs leading-6 text-[var(--app-text-soft)]">
+                    <div className="mt-2 rounded-[10px] border border-[var(--app-border)] bg-[var(--app-bg-base)] px-3 py-2 text-xs leading-6 text-[var(--app-text-soft)]">
                       {indicatorMeta.description}
                       {indicatorMeta.unit
                         ? ` · 单位：${indicatorMeta.unit}`

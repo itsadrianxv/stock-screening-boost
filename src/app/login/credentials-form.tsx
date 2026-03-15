@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
+import { InlineNotice } from "~/app/_components/ui";
 import {
   type LoginActionState,
   signInWithCredentials,
@@ -60,9 +61,7 @@ export function CredentialsForm(props: { redirectTo: string }) {
       </label>
 
       {state.error ? (
-        <div className="rounded-[12px] border border-[rgba(191,154,96,0.34)] bg-[rgba(77,58,27,0.2)] px-4 py-3 text-sm text-[var(--app-warning)]">
-          {state.error}
-        </div>
+        <InlineNotice tone="warning" description={state.error} />
       ) : null}
 
       <SubmitButton />

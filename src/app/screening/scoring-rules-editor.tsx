@@ -36,7 +36,7 @@ export function ScoringRulesEditor(props: {
   } = props;
 
   return (
-    <section className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(13,18,25,0.72)] p-4">
+    <section className="app-subpanel p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium text-[var(--app-text)]">
@@ -73,7 +73,7 @@ export function ScoringRulesEditor(props: {
           return (
             <article
               key={rule.id}
-              className="grid gap-3 rounded-[12px] border border-[var(--app-border)] bg-[rgba(10,14,18,0.82)] p-4 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
+              className="grid gap-3 rounded-[10px] border border-[var(--app-border)] bg-[var(--app-bg-inset)] p-4 lg:grid-cols-[1.2fr_0.7fr_0.8fr_auto]"
             >
               <label className="text-xs text-[var(--app-text-muted)]">
                 指标

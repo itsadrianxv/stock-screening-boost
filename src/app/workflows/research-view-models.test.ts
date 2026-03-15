@@ -134,9 +134,7 @@ describe("research-view-models", () => {
     });
 
     expect(digest.templateLabel).toBe("公司判断");
-    expect(digest.metrics.some((item) => item.label === "Reference 数")).toBe(
-      true,
-    );
+    expect(digest.metrics.some((item) => item.label === "引用数量")).toBe(true);
     expect(digest.metrics.some((item) => item.label === "一手信源")).toBe(true);
   });
 });

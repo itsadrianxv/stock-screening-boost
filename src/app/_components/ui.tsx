@@ -8,6 +8,10 @@ export function cn(...values: Array<string | false | null | undefined>) {
 }
 
 export type Tone = "neutral" | "info" | "success" | "warning" | "danger";
+export type Surface = "base" | "raised" | "floating" | "inset";
+export type Density = "comfortable" | "compact";
+export type Emphasis = "normal" | "strong";
+export type Interactive = boolean;
 
 type WorkspaceSection =
   | "home"
@@ -25,84 +29,125 @@ const navItems: Array<{
   {
     key: "home",
     href: "/",
-    label: "0. 今日看板",
-    detail: "集中查看优先事项与盘面提醒",
+    label: "总览",
+    detail: "今日决策与运行状态",
   },
   {
     key: "screening",
     href: "/screening",
-    label: "1. 股票海选",
-    detail: "从全市场初筛可继续跟踪的标的",
+    label: "股票筛选",
+    detail: "策略、会话与观察池",
   },
   {
     key: "workflows",
     href: "/workflows",
-    label: "2. 行业研究",
-    detail: "对比赛道景气、催化与结构变化",
+    label: "行业研究",
+    detail: "行业逻辑与研究运行",
   },
   {
     key: "companyResearch",
     href: "/company-research",
-    label: "3. 公司研究",
-    detail: "拆解公司质地、证据与核心假设",
+    label: "公司研究",
+    detail: "公司判断与证据跟踪",
   },
   {
     key: "timing",
     href: "/timing",
-    label: "5. 择时组合",
-    detail: "结合信号与仓位做出组合决策",
+    label: "择时组合",
+    detail: "组合建议与复盘闭环",
   },
 ];
 
 const toneClassMap: Record<Tone, string> = {
   neutral:
-    "border-[rgba(128,142,160,0.24)] bg-[rgba(78,89,104,0.12)] text-[var(--app-text-muted)]",
-  info: "border-[rgba(114,169,214,0.32)] bg-[rgba(25,55,82,0.24)] text-[var(--app-accent-strong)]",
+    "border-[var(--app-border-soft)] bg-[rgba(170,182,199,0.08)] text-[var(--app-text-muted)]",
+  info: "border-[rgba(95,136,221,0.3)] bg-[rgba(95,136,221,0.12)] text-[var(--app-brand-strong)]",
   success:
-    "border-[rgba(98,178,150,0.32)] bg-[rgba(24,58,49,0.24)] text-[var(--app-success)]",
+    "border-[rgba(63,139,112,0.32)] bg-[rgba(63,139,112,0.14)] text-[#b7e2d2]",
   warning:
-    "border-[rgba(191,154,96,0.32)] bg-[rgba(77,58,27,0.22)] text-[var(--app-warning)]",
+    "border-[rgba(197,146,66,0.34)] bg-[rgba(197,146,66,0.14)] text-[#f0d3a0]",
   danger:
-    "border-[rgba(201,119,132,0.32)] bg-[rgba(81,33,43,0.24)] text-[var(--app-danger)]",
+    "border-[rgba(190,109,107,0.34)] bg-[rgba(190,109,107,0.14)] text-[#f3c6c4]",
 };
 
-function DeskMark() {
+const surfaceClassMap: Record<Surface, string> = {
+  base: "bg-[var(--app-bg-inset)]",
+  inset: "bg-[var(--app-bg-inset)]",
+  raised: "bg-[var(--app-bg-raised)]",
+  floating: "bg-[var(--app-bg-floating)]",
+};
+
+const densityClassMap: Record<Density, string> = {
+  comfortable: "p-5 sm:p-6",
+  compact: "p-4",
+};
+
+function AppMark() {
   return (
-    <div className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[rgba(103,129,155,0.45)] bg-[rgba(12,18,25,0.96)] text-xs font-semibold tracking-[0.28em] text-[var(--app-accent-strong)]">
+    <div className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] text-[11px] font-semibold tracking-[0.08em] text-[var(--app-text-strong)]">
       SSB
     </div>
   );
 }
 
+export function PageHeader(props: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  const { title, description, actions } = props;
+
+  return (
+    <header className="flex flex-col gap-4 border-b border-[var(--app-border-soft)] pb-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0">
+        <h1 className="app-display text-[28px] leading-tight text-[var(--app-text-strong)] sm:text-[32px]">
+          {title}
+        </h1>
+        {description ? (
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--app-text-muted)]">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          {actions}
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
 export function WorkspaceShell(props: {
   section: WorkspaceSection;
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   actions?: ReactNode;
   summary?: ReactNode;
   children: ReactNode;
 }) {
-  const { section, eyebrow, title, description, actions, summary, children } =
-    props;
+  const { section, title, description, actions, summary, children } = props;
   const activeItem = navItems.find((item) => item.key === section);
 
   return (
     <main className="app-shell">
-      <div className="mx-auto grid min-h-screen w-full max-w-[1680px] lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="border-b border-[var(--app-border)] bg-[rgba(7,10,14,0.94)] lg:sticky lg:top-0 lg:h-screen lg:border-r lg:border-b-0">
-          <div className="flex h-full flex-col gap-6 px-4 py-5 sm:px-6 lg:px-5 lg:py-6">
-            <div className="flex items-center gap-3">
-              <DeskMark />
+      <div className="mx-auto min-h-screen w-full max-w-[1520px] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
+        <aside className="border-b border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] lg:min-h-screen lg:border-r lg:border-b-0">
+          <div className="flex h-full flex-col gap-6 px-4 py-5 sm:px-6 lg:px-5">
+            <Link href="/" className="flex items-center gap-3">
+              <AppMark />
               <div>
-                <p className="market-kicker">股票筛选增强</p>
-                <p className="app-display mt-1 text-lg leading-none text-[var(--app-text)]">
-                  投资决策终端
-                </p>
+                <div className="text-sm font-medium text-[var(--app-text-strong)]">
+                  股票筛选增强
+                </div>
+                <div className="text-xs text-[var(--app-text-subtle)]">
+                  投资决策工作台
+                </div>
               </div>
-            </div>
+            </Link>
 
-            <nav className="grid gap-1.5">
+            <nav className="grid gap-1">
               {navItems.map((item) => {
                 const active = item.key === section;
 
@@ -111,54 +156,70 @@ export function WorkspaceShell(props: {
                     key={item.key}
                     href={item.href}
                     className={cn(
-                      "rounded-[14px] border px-4 py-3 transition-colors",
+                      "rounded-[10px] border px-3 py-3 transition-colors",
                       active
-                        ? "border-[rgba(110,136,161,0.42)] bg-[rgba(17,23,31,0.92)] text-[var(--app-text)]"
-                        : "border-transparent text-[var(--app-text-muted)] hover:border-[var(--app-border)] hover:bg-[rgba(14,19,26,0.82)] hover:text-[var(--app-text)]",
+                        ? "border-[var(--app-border-strong)] bg-[var(--app-bg-floating)] text-[var(--app-text-strong)]"
+                        : "border-transparent text-[var(--app-text-muted)] hover:border-[var(--app-border-soft)] hover:bg-[var(--app-bg-raised)] hover:text-[var(--app-text-strong)]",
                     )}
                   >
-                    <span className="block text-sm font-medium text-[inherit]">
-                      {item.label}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-[var(--app-text-soft)]">
+                    <div className="text-sm font-medium">{item.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-[var(--app-text-subtle)]">
                       {item.detail}
-                    </span>
+                    </div>
                   </Link>
                 );
               })}
             </nav>
 
-            <div className="mt-auto hidden lg:block">
-              <div className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(10,14,19,0.92)] p-4">
-                <p className="market-kicker">当前模块</p>
-                <p className="mt-2 text-sm font-medium text-[var(--app-text)]">
-                  {activeItem?.label ?? "研究界面"}
-                </p>
+            <div className="mt-auto grid gap-3">
+              <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-raised)] p-4">
+                <div className="text-xs text-[var(--app-text-subtle)]">
+                  当前模块
+                </div>
+                <div className="mt-2 text-sm font-medium text-[var(--app-text-strong)]">
+                  {activeItem?.label ?? "研究工作台"}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-[var(--app-text-muted)]">
+                  {activeItem?.detail ?? "统一查看研究、筛选与组合状态。"}
+                </div>
+              </div>
+
+              <div className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-raised)] p-4">
+                <div className="text-xs text-[var(--app-text-subtle)]">
+                  快捷入口
+                </div>
+                <div className="mt-3 grid gap-2 text-sm">
+                  <Link
+                    href="/screening/history"
+                    className="text-[var(--app-text-muted)] hover:text-[var(--app-text-strong)]"
+                  >
+                    查看筛选历史
+                  </Link>
+                  <Link
+                    href="/workflows/history"
+                    className="text-[var(--app-text-muted)] hover:text-[var(--app-text-strong)]"
+                  >
+                    查看研究历史
+                  </Link>
+                  <Link
+                    href="/timing/history"
+                    className="text-[var(--app-text-muted)] hover:text-[var(--app-text-strong)]"
+                  >
+                    查看组合复盘
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
         </aside>
 
-        <section className="min-w-0 border-t border-[var(--app-border)] lg:border-t-0">
-          <div className="mx-auto flex min-h-screen w-full max-w-[1320px] flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-            <header className="grid gap-5 border-b border-[var(--app-border)] pb-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="min-w-0">
-                <p className="market-kicker">{eyebrow}</p>
-                <h1 className="app-display mt-3 text-3xl tracking-[-0.03em] text-[var(--app-text)] sm:text-[40px]">
-                  {title}
-                </h1>
-                {description ? (
-                  <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--app-text-muted)] sm:text-[15px]">
-                    {description}
-                  </p>
-                ) : null}
-              </div>
-              {actions ? (
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                  {actions}
-                </div>
-              ) : null}
-            </header>
+        <section className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+          <div className="mx-auto flex min-h-screen w-full max-w-[1260px] flex-col gap-6">
+            <PageHeader
+              title={title}
+              description={description}
+              actions={actions}
+            />
 
             {summary ? (
               <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -174,22 +235,46 @@ export function WorkspaceShell(props: {
   );
 }
 
-export function Panel(props: {
+export function SectionCard(props: {
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   className?: string;
   children: ReactNode;
+  surface?: Surface;
+  density?: Density;
+  emphasis?: Emphasis;
+  interactive?: Interactive;
 }) {
-  const { title, description, actions, className, children } = props;
+  const {
+    title,
+    description,
+    actions,
+    className,
+    children,
+    surface = "raised",
+    density = "comfortable",
+    emphasis = "normal",
+    interactive = false,
+  } = props;
 
   return (
-    <section className={cn("app-panel p-5 sm:p-6", className)}>
+    <section
+      className={cn(
+        "rounded-[12px] border border-[var(--app-border-soft)] shadow-[var(--app-shadow-sm)]",
+        surfaceClassMap[surface],
+        densityClassMap[density],
+        emphasis === "strong" && "border-[var(--app-border-strong)]",
+        interactive &&
+          "transition-colors hover:border-[var(--app-border-strong)] hover:bg-[var(--app-bg-floating)]",
+        className,
+      )}
+    >
       {title || description || actions ? (
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             {title ? (
-              <h2 className="app-display text-[22px] tracking-[-0.02em] text-[var(--app-text)]">
+              <h2 className="app-display text-[20px] leading-7 text-[var(--app-text-strong)]">
                 {title}
               </h2>
             ) : null}
@@ -204,10 +289,70 @@ export function Panel(props: {
           ) : null}
         </div>
       ) : null}
-      <div className={cn(title || description || actions ? "mt-5" : "")}>
+      <div className={cn(title || description || actions ? "mt-5" : undefined)}>
         {children}
       </div>
     </section>
+  );
+}
+
+export function Panel(props: {
+  title?: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+  children: ReactNode;
+  surface?: Surface;
+  density?: Density;
+}) {
+  return <SectionCard {...props} />;
+}
+
+export function MetricTile(props: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: Tone;
+  surface?: Surface;
+}) {
+  const { label, value, hint, tone = "neutral", surface = "raised" } = props;
+
+  return (
+    <SectionCard
+      surface={surface}
+      density="compact"
+      className="min-h-[124px]"
+      description={
+        hint ? (
+          <span className="text-xs leading-5 text-[var(--app-text-muted)]">
+            {hint}
+          </span>
+        ) : undefined
+      }
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs text-[var(--app-text-subtle)]">{label}</div>
+          <div className="app-data mt-3 text-[28px] text-[var(--app-text-strong)]">
+            {value}
+          </div>
+        </div>
+        <StatusPill
+          label={
+            tone === "success"
+              ? "积极"
+              : tone === "warning"
+                ? "关注"
+                : tone === "danger"
+                  ? "风险"
+                  : tone === "info"
+                    ? "观察"
+                    : "概览"
+          }
+          tone={tone}
+        />
+      </div>
+    </SectionCard>
   );
 }
 
@@ -217,41 +362,7 @@ export function KpiCard(props: {
   hint?: ReactNode;
   tone?: Tone;
 }) {
-  const { label, value, hint, tone = "neutral" } = props;
-
-  return (
-    <article className="app-panel-muted rounded-[16px] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
-          {label}
-        </p>
-        <span
-          className={cn(
-            "inline-flex min-h-6 min-w-6 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]",
-            toneClassMap[tone],
-          )}
-        >
-          {tone === "success"
-            ? "积极"
-            : tone === "warning"
-              ? "关注"
-              : tone === "danger"
-                ? "风险"
-                : tone === "info"
-                  ? "观察"
-                  : "概览"}
-        </span>
-      </div>
-      <p className="app-data mt-4 text-2xl text-[var(--app-text)] sm:text-[30px]">
-        {value}
-      </p>
-      {hint ? (
-        <p className="mt-2 text-xs leading-5 text-[var(--app-text-muted)]">
-          {hint}
-        </p>
-      ) : null}
-    </article>
-  );
+  return <MetricTile {...props} />;
 }
 
 export function StatusPill(props: {
@@ -264,7 +375,7 @@ export function StatusPill(props: {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium",
+        "inline-flex min-h-7 items-center rounded-[8px] border px-2.5 py-1 text-[11px] font-medium",
         toneClassMap[tone],
         className,
       )}
@@ -272,6 +383,77 @@ export function StatusPill(props: {
       {label}
     </span>
   );
+}
+
+export function InlineNotice(props: {
+  tone?: Tone;
+  title?: ReactNode;
+  description: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  const { tone = "info", title, description, actions, className } = props;
+
+  return (
+    <div
+      className={cn(
+        "rounded-[10px] border px-4 py-3",
+        toneClassMap[tone],
+        className,
+      )}
+    >
+      {title ? (
+        <div className="text-sm font-medium text-[var(--app-text-strong)]">
+          {title}
+        </div>
+      ) : null}
+      <div className={cn("text-sm leading-6", title ? "mt-1" : undefined)}>
+        {description}
+      </div>
+      {actions ? (
+        <div className="mt-3 flex flex-wrap gap-2">{actions}</div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ActionStrip(props: {
+  title: ReactNode;
+  description?: ReactNode;
+  tone?: Tone;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  const { title, description, tone = "info", actions, className } = props;
+
+  return (
+    <div
+      className={cn("rounded-[12px] border p-4", toneClassMap[tone], className)}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-base font-medium text-[var(--app-text-strong)]">
+            {title}
+          </div>
+          {description ? (
+            <div className="mt-1 text-sm leading-6 text-[var(--app-text-muted)]">
+              {description}
+            </div>
+          ) : null}
+        </div>
+        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+export function ActionBanner(props: {
+  title: ReactNode;
+  description?: ReactNode;
+  tone?: Tone;
+  actions?: ReactNode;
+}) {
+  return <ActionStrip {...props} />;
 }
 
 export function ProgressBar(props: {
@@ -282,18 +464,21 @@ export function ProgressBar(props: {
   const { value, tone = "info", className } = props;
   const width = Math.max(0, Math.min(100, value));
 
+  const fillClass =
+    tone === "success"
+      ? "bg-[var(--app-success)]"
+      : tone === "warning"
+        ? "bg-[var(--app-warning)]"
+        : tone === "danger"
+          ? "bg-[var(--app-danger)]"
+          : "bg-[var(--app-brand)]";
+
   return (
     <div className={cn("app-progress", className)}>
       <div
         className={cn(
-          "h-full transition-[width] duration-200",
-          tone === "success"
-            ? "bg-[linear-gradient(90deg,#5ab892,#8de0bb)]"
-            : tone === "warning"
-              ? "bg-[linear-gradient(90deg,#bf9a60,#e0c08d)]"
-              : tone === "danger"
-                ? "bg-[linear-gradient(90deg,#c26c7b,#e3a0ad)]"
-                : "bg-[linear-gradient(90deg,#6ca7d2,#9cc7e8)]",
+          "h-full rounded-full transition-[width] duration-200",
+          fillClass,
         )}
         style={{ width: `${width}%` }}
       />
@@ -305,14 +490,24 @@ export function EmptyState(props: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  className?: string;
 }) {
-  const { title, description, actions } = props;
+  const { title, description, actions, className } = props;
 
   return (
-    <div className="rounded-[16px] border border-dashed border-[var(--app-border)] bg-[rgba(12,16,22,0.82)] p-5 text-sm text-[var(--app-text-muted)]">
-      <p className="text-[15px] font-medium text-[var(--app-text)]">{title}</p>
+    <div
+      className={cn(
+        "rounded-[12px] border border-dashed border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-5",
+        className,
+      )}
+    >
+      <div className="text-[15px] font-medium text-[var(--app-text-strong)]">
+        {title}
+      </div>
       {description ? (
-        <p className="mt-2 max-w-2xl leading-6">{description}</p>
+        <div className="mt-2 max-w-2xl text-sm leading-6 text-[var(--app-text-muted)]">
+          {description}
+        </div>
       ) : null}
       {actions ? (
         <div className="mt-4 flex flex-wrap gap-2">{actions}</div>
@@ -326,20 +521,30 @@ export function KeyPointList(props: {
   items: ReactNode[];
   emptyText?: string;
   tone?: Tone;
+  className?: string;
 }) {
-  const { title, items, emptyText = "暂无内容", tone = "neutral" } = props;
+  const {
+    title,
+    items,
+    emptyText = "暂无内容",
+    tone = "neutral",
+    className,
+  } = props;
   const renderedItems = Children.toArray(items);
 
   return (
-    <div className="rounded-[16px] border border-[var(--app-border)] bg-[rgba(12,16,22,0.9)] p-4">
+    <SectionCard density="compact" surface="inset" className={className}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-[var(--app-text)]">{title}</p>
-        <StatusPill label={items.length} tone={tone} />
+        <div className="text-sm font-medium text-[var(--app-text-strong)]">
+          {title}
+        </div>
+        <StatusPill label={renderedItems.length} tone={tone} />
       </div>
+
       {renderedItems.length === 0 ? (
-        <p className="mt-3 text-sm leading-6 text-[var(--app-text-soft)]">
+        <div className="mt-3 text-sm leading-6 text-[var(--app-text-subtle)]">
           {emptyText}
-        </p>
+        </div>
       ) : (
         <ul className="mt-3 grid gap-2">
           {renderedItems.map((item, index) => (
@@ -349,50 +554,217 @@ export function KeyPointList(props: {
                   ? `${title}-${String(item)}`
                   : isValidElement(item) && item.key !== null
                     ? String(item.key)
-                    : `${title}-${renderedItems.length}-${index}`
+                    : `${title}-${index}`
               }
-              className="rounded-[12px] border border-[var(--app-border)] bg-[rgba(16,21,29,0.84)] px-3 py-2 text-sm leading-6 text-[var(--app-text-muted)]"
+              className="rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-3 py-2 text-sm leading-6 text-[var(--app-text-muted)]"
             >
               {item}
             </li>
           ))}
         </ul>
       )}
+    </SectionCard>
+  );
+}
+
+export function LoadingSkeleton(props: {
+  rows?: number;
+  className?: string;
+  itemClassName?: string;
+}) {
+  const { rows = 3, className, itemClassName } = props;
+  const placeholders = Array.from(
+    { length: rows },
+    (_value, placeholderIndex) => `skeleton-${placeholderIndex + 1}`,
+  );
+
+  return (
+    <div className={cn("grid gap-3", className)}>
+      {placeholders.map((placeholderId) => (
+        <div
+          key={placeholderId}
+          className={cn(
+            "app-skeleton h-[88px] rounded-[12px] border border-[var(--app-border-soft)]",
+            itemClassName,
+          )}
+        />
+      ))}
     </div>
   );
 }
 
-export function ActionBanner(props: {
-  title: ReactNode;
-  description?: ReactNode;
+export function MiniTrendChart(props: {
+  values: number[];
   tone?: Tone;
-  actions?: ReactNode;
+  className?: string;
 }) {
-  const { title, description, tone = "info", actions } = props;
+  const { values, tone = "info", className } = props;
+  const safeValues = values.length > 1 ? values : [0, values[0] ?? 0, 0];
+  const max = Math.max(...safeValues, 1);
+  const min = Math.min(...safeValues, 0);
+  const range = max - min || 1;
+  const points = safeValues
+    .map((value, index) => {
+      const x = (index / (safeValues.length - 1)) * 100;
+      const y = 100 - ((value - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  const stroke =
+    tone === "success"
+      ? "var(--app-success)"
+      : tone === "warning"
+        ? "var(--app-warning)"
+        : tone === "danger"
+          ? "var(--app-danger)"
+          : "var(--app-brand-strong)";
 
   return (
-    <div
-      className={cn(
-        "rounded-[18px] border px-5 py-4",
-        tone === "success"
-          ? "border-[rgba(98,178,150,0.34)] bg-[rgba(18,45,38,0.72)]"
-          : tone === "warning"
-            ? "border-[rgba(191,154,96,0.34)] bg-[rgba(54,39,18,0.72)]"
-            : tone === "danger"
-              ? "border-[rgba(201,119,132,0.34)] bg-[rgba(56,24,31,0.74)]"
-              : "border-[rgba(114,169,214,0.34)] bg-[rgba(18,32,47,0.76)]",
-      )}
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      className={cn("h-16 w-full", className)}
+      aria-hidden="true"
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-lg font-medium text-[var(--app-text)]">{title}</p>
-          {description ? (
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
-              {description}
-            </p>
-          ) : null}
-        </div>
-        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      <polyline
+        fill="none"
+        stroke={stroke}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
+  );
+}
+
+export type DataTableColumn<T> = {
+  key: string;
+  header: ReactNode;
+  render: (item: T) => ReactNode;
+  mobileLabel?: ReactNode;
+  className?: string;
+  align?: "left" | "right";
+};
+
+export function DataTable<T>(props: {
+  columns: DataTableColumn<T>[];
+  rows: T[];
+  getRowId: (item: T, index: number) => string;
+  empty: ReactNode;
+  density?: Density;
+  className?: string;
+  selectedRowId?: string | null;
+  onRowClick?: (item: T) => void;
+}) {
+  const {
+    columns,
+    rows,
+    getRowId,
+    empty,
+    density = "comfortable",
+    className,
+    selectedRowId,
+    onRowClick,
+  } = props;
+
+  return (
+    <div className={className}>
+      <div className="hidden overflow-x-auto rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] md:block">
+        <table className="app-table min-w-full">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  className={cn(
+                    column.align === "right" && "text-right",
+                    column.className,
+                  )}
+                >
+                  {column.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-8">
+                  {empty}
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, index) => {
+                const rowId = getRowId(row, index);
+                const clickable = Boolean(onRowClick);
+
+                return (
+                  <tr
+                    key={rowId}
+                    className={cn(
+                      selectedRowId === rowId && "bg-[rgba(120,160,243,0.08)]",
+                      clickable && "cursor-pointer",
+                    )}
+                    onClick={() => onRowClick?.(row)}
+                  >
+                    {columns.map((column) => (
+                      <td
+                        key={`${rowId}-${column.key}`}
+                        className={cn(
+                          density === "compact" && "py-3",
+                          column.align === "right" && "text-right",
+                          column.className,
+                        )}
+                      >
+                        {column.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {rows.length === 0
+          ? empty
+          : rows.map((row, index) => {
+              const rowId = getRowId(row, index);
+
+              return (
+                <button
+                  key={rowId}
+                  type={onRowClick ? "button" : undefined}
+                  onClick={() => onRowClick?.(row)}
+                  className={cn(
+                    "rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-4 text-left",
+                    onRowClick && "cursor-pointer",
+                    selectedRowId === rowId &&
+                      "border-[var(--app-border-strong)] bg-[var(--app-bg-floating)]",
+                  )}
+                >
+                  <div className="grid gap-3">
+                    {columns.map((column) => (
+                      <div
+                        key={`${rowId}-${column.key}`}
+                        className="grid gap-1 text-sm"
+                      >
+                        <div className="text-xs text-[var(--app-text-subtle)]">
+                          {column.mobileLabel ?? column.header}
+                        </div>
+                        <div className="text-[var(--app-text)]">
+                          {column.render(row)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
       </div>
     </div>
   );
