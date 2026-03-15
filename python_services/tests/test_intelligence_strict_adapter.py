@@ -6,13 +6,16 @@ import pandas as pd
 import pytest
 from requests import exceptions as requests_exceptions
 
+from app.services import akshare_adapter as akshare_adapter_module
 from app.services import intelligence_data_adapter as adapter_module
+from app.services.akshare_adapter import AkShareAdapter
 from app.services.intelligence_data_adapter import IntelligenceDataAdapter
 
 
 def setup_function() -> None:
     adapter_module._CACHE.clear()
     adapter_module._SPOT_CACHE = None
+    AkShareAdapter.clear_caches()
 
 
 def _concept_df() -> pd.DataFrame:
@@ -40,11 +43,11 @@ def _constituents_df() -> pd.DataFrame:
 def test_get_candidates_strict_raises_when_no_theme_specific_candidates():
     with (
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_name_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_catalog_frame",
             return_value=_concept_df(),
         ),
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_cons_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_constituents_frame",
             side_effect=Exception("upstream down"),
         ),
         patch(
@@ -71,9 +74,9 @@ def test_get_candidates_strict_retries_transient_concept_catalog_disconnect(_moc
     )
 
     with (
-        patch.object(adapter_module, "_AKSHARE_RETRY_POLICY", retry_policy),
+        patch.object(akshare_adapter_module, "_THS_CONCEPT_RETRY_POLICY", retry_policy),
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_name_em",
+            "app.services.akshare_adapter.ak.stock_board_concept_name_ths",
             side_effect=[
                 requests_exceptions.ConnectionError(
                     "Connection aborted.",
@@ -83,7 +86,7 @@ def test_get_candidates_strict_retries_transient_concept_catalog_disconnect(_moc
             ],
         ) as mock_catalog,
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_cons_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_constituents_frame",
             return_value=_constituents_df(),
         ),
         patch(

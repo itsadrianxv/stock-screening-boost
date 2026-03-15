@@ -130,8 +130,8 @@ def test_get_stock_bars_routes_etf_codes_to_fund_history(
     mock_stock_hist.assert_not_called()
 
 
-@patch("app.services.akshare_adapter.ak.stock_board_concept_cons_em")
-@patch("app.services.akshare_adapter.ak.stock_board_concept_name_em")
+@patch("app.services.akshare_adapter._load_concept_constituents_frame_ths")
+@patch("app.services.akshare_adapter._load_concept_catalog_frame_ths")
 def test_concept_loaders_reuse_shared_adapter_cache(mock_catalog, mock_constituents):
     AkShareAdapter.clear_caches()
     mock_catalog.return_value = pd.DataFrame(
@@ -163,4 +163,4 @@ def test_concept_loaders_reuse_shared_adapter_cache(mock_catalog, mock_constitue
     assert catalog_one == catalog_two
     assert members_one == members_two
     mock_catalog.assert_called_once()
-    mock_constituents.assert_called_once_with(symbol="BK1234")
+    mock_constituents.assert_called_once_with("AI", concept_code="BK1234")

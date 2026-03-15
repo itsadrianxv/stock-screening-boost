@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
+from http.client import RemoteDisconnected
+from io import StringIO
+import logging
 import re
 import threading
 import time
@@ -12,6 +15,10 @@ from typing import Any, TypeVar
 
 import akshare as ak
 import pandas as pd
+import requests
+from requests import exceptions as requests_exceptions
+
+from app.policies.retry_policy import RetryPolicy, retry_sync
 
 _T = TypeVar("_T")
 
@@ -22,6 +29,40 @@ _FINANCIAL_SNAPSHOT_CACHE_TTL_SECONDS = 24 * 60 * 60
 _HISTORY_FRAME_CACHE_TTL_SECONDS = 6 * 60 * 60
 _INDIVIDUAL_INFO_CACHE_TTL_SECONDS = 24 * 60 * 60
 _CONCEPT_CACHE_TTL_SECONDS = 24 * 60 * 60
+_THS_REQUEST_TIMEOUT_SECONDS = 15
+_THS_CONCEPT_RETRY_POLICY = RetryPolicy(
+    max_attempts=2,
+    base_delay_ms=250,
+    multiplier=2.0,
+    max_delay_ms=1200,
+    jitter_ratio=0.1,
+)
+_THS_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+_THS_PAGE_INFO_PATTERN = re.compile(r'<span class="page_info">\s*(\d+)\s*/\s*(\d+)\s*</span>')
+_THS_CONCEPT_COLUMN_RENAMES = {
+    "name": "板块名称",
+    "code": "板块代码",
+}
+_THS_CONSTITUENT_COLUMN_RENAMES = {
+    "现价": "最新价",
+    "涨跌幅(%)": "涨跌幅",
+    "换手(%)": "换手率",
+}
+_TRANSIENT_THS_ERROR_MARKERS = (
+    "connection aborted",
+    "remote end closed connection without response",
+    "connection reset by peer",
+    "read timed out",
+    "connect timeout",
+    "temporarily unavailable",
+    "temporary failure",
+    "chunkedencodingerror",
+    "protocolerror",
+)
 
 
 @dataclass
@@ -32,6 +73,7 @@ class _CacheEntry:
 
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[str, _CacheEntry] = {}
+LOGGER = logging.getLogger(__name__)
 
 
 class AkShareAdapter:
@@ -83,7 +125,7 @@ class AkShareAdapter:
         return _get_cached_dataframe(
             cache_key="concept-catalog",
             ttl_seconds=_CONCEPT_CACHE_TTL_SECONDS,
-            fetch_fn=ak.stock_board_concept_name_em,
+            fetch_fn=_load_concept_catalog_frame_ths,
             error_prefix="获取概念板块列表失败",
         )
 
@@ -96,7 +138,10 @@ class AkShareAdapter:
         return _get_cached_dataframe(
             cache_key=f"concept-constituents:{concept_symbol}",
             ttl_seconds=_CONCEPT_CACHE_TTL_SECONDS,
-            fetch_fn=lambda: ak.stock_board_concept_cons_em(symbol=concept_symbol),
+            fetch_fn=lambda: _load_concept_constituents_frame_ths(
+                concept_name,
+                concept_code=concept_code,
+            ),
             error_prefix=f"获取概念成分股失败: {concept_name}",
         )
 
@@ -462,6 +507,190 @@ def _load_stock_code_name_frame() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def _load_concept_catalog_frame_ths() -> pd.DataFrame:
+    frame = _retry_ths_concept_fetch(
+        operation_name="stock_board_concept_name_ths",
+        fetch_fn=ak.stock_board_concept_name_ths,
+    )
+    if frame.empty:
+        return frame
+
+    normalized = frame.rename(columns=_THS_CONCEPT_COLUMN_RENAMES).copy()
+    if "板块名称" in normalized.columns:
+        normalized["板块名称"] = normalized["板块名称"].map(
+            lambda value: str(value).strip()
+        )
+    if "板块代码" in normalized.columns:
+        normalized["板块代码"] = normalized["板块代码"].map(
+            lambda value: str(value).strip()
+        )
+
+    return normalized
+
+
+def _load_concept_constituents_frame_ths(
+    concept_name: str,
+    concept_code: str | None = None,
+) -> pd.DataFrame:
+    resolved_code = _resolve_ths_concept_code(
+        concept_name=concept_name,
+        concept_code=concept_code,
+    )
+    if not resolved_code:
+        raise ValueError(f"未找到概念板块代码: {concept_name}")
+
+    def fetch_all_pages() -> pd.DataFrame:
+        page_count = 1
+        frames: list[pd.DataFrame] = []
+
+        for page in range(1, page_count + 1):
+            html = _fetch_ths_concept_detail_html(
+                concept_code=resolved_code,
+                page=page,
+            )
+            if page == 1:
+                page_count = _extract_ths_page_count(html)
+
+            table = _parse_ths_concept_constituent_table(html)
+            if table.empty:
+                continue
+            frames.append(table)
+
+        if not frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(frames, ignore_index=True)
+        if "代码" in combined.columns:
+            combined = combined.drop_duplicates(subset=["代码"], keep="first")
+        return combined.reset_index(drop=True)
+
+    return _retry_ths_concept_fetch(
+        operation_name=f"ths_concept_constituents:{concept_name}",
+        fetch_fn=fetch_all_pages,
+    )
+
+
+def _resolve_ths_concept_code(
+    *,
+    concept_name: str,
+    concept_code: str | None,
+) -> str:
+    normalized_code = str(concept_code or "").strip()
+    if normalized_code:
+        return normalized_code
+
+    catalog = _load_concept_catalog_frame_ths()
+    if catalog.empty:
+        return ""
+
+    matched = catalog[catalog["板块名称"].astype(str).str.strip() == concept_name.strip()]
+    if matched.empty:
+        return ""
+
+    return str(matched.iloc[0].get("板块代码") or "").strip()
+
+
+def _fetch_ths_concept_detail_html(*, concept_code: str, page: int) -> str:
+    if page <= 1:
+        url = f"https://q.10jqka.com.cn/gn/detail/code/{concept_code}/"
+    else:
+        url = f"https://q.10jqka.com.cn/gn/detail/code/{concept_code}/page/{page}/"
+
+    response = requests.get(
+        url,
+        headers={"User-Agent": _THS_USER_AGENT},
+        timeout=_THS_REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    if not response.encoding or response.encoding.lower() == "iso-8859-1":
+        response.encoding = response.apparent_encoding or "gbk"
+    return response.text
+
+
+def _extract_ths_page_count(html: str) -> int:
+    matched = _THS_PAGE_INFO_PATTERN.search(html)
+    if not matched:
+        return 1
+
+    try:
+        return max(1, int(matched.group(2)))
+    except ValueError:
+        return 1
+
+
+def _parse_ths_concept_constituent_table(html: str) -> pd.DataFrame:
+    frames = pd.read_html(StringIO(html))
+    if not frames:
+        return pd.DataFrame()
+
+    frame = frames[0].rename(columns=_THS_CONSTITUENT_COLUMN_RENAMES).copy()
+    if "代码" in frame.columns:
+        frame["代码"] = frame["代码"].map(_format_ths_stock_code)
+    return frame
+
+
+def _retry_ths_concept_fetch(
+    *,
+    operation_name: str,
+    fetch_fn: Callable[[], pd.DataFrame],
+) -> pd.DataFrame:
+    return retry_sync(
+        operation=fetch_fn,
+        policy=_THS_CONCEPT_RETRY_POLICY,
+        should_retry=_is_transient_ths_error,
+        on_retry=lambda attempt, exc, sleep_ms: LOGGER.warning(
+            "Transient THS failure for %s (attempt %s/%s): %s; retrying in %.0fms",
+            operation_name,
+            attempt,
+            _THS_CONCEPT_RETRY_POLICY.max_attempts,
+            exc,
+            sleep_ms,
+        ),
+    )
+
+
+def _is_transient_ths_error(exc: Exception) -> bool:
+    transient_types = (
+        requests_exceptions.ConnectionError,
+        requests_exceptions.Timeout,
+        requests_exceptions.ChunkedEncodingError,
+        RemoteDisconnected,
+    )
+    if isinstance(exc, transient_types):
+        return True
+
+    for current in _iter_exception_chain(exc):
+        if isinstance(current, transient_types):
+            return True
+
+        message = str(current).lower()
+        if any(marker in message for marker in _TRANSIENT_THS_ERROR_MARKERS):
+            return True
+
+    return False
+
+
+def _iter_exception_chain(exc: Exception):
+    current: BaseException | None = exc
+    seen: set[int] = set()
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif current.__context__ is not None:
+            current = current.__context__
+        elif len(getattr(current, "args", ())) > 1 and isinstance(
+            current.args[1],
+            BaseException,
+        ):
+            current = current.args[1]
+        else:
+            current = None
+
+
 def _candidate_report_dates(limit: int) -> list[str]:
     quarter_end_map = {1: "0331", 2: "0630", 3: "0930", 4: "1231"}
     today = datetime.now().date()
@@ -475,6 +704,21 @@ def _candidate_report_dates(limit: int) -> list[str]:
         quarter = (quarter_index % 4) + 1
         dates.append(f"{year}{quarter_end_map[quarter]}")
     return dates
+
+
+def _format_ths_stock_code(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    digits = re.sub(r"\D", "", text)
+    if not digits:
+        return ""
+
+    if len(digits) <= 6:
+        return digits.zfill(6)
+
+    return digits[-6:]
 
 
 def _normalize_requested_codes(codes: list[str]) -> list[str]:

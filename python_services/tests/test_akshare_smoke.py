@@ -3,6 +3,8 @@ import os
 import akshare as ak
 import pytest
 
+from app.services.akshare_adapter import AkShareAdapter
+
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_AKSHARE_SMOKE") != "1",
@@ -23,18 +25,23 @@ def test_stock_zh_a_hist_smoke():
     assert "日期" in df.columns
 
 
-def test_stock_board_concept_name_em_smoke():
-    df = ak.stock_board_concept_name_em()
+def test_stock_board_concept_name_ths_smoke():
+    df = ak.stock_board_concept_name_ths()
 
     assert not df.empty
-    assert "板块名称" in df.columns
+    assert "name" in df.columns
 
 
-def test_stock_board_concept_cons_em_smoke():
-    catalog = ak.stock_board_concept_name_em()
-    concept_code = str(catalog.iloc[0]["板块代码"])
-    df = ak.stock_board_concept_cons_em(symbol=concept_code)
+def test_ths_concept_constituents_adapter_smoke():
+    catalog = ak.stock_board_concept_name_ths()
+    concept_name = str(catalog.iloc[0]["name"])
+    concept_code = str(catalog.iloc[0]["code"])
+    df = AkShareAdapter.get_concept_constituents_frame(
+        concept_name,
+        concept_code=concept_code,
+    )
 
+    assert not df.empty
     assert "代码" in df.columns
 
 

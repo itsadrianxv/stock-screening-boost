@@ -41,7 +41,7 @@ def test_whitelist_has_higher_priority_than_zhipu():
 
     with (
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_name_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_catalog_frame",
             return_value=_build_mock_concept_df(),
         ),
         patch(
@@ -70,7 +70,7 @@ def test_blacklist_filters_out_forced_concepts():
 
     with (
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_name_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_catalog_frame",
             return_value=_build_mock_concept_df(),
         ),
         patch(
@@ -100,7 +100,7 @@ def test_fallback_to_auto_when_zhipu_returns_empty():
 
     with (
         patch(
-            "app.services.intelligence_data_adapter.ak.stock_board_concept_name_em",
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_catalog_frame",
             return_value=_build_mock_concept_df(),
         ),
         patch(
