@@ -23,6 +23,9 @@ from app.policies.retry_policy import RetryPolicy, retry_sync
 _T = TypeVar("_T")
 
 _SPOT_CACHE_TTL_SECONDS = 30
+_SPOT_STALE_TTL_SECONDS = 120
+_SINA_SPOT_CACHE_TTL_SECONDS = 15 * 60
+_SINA_SPOT_STALE_TTL_SECONDS = 2 * 60 * 60
 _ETF_SPOT_CACHE_TTL_SECONDS = 30
 _STOCK_CODE_CACHE_TTL_SECONDS = 24 * 60 * 60
 _FINANCIAL_SNAPSHOT_CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -69,6 +72,20 @@ _TRANSIENT_THS_ERROR_MARKERS = (
 class _CacheEntry:
     value: Any
     expires_at: float
+    stale_until: float | None = None
+
+
+@dataclass
+class _CachedFetchResult:
+    value: Any
+    is_stale: bool
+
+
+@dataclass
+class _SpotFrameResult:
+    frame: pd.DataFrame
+    data_quality: str
+    warnings: list[str]
 
 
 _CACHE_LOCK = threading.Lock()
@@ -85,12 +102,12 @@ class AkShareAdapter:
             _CACHE.clear()
 
     @staticmethod
-    def get_a_share_spot_frame() -> pd.DataFrame:
-        return _get_cached_dataframe(
-            cache_key="a-share-spot",
-            ttl_seconds=_SPOT_CACHE_TTL_SECONDS,
-            fetch_fn=ak.stock_zh_a_spot_em,
-            error_prefix="获取全市场股票快照失败",
+    def get_a_share_spot_frame(stock_codes: list[str] | None = None) -> pd.DataFrame:
+        result = _load_a_share_spot_result(stock_codes=stock_codes)
+        return _apply_frame_metadata(
+            result.frame,
+            data_quality=result.data_quality,
+            warnings=result.warnings,
         )
 
     @staticmethod
@@ -151,22 +168,33 @@ class AkShareAdapter:
         if spot_df.empty:
             return []
 
-        financial_by_code = _build_financial_index(
-            AkShareAdapter.get_latest_financial_snapshot_frame()
-        )
+        financial_warnings: list[str] = []
+        try:
+            financial_by_code = _build_financial_index(
+                AkShareAdapter.get_latest_financial_snapshot_frame()
+            )
+        except Exception:
+            financial_by_code = {}
+            financial_warnings = ["financial_snapshot_unavailable"]
+        data_quality = _get_frame_data_quality(spot_df)
+        warnings = _get_frame_warnings(spot_df)
+        if financial_warnings:
+            data_quality = "partial"
+            warnings = list(dict.fromkeys([*warnings, *financial_warnings]))
 
         results: list[dict[str, Any]] = []
         for _, row in spot_df.iterrows():
             code = _normalize_stock_code(row.get("代码"))
             if not code:
                 continue
-            results.append(
-                _map_a_share_row(
-                    spot_row=row,
-                    financial_row=financial_by_code.get(code),
-                    industry_override=None,
-                )
+            mapped = _map_a_share_row(
+                spot_row=row,
+                financial_row=financial_by_code.get(code),
+                industry_override=None,
             )
+            mapped["dataQuality"] = data_quality
+            mapped["warnings"] = list(warnings)
+            results.append(mapped)
 
         return results
 
@@ -188,16 +216,26 @@ class AkShareAdapter:
             return []
 
         try:
-            spot_df = AkShareAdapter.get_a_share_spot_frame()
+            spot_df = AkShareAdapter.get_a_share_spot_frame(stock_codes=normalized_codes)
         except Exception as exc:  # noqa: BLE001
             raise Exception(f"批量查询股票数据失败: {exc}") from exc
 
         if spot_df.empty or "代码" not in spot_df.columns:
             return []
 
-        financial_by_code = _build_financial_index(
-            AkShareAdapter.get_latest_financial_snapshot_frame()
-        )
+        financial_warnings: list[str] = []
+        try:
+            financial_by_code = _build_financial_index(
+                AkShareAdapter.get_latest_financial_snapshot_frame()
+            )
+        except Exception:
+            financial_by_code = {}
+            financial_warnings = ["financial_snapshot_unavailable"]
+        data_quality = _get_frame_data_quality(spot_df)
+        warnings = _get_frame_warnings(spot_df)
+        if financial_warnings:
+            data_quality = "partial"
+            warnings = list(dict.fromkeys([*warnings, *financial_warnings]))
         working_df = spot_df.copy()
         working_df["__normalized_code__"] = working_df["代码"].map(_normalize_stock_code)
 
@@ -212,11 +250,14 @@ class AkShareAdapter:
             if not _pick_financial_text(financial_row, ("所处行业", "行业")):
                 industry_override = _get_individual_industry(code)
 
-            results_by_code[code] = _map_a_share_row(
+            mapped = _map_a_share_row(
                 spot_row=row,
                 financial_row=financial_row,
                 industry_override=industry_override,
             )
+            mapped["dataQuality"] = data_quality
+            mapped["warnings"] = list(warnings)
+            results_by_code[code] = mapped
 
         return [results_by_code[code] for code in normalized_codes if code in results_by_code]
 
@@ -422,19 +463,12 @@ def _get_cached_value(
     ttl_seconds: int,
     fetch_fn: Callable[[], _T],
 ) -> _T:
-    now = time.time()
-    with _CACHE_LOCK:
-        cached = _CACHE.get(cache_key)
-        if cached and cached.expires_at >= now:
-            return _clone_cached_value(cached.value)
+    fresh = _read_cached_value(cache_key=cache_key, allow_stale=False)
+    if fresh is not None:
+        return fresh.value
 
     value = fetch_fn()
-
-    with _CACHE_LOCK:
-        _CACHE[cache_key] = _CacheEntry(
-            value=_clone_cached_value(value),
-            expires_at=now + ttl_seconds,
-        )
+    _write_cached_value(cache_key=cache_key, value=value, ttl_seconds=ttl_seconds)
 
     return _clone_cached_value(value)
 
@@ -454,6 +488,96 @@ def _get_cached_dataframe(
         )
     except Exception as exc:  # noqa: BLE001
         raise Exception(f"{error_prefix}: {exc}") from exc
+
+
+def _get_cached_dataframe_with_stale(
+    *,
+    cache_key: str,
+    ttl_seconds: int,
+    stale_ttl_seconds: int,
+    fetch_fn: Callable[[], pd.DataFrame],
+    error_prefix: str,
+) -> _CachedFetchResult:
+    try:
+        return _get_cached_value_with_stale(
+            cache_key=cache_key,
+            ttl_seconds=ttl_seconds,
+            stale_ttl_seconds=stale_ttl_seconds,
+            fetch_fn=fetch_fn,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise Exception(f"{error_prefix}: {exc}") from exc
+
+
+def _get_cached_value_with_stale(
+    *,
+    cache_key: str,
+    ttl_seconds: int,
+    stale_ttl_seconds: int,
+    fetch_fn: Callable[[], _T],
+) -> _CachedFetchResult:
+    fresh = _read_cached_value(cache_key=cache_key, allow_stale=False)
+    if fresh is not None:
+        return fresh
+
+    stale = _read_cached_value(cache_key=cache_key, allow_stale=True)
+    try:
+        value = fetch_fn()
+    except Exception:
+        if stale is not None:
+            return stale
+        raise
+
+    _write_cached_value(
+        cache_key=cache_key,
+        value=value,
+        ttl_seconds=ttl_seconds,
+        stale_ttl_seconds=stale_ttl_seconds,
+    )
+    return _CachedFetchResult(value=_clone_cached_value(value), is_stale=False)
+
+
+def _read_cached_value(*, cache_key: str, allow_stale: bool) -> _CachedFetchResult | None:
+    now = time.time()
+    with _CACHE_LOCK:
+        cached = _CACHE.get(cache_key)
+        if cached is None:
+            return None
+
+        if cached.expires_at >= now:
+            return _CachedFetchResult(
+                value=_clone_cached_value(cached.value),
+                is_stale=False,
+            )
+
+        stale_until = cached.stale_until or cached.expires_at
+        if allow_stale and stale_until >= now:
+            return _CachedFetchResult(
+                value=_clone_cached_value(cached.value),
+                is_stale=True,
+            )
+
+        if stale_until < now:
+            _CACHE.pop(cache_key, None)
+
+    return None
+
+
+def _write_cached_value(
+    *,
+    cache_key: str,
+    value: Any,
+    ttl_seconds: int,
+    stale_ttl_seconds: int | None = None,
+) -> None:
+    now = time.time()
+    stale_until = now + ttl_seconds + stale_ttl_seconds if stale_ttl_seconds is not None else None
+    with _CACHE_LOCK:
+        _CACHE[cache_key] = _CacheEntry(
+            value=_clone_cached_value(value),
+            expires_at=now + ttl_seconds,
+            stale_until=stale_until,
+        )
 
 
 def _load_latest_financial_snapshot_frame() -> pd.DataFrame:
@@ -528,6 +652,150 @@ def _load_concept_catalog_frame_ths() -> pd.DataFrame:
     return normalized
 
 
+def _load_a_share_spot_result(stock_codes: list[str] | None = None) -> _SpotFrameResult:
+    errors: list[str] = []
+
+    try:
+        em_result = _get_cached_dataframe_with_stale(
+            cache_key="a-share-spot:em",
+            ttl_seconds=_SPOT_CACHE_TTL_SECONDS,
+            stale_ttl_seconds=_SPOT_STALE_TTL_SECONDS,
+            fetch_fn=_load_em_a_share_spot_frame,
+            error_prefix="获取全市场股票快照失败",
+        )
+        warnings = ["spot_snapshot_stale"] if em_result.is_stale else []
+        return _SpotFrameResult(
+            frame=em_result.value,
+            data_quality="complete",
+            warnings=warnings,
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(str(exc))
+
+    try:
+        sina_result = _get_cached_dataframe_with_stale(
+            cache_key="a-share-spot:sina",
+            ttl_seconds=_SINA_SPOT_CACHE_TTL_SECONDS,
+            stale_ttl_seconds=_SINA_SPOT_STALE_TTL_SECONDS,
+            fetch_fn=_load_sina_a_share_spot_frame,
+            error_prefix="获取新浪全市场股票快照失败",
+        )
+        warnings = ["spot_snapshot_sina_fallback"]
+        if sina_result.is_stale:
+            warnings.append("spot_snapshot_stale")
+        return _SpotFrameResult(
+            frame=sina_result.value,
+            data_quality="partial",
+            warnings=warnings,
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(str(exc))
+
+    normalized_codes = _normalize_requested_codes(stock_codes or [])
+    if normalized_codes:
+        partial_frame = _build_partial_a_share_spot_frame(normalized_codes)
+        if not partial_frame.empty:
+            return _SpotFrameResult(
+                frame=partial_frame,
+                data_quality="partial",
+                warnings=["spot_snapshot_partial"],
+            )
+
+    detail = "; ".join(error for error in errors if error)
+    raise Exception(detail or "获取全市场股票快照失败")
+
+
+def _load_em_a_share_spot_frame() -> pd.DataFrame:
+    frame = ak.stock_zh_a_spot_em()
+    if frame.empty:
+        raise ValueError("stock_zh_a_spot_em returned empty frame")
+    return frame
+
+
+def _load_sina_a_share_spot_frame() -> pd.DataFrame:
+    frame = ak.stock_zh_a_spot()
+    if frame.empty:
+        raise ValueError("stock_zh_a_spot returned empty frame")
+    return _normalize_sina_a_share_spot_frame(frame)
+
+
+def _normalize_sina_a_share_spot_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    normalized = frame.copy()
+    if "代码" in normalized.columns:
+        normalized["代码"] = normalized["代码"].map(_normalize_stock_code)
+    if "名称" in normalized.columns:
+        normalized["名称"] = normalized["名称"].map(lambda value: str(value or "").strip())
+
+    for column in ("行业", "市盈率", "市净率", "总市值", "流通市值", "换手率", "涨跌幅"):
+        if column not in normalized.columns:
+            normalized[column] = None
+
+    return normalized
+
+
+def _build_partial_a_share_spot_frame(stock_codes: list[str]) -> pd.DataFrame:
+    code_name_map = _build_code_name_index()
+
+    try:
+        financial_by_code = _build_financial_index(
+            AkShareAdapter.get_latest_financial_snapshot_frame()
+        )
+    except Exception:  # noqa: BLE001
+        financial_by_code = {}
+
+    rows: list[dict[str, Any]] = []
+    for code in stock_codes:
+        financial_row = financial_by_code.get(code)
+        stock_name = (
+            code_name_map.get(code)
+            or _pick_financial_text(financial_row, ("股票简称", "名称", "简称"))
+            or code
+        )
+        industry = (
+            _pick_financial_text(financial_row, ("所处行业", "行业"))
+            or _get_individual_industry(code)
+            or "未知"
+        )
+        rows.append(
+            {
+                "代码": code,
+                "名称": stock_name,
+                "行业": industry,
+                "市盈率": None,
+                "市净率": None,
+                "总市值": None,
+                "流通市值": None,
+                "换手率": None,
+                "涨跌幅": None,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _build_code_name_index() -> dict[str, str]:
+    try:
+        frame = AkShareAdapter.get_stock_code_name_frame()
+    except Exception:  # noqa: BLE001
+        return {}
+
+    if frame.empty:
+        return {}
+
+    code_column = _find_column(frame, ("代码", "证券代码", "code"))
+    name_column = _find_column(frame, ("名称", "证券简称", "name", "简称"))
+    if not code_column or not name_column:
+        return {}
+
+    code_name_map: dict[str, str] = {}
+    for _, row in frame.iterrows():
+        code = _normalize_stock_code(row.get(code_column))
+        name = str(row.get(name_column) or "").strip()
+        if code and name and code not in code_name_map:
+            code_name_map[code] = name
+    return code_name_map
+
+
 def _load_concept_constituents_frame_ths(
     concept_name: str,
     concept_code: str | None = None,
@@ -540,10 +808,11 @@ def _load_concept_constituents_frame_ths(
         raise ValueError(f"未找到概念板块代码: {concept_name}")
 
     def fetch_all_pages() -> pd.DataFrame:
-        page_count = 1
         frames: list[pd.DataFrame] = []
+        page = 1
+        page_count = 1
 
-        for page in range(1, page_count + 1):
+        while page <= page_count:
             html = _fetch_ths_concept_detail_html(
                 concept_code=resolved_code,
                 page=page,
@@ -553,8 +822,10 @@ def _load_concept_constituents_frame_ths(
 
             table = _parse_ths_concept_constituent_table(html)
             if table.empty:
+                page += 1
                 continue
             frames.append(table)
+            page += 1
 
         if not frames:
             return pd.DataFrame()
@@ -772,6 +1043,31 @@ def _pick_financial_value(row: pd.Series | None, keywords: tuple[str, ...]) -> f
             if numeric is not None:
                 return numeric
     return None
+
+
+def _apply_frame_metadata(
+    frame: pd.DataFrame,
+    *,
+    data_quality: str,
+    warnings: list[str],
+) -> pd.DataFrame:
+    annotated = frame.copy(deep=True)
+    annotated.attrs["data_quality"] = "partial" if data_quality == "partial" else "complete"
+    annotated.attrs["warnings"] = list(dict.fromkeys(warnings))
+    return annotated
+
+
+def _get_frame_data_quality(frame: pd.DataFrame) -> str:
+    value = str(frame.attrs.get("data_quality") or "").strip().lower()
+    return "partial" if value == "partial" else "complete"
+
+
+def _get_frame_warnings(frame: pd.DataFrame) -> list[str]:
+    raw_warnings = frame.attrs.get("warnings")
+    if not isinstance(raw_warnings, list):
+        return []
+    normalized = [str(item).strip() for item in raw_warnings if str(item).strip()]
+    return list(dict.fromkeys(normalized))
 
 
 def _map_a_share_row(

@@ -115,6 +115,10 @@ def to_company_evidence(raw: dict) -> CompanyEvidence:
         catalysts=list(raw.get("catalysts") or []),
         risks=list(raw.get("risks") or []),
         credibilityScore=int(raw.get("credibilityScore") or 0),
+        dataQuality="partial"
+        if str(raw.get("dataQuality") or "").strip().lower() == "partial"
+        else "complete",
+        warnings=list(raw.get("warnings") or []),
         updatedAt=str(raw.get("updatedAt") or _iso_now()),
     )
 
@@ -146,6 +150,10 @@ def to_company_research_pack(raw: dict) -> CompanyResearchPack:
             for item in raw.get("referenceItems") or []
         ],
         summaryNotes=list(raw.get("summaryNotes") or []),
+        dataQuality="partial"
+        if str(raw.get("dataQuality") or "").strip().lower() == "partial"
+        else "complete",
+        warnings=list(raw.get("warnings") or []),
     )
 
 

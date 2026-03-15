@@ -97,7 +97,7 @@ class IntelligenceGateway:
             retry_policy=self._retry_policy,
             cache=self._cache,
             force_refresh=force_refresh,
-            allow_stale=False,
+            allow_stale=True,
         )
 
         data = ThemeConceptsData(
@@ -240,7 +240,7 @@ class IntelligenceGateway:
             retry_policy=self._retry_policy,
             cache=self._cache,
             force_refresh=force_refresh,
-            allow_stale=False,
+            allow_stale=True,
         )
 
         return StockResearchPackResponse(
@@ -281,7 +281,7 @@ class IntelligenceGateway:
             retry_policy=self._retry_policy,
             cache=self._cache,
             force_refresh=force_refresh,
-            allow_stale=False,
+            allow_stale=True,
         )
 
     @staticmethod

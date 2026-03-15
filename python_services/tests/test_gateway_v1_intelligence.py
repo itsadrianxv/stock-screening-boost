@@ -2,6 +2,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.contracts.intelligence import CompanyEvidence, CompanyResearchPack
+from app.contracts.market import ThemeCandidate
 from app.gateway.common import build_cache_key, gateway_cache
 from app.main import app
 from app.policies.cache_policy import CachePolicy
@@ -11,6 +13,10 @@ client = TestClient(app)
 
 def setup_function() -> None:
     gateway_cache.clear()
+
+
+def _stale_policy() -> CachePolicy:
+    return CachePolicy(fresh_ttl_seconds=0, stale_ttl_seconds=120)
 
 
 def test_get_v1_stock_evidence_batch_success():
@@ -63,7 +69,7 @@ def test_intelligence_gateway_prefers_mock_fallback_over_stale_cache_when_provid
                 "relatedStocks": [],
             }
         ],
-        policy=CachePolicy(fresh_ttl_seconds=0, stale_ttl_seconds=120),
+        policy=_stale_policy(),
         as_of="2026-03-01T08:00:00+00:00",
     )
 
@@ -80,3 +86,195 @@ def test_intelligence_gateway_prefers_mock_fallback_over_stale_cache_when_provid
     assert payload["data"]["theme"] == "AI"
     assert payload["data"]["newsItems"][0]["source"] == "intelligence-fallback"
     assert payload["data"]["newsItems"][0]["id"] != "stale-1"
+
+
+def test_v1_theme_concepts_returns_stale_cache_when_provider_fails():
+    cache_key = build_cache_key(
+        dataset="theme_concepts",
+        provider="akshare",
+        params={"theme": "AI", "limit": 5},
+    )
+    gateway_cache.set(
+        key=cache_key,
+        value={
+            "theme": "AI",
+            "matchedBy": "auto",
+            "concepts": [
+                {
+                    "name": "AI compute",
+                    "code": "BK001",
+                    "aliases": [],
+                    "confidence": 0.88,
+                    "reason": "cached",
+                    "source": "auto",
+                }
+            ],
+        },
+        policy=_stale_policy(),
+        as_of="2026-03-01T08:00:00+00:00",
+    )
+
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_theme_concepts",
+        side_effect=Exception("provider down"),
+    ):
+        response = client.get("/api/v1/intelligence/themes/AI/concepts")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["cacheHit"] is True
+    assert payload["meta"]["isStale"] is True
+    assert payload["data"]["conceptMatches"][0]["name"] == "AI compute"
+    assert payload["meta"]["warnings"][0]["code"] == "stale_cache"
+
+
+def test_v1_theme_candidates_returns_stale_cache_when_provider_fails():
+    cache_key = build_cache_key(
+        dataset="theme_candidates",
+        provider="akshare",
+        params={"theme": "AI", "limit": 6},
+    )
+    gateway_cache.set(
+        key=cache_key,
+        value=[
+            ThemeCandidate(
+                stockCode="603019",
+                stockName="中科曙光",
+                concept="AI compute",
+                reason="cached",
+                heat=86.0,
+            )
+        ],
+        policy=_stale_policy(),
+        as_of="2026-03-01T08:00:00+00:00",
+    )
+
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_theme_candidates",
+        side_effect=Exception("provider down"),
+    ):
+        response = client.get("/api/v1/market/themes/AI/candidates")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["cacheHit"] is True
+    assert payload["meta"]["isStale"] is True
+    assert payload["data"]["candidates"][0]["stockCode"] == "603019"
+
+
+def test_v1_stock_evidence_exposes_partial_data_quality():
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_stock_evidence",
+        return_value={
+            "stockCode": "603019",
+            "companyName": "中科曙光",
+            "concept": "AI",
+            "evidenceSummary": "partial evidence",
+            "catalysts": [],
+            "risks": [],
+            "credibilityScore": 68,
+            "dataQuality": "partial",
+            "warnings": ["spot_snapshot_partial"],
+            "updatedAt": "2026-03-10T08:00:00+00:00",
+        },
+    ):
+        response = client.get("/api/v1/intelligence/stocks/603019/evidence?concept=AI")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["evidence"]["dataQuality"] == "partial"
+    assert payload["data"]["evidence"]["warnings"] == ["spot_snapshot_partial"]
+
+
+def test_v1_stock_research_pack_exposes_partial_data_quality():
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_stock_research_pack",
+        return_value={
+            "stockCode": "603019",
+            "companyName": "中科曙光",
+            "concept": "AI",
+            "financialHighlights": [],
+            "referenceItems": [],
+            "summaryNotes": ["partial pack"],
+            "dataQuality": "partial",
+            "warnings": ["spot_snapshot_partial"],
+        },
+    ):
+        response = client.get("/api/v1/intelligence/stocks/603019/research-pack?concept=AI")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["researchPack"]["dataQuality"] == "partial"
+    assert payload["data"]["researchPack"]["warnings"] == ["spot_snapshot_partial"]
+
+
+def test_v1_stock_evidence_returns_stale_cache_when_provider_fails():
+    cache_key = build_cache_key(
+        dataset="company_evidence",
+        provider="akshare",
+        params={"stockCode": "603019", "concept": "AI"},
+    )
+    gateway_cache.set(
+        key=cache_key,
+        value=CompanyEvidence(
+            stockCode="603019",
+            companyName="中科曙光",
+            concept="AI",
+            evidenceSummary="cached evidence",
+            catalysts=[],
+            risks=[],
+            credibilityScore=72,
+            dataQuality="partial",
+            warnings=["spot_snapshot_partial"],
+            updatedAt="2026-03-01T08:00:00+00:00",
+        ),
+        policy=_stale_policy(),
+        as_of="2026-03-01T08:00:00+00:00",
+    )
+
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_stock_evidence",
+        side_effect=Exception("provider down"),
+    ):
+        response = client.get("/api/v1/intelligence/stocks/603019/evidence?concept=AI")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["cacheHit"] is True
+    assert payload["meta"]["isStale"] is True
+    assert payload["data"]["evidence"]["companyName"] == "中科曙光"
+
+
+def test_v1_stock_research_pack_returns_stale_cache_when_provider_fails():
+    cache_key = build_cache_key(
+        dataset="company_research_pack",
+        provider="akshare",
+        params={"stockCode": "603019", "concept": "AI"},
+    )
+    gateway_cache.set(
+        key=cache_key,
+        value=CompanyResearchPack(
+            stockCode="603019",
+            companyName="中科曙光",
+            concept="AI",
+            financialHighlights=["cached highlight"],
+            referenceItems=[],
+            summaryNotes=["cached summary"],
+            dataQuality="partial",
+            warnings=["spot_snapshot_partial"],
+        ),
+        policy=_stale_policy(),
+        as_of="2026-03-01T08:00:00+00:00",
+    )
+
+    with patch(
+        "app.providers.akshare.client.AkShareProviderClient.get_stock_research_pack",
+        side_effect=Exception("provider down"),
+    ):
+        response = client.get("/api/v1/intelligence/stocks/603019/research-pack?concept=AI")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["meta"]["cacheHit"] is True
+    assert payload["meta"]["isStale"] is True
+    assert payload["data"]["researchPack"]["financialHighlights"] == ["cached highlight"]

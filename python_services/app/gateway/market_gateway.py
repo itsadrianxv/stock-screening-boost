@@ -260,7 +260,7 @@ class MarketGateway:
             retry_policy=self._theme_retry_policy,
             cache=self._cache,
             force_refresh=force_refresh,
-            allow_stale=False,
+            allow_stale=True,
         )
 
         return ThemeCandidatesResponse(

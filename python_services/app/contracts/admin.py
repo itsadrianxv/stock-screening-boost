@@ -14,6 +14,7 @@ class RefreshUniverseJobRequest(BaseModel):
 
 class RefreshConceptsJobRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=1000)
+    batchSize: int = Field(default=20, ge=1, le=100)
 
 
 class PrewarmHotThemesJobRequest(BaseModel):
@@ -24,7 +25,7 @@ class PrewarmHotThemesJobRequest(BaseModel):
 
 class JobExecutionSummary(BaseModel):
     job: str
-    status: Literal["completed", "failed"]
+    status: Literal["queued", "completed", "failed"]
     startedAt: str
     finishedAt: str
     stats: dict[str, Any] = Field(default_factory=dict)
@@ -49,4 +50,3 @@ class MetricsSnapshotResponse(BaseModel):
     capturedAt: str
     counters: dict[str, list[MetricCounterPoint]] = Field(default_factory=dict)
     observations: dict[str, list[MetricObservationPoint]] = Field(default_factory=dict)
-

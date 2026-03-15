@@ -1,5 +1,5 @@
-from http.client import RemoteDisconnected
 from datetime import UTC, datetime, timedelta
+from http.client import RemoteDisconnected
 from unittest.mock import patch
 
 import pandas as pd
@@ -14,7 +14,6 @@ from app.services.intelligence_data_adapter import IntelligenceDataAdapter
 
 def setup_function() -> None:
     adapter_module._CACHE.clear()
-    adapter_module._SPOT_CACHE = None
     AkShareAdapter.clear_caches()
 
 
@@ -49,6 +48,10 @@ def test_get_candidates_strict_raises_when_no_theme_specific_candidates():
         patch(
             "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_constituents_frame",
             side_effect=Exception("upstream down"),
+        ),
+        patch(
+            "app.services.intelligence_data_adapter._build_candidates_from_spot",
+            return_value=[],
         ),
         patch(
             "app.services.intelligence_data_adapter._RULES_REGISTRY.get_rules",
@@ -164,9 +167,66 @@ def test_get_theme_news_strict_falls_back_to_mock_news_on_empty_result(
     assert all(theme in item["title"] for item in payload)
 
 
-@patch("app.services.intelligence_data_adapter._get_spot_snapshot")
-def test_get_company_evidence_strict_raises_without_mock_fallback(mock_spot_snapshot):
-    mock_spot_snapshot.side_effect = ValueError("spot unavailable")
+@patch("app.services.intelligence_data_adapter.AkShareAdapter.get_stocks_by_codes")
+def test_get_company_evidence_strict_raises_without_snapshot(mock_get_stocks_by_codes):
+    mock_get_stocks_by_codes.side_effect = ValueError("spot unavailable")
 
     with pytest.raises(ValueError, match="spot unavailable"):
         IntelligenceDataAdapter.get_company_evidence_strict("603019", "AI")
+
+
+@patch("app.services.intelligence_data_adapter._fetch_stock_news", return_value=[])
+@patch("app.services.intelligence_data_adapter.AkShareAdapter.get_stocks_by_codes")
+def test_get_company_evidence_strict_returns_partial_metadata(
+    mock_get_stocks_by_codes,
+    _mock_news,
+):
+    mock_get_stocks_by_codes.return_value = [
+        {
+            "code": "603019",
+            "name": "中科曙光",
+            "industry": "算力",
+            "changePercent": None,
+            "turnoverRate": None,
+            "pe": None,
+            "marketCap": None,
+            "dataQuality": "partial",
+            "warnings": ["spot_snapshot_partial"],
+        }
+    ]
+
+    payload = IntelligenceDataAdapter.get_company_evidence_strict("603019", "AI")
+
+    assert payload["companyName"] == "中科曙光"
+    assert payload["dataQuality"] == "partial"
+    assert payload["warnings"] == ["spot_snapshot_partial"]
+
+
+@patch("app.services.intelligence_data_adapter._fetch_stock_news", return_value=[])
+@patch("app.services.intelligence_data_adapter.AkShareAdapter.get_stocks_by_codes")
+def test_get_company_research_pack_strict_returns_partial_payload(
+    mock_get_stocks_by_codes,
+    _mock_news,
+):
+    mock_get_stocks_by_codes.return_value = [
+        {
+            "code": "603019",
+            "name": "中科曙光",
+            "industry": "算力",
+            "changePercent": None,
+            "turnoverRate": None,
+            "pe": None,
+            "marketCap": None,
+            "floatMarketCap": None,
+            "pb": None,
+            "roe": None,
+            "dataQuality": "partial",
+            "warnings": ["spot_snapshot_partial"],
+        }
+    ]
+
+    payload = IntelligenceDataAdapter.get_company_research_pack_strict("603019", "AI")
+
+    assert payload["companyName"] == "中科曙光"
+    assert payload["dataQuality"] == "partial"
+    assert payload["warnings"] == ["spot_snapshot_partial"]

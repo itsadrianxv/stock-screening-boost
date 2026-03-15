@@ -1,4 +1,4 @@
-"""Tests for M2 gateway jobs, L2 cache integration, and metrics."""
+"""Tests for gateway jobs, layered cache integration, and admin job routes."""
 
 from __future__ import annotations
 
@@ -8,12 +8,14 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.contracts.admin import JobExecutionSummary
 from app.gateway.common import build_cache_key, gateway_cache
 from app.infrastructure.cache.layered_cache import LayeredCache
 from app.infrastructure.cache.memory_cache import MemoryCache
 from app.infrastructure.cache.redis_cache import RedisCache
 from app.infrastructure.metrics.recorder import metrics_recorder
 from app.jobs.prewarm_hot_themes import PrewarmHotThemesJob
+from app.jobs.refresh_concepts import RefreshConceptsJob
 from app.jobs.refresh_universe import RefreshUniverseJob
 from app.main import app
 from app.policies.cache_policy import CachePolicy
@@ -94,6 +96,7 @@ class FakeIntelligenceGateway:
         self.news_themes: list[str] = []
         self.concept_themes: list[str] = []
         self.evidence_calls: list[tuple[str, str]] = []
+        self.research_pack_calls: list[tuple[str, str]] = []
 
     def get_theme_news(self, request_id: str, theme: str, days: int, limit: int):
         self.news_themes.append(theme)
@@ -106,6 +109,26 @@ class FakeIntelligenceGateway:
     def get_stock_evidence(self, request_id: str, stock_code: str, concept: str | None):
         self.evidence_calls.append((stock_code, concept or ""))
         return None
+
+    def get_stock_research_pack(self, request_id: str, stock_code: str, concept: str | None):
+        self.research_pack_calls.append((stock_code, concept or ""))
+        return None
+
+
+class FakeConceptProvider:
+    provider_name = "akshare"
+
+    def get_concept_catalog(self) -> list[dict]:
+        return [
+            {"conceptName": "AI算力", "conceptCode": "BK001"},
+            {"conceptName": "液冷服务器", "conceptCode": "BK002"},
+            {"conceptName": "失败概念", "conceptCode": "BK003"},
+        ]
+
+    def get_concept_constituents(self, concept_name: str, concept_code: str | None = None) -> list[dict]:
+        if concept_name == "失败概念":
+            raise RuntimeError("upstream down")
+        return [{"conceptName": concept_name, "stockCode": "603019", "stockName": "中科曙光"}]
 
 
 def setup_function() -> None:
@@ -174,6 +197,78 @@ def test_prewarm_hot_themes_uses_recorded_hot_themes() -> None:
     assert fake_intelligence_gateway.news_themes == ["算力"]
     assert fake_intelligence_gateway.concept_themes == ["算力"]
     assert fake_intelligence_gateway.evidence_calls == [("600519", "算力")]
+    assert fake_intelligence_gateway.research_pack_calls == [("600519", "算力")]
+    assert summary.stats["warmedResearchPacks"] == 1
+
+
+def test_refresh_concepts_job_tracks_batches_and_failures() -> None:
+    summary = RefreshConceptsJob(provider_client=FakeConceptProvider()).run(batch_size=2)
+
+    assert summary.job == "refresh-concepts"
+    assert summary.status == "completed"
+    assert summary.stats["conceptCount"] == 3
+    assert summary.stats["batchSize"] == 2
+    assert summary.stats["processedBatches"] == 2
+    assert summary.stats["constituentCacheWrites"] == 2
+    assert summary.stats["failureCount"] == 1
+    assert summary.stats["failedConcepts"] == ["失败概念"]
+
+
+def test_refresh_concepts_endpoint_returns_queued_and_triggers_background_task() -> None:
+    background_calls: list[dict] = []
+
+    def fake_enqueue(self, limit=None, batch_size=20):
+        return (
+            JobExecutionSummary(
+                job="refresh-concepts",
+                status="queued",
+                startedAt="2026-03-08T08:00:00+00:00",
+                finishedAt="2026-03-08T08:00:01+00:00",
+                stats={
+                    "requestedLimit": limit,
+                    "scheduledConceptCount": 1,
+                    "batchSize": batch_size,
+                },
+            ),
+            [{"conceptName": "AI算力", "conceptCode": "BK001"}],
+            "2026-03-08T08:00:01+00:00",
+        )
+
+    def fake_background(self, catalog, *, as_of, batch_size):
+        background_calls.append(
+            {"catalog": catalog, "as_of": as_of, "batch_size": batch_size}
+        )
+
+    with (
+        patch(
+            "app.routers.admin_jobs.RefreshConceptsJob.enqueue",
+            autospec=True,
+            side_effect=fake_enqueue,
+        ),
+        patch(
+            "app.routers.admin_jobs.RefreshConceptsJob.warm_constituents_background",
+            autospec=True,
+            side_effect=fake_background,
+        ),
+    ):
+        response = client.post(
+            "/api/admin/jobs/refresh-concepts",
+            json={"limit": 10, "batchSize": 5},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["stats"]["requestedLimit"] == 10
+    assert payload["stats"]["scheduledConceptCount"] == 1
+    assert payload["stats"]["batchSize"] == 5
+    assert background_calls == [
+        {
+            "catalog": [{"conceptName": "AI算力", "conceptCode": "BK001"}],
+            "as_of": "2026-03-08T08:00:01+00:00",
+            "batch_size": 5,
+        }
+    ]
 
 
 def test_admin_metrics_endpoint_returns_gateway_snapshot() -> None:

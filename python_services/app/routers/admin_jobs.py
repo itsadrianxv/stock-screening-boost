@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, BackgroundTasks, Body
 
 from app.contracts.admin import (
     JobExecutionSummary,
@@ -34,10 +34,22 @@ async def refresh_universe(
 
 @router.post("/jobs/refresh-concepts", response_model=JobExecutionSummary)
 async def refresh_concepts(
+    background_tasks: BackgroundTasks,
     body: RefreshConceptsJobRequest | None = Body(default=None),
 ):
     payload = body or RefreshConceptsJobRequest()
-    return RefreshConceptsJob().run(limit=payload.limit)
+    job = RefreshConceptsJob()
+    summary, catalog, as_of = job.enqueue(
+        limit=payload.limit,
+        batch_size=payload.batchSize,
+    )
+    background_tasks.add_task(
+        job.warm_constituents_background,
+        catalog,
+        as_of=as_of,
+        batch_size=payload.batchSize,
+    )
+    return summary
 
 
 @router.post("/jobs/prewarm-hot-themes", response_model=JobExecutionSummary)
@@ -50,4 +62,3 @@ async def prewarm_hot_themes(
         max_themes=payload.maxThemes,
         evidence_per_theme=payload.evidencePerTheme,
     )
-

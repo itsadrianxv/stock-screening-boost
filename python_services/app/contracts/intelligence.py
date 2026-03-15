@@ -49,6 +49,8 @@ class CompanyEvidence(BaseModel):
     catalysts: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     credibilityScore: int = Field(..., ge=0, le=100)
+    dataQuality: Literal["complete", "partial"] = "complete"
+    warnings: list[str] = Field(default_factory=list)
     updatedAt: str
 
 
@@ -89,6 +91,8 @@ class CompanyResearchPack(BaseModel):
         default_factory=list
     )
     summaryNotes: list[str] = Field(default_factory=list)
+    dataQuality: Literal["complete", "partial"] = "complete"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class StockResearchPackData(BaseModel):

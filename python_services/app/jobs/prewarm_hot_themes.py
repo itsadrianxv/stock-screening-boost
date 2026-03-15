@@ -46,6 +46,7 @@ class PrewarmHotThemesJob:
         warmed_candidates = 0
         warmed_concepts = 0
         warmed_evidence = 0
+        warmed_research_packs = 0
         failures: list[str] = []
 
         for theme in selected_themes:
@@ -79,6 +80,12 @@ class PrewarmHotThemesJob:
                         concept=candidate.concept or theme,
                     )
                     warmed_evidence += 1
+                    self._intelligence_gateway.get_stock_research_pack(
+                        request_id=f"job-prewarm:{theme}:research-pack:{candidate.stockCode}",
+                        stock_code=candidate.stockCode,
+                        concept=candidate.concept or theme,
+                    )
+                    warmed_research_packs += 1
             except Exception as exc:  # noqa: BLE001
                 failures.append(f"{theme}: {exc}")
 
@@ -91,6 +98,7 @@ class PrewarmHotThemesJob:
                 "warmedCandidates": warmed_candidates,
                 "warmedConcepts": warmed_concepts,
                 "warmedEvidence": warmed_evidence,
+                "warmedResearchPacks": warmed_research_packs,
                 "failureCount": len(failures),
                 "failures": failures[:10],
             },
@@ -106,4 +114,3 @@ class PrewarmHotThemesJob:
             return ranked_themes
 
         return _default_hot_themes()[:max_themes]
-

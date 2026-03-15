@@ -197,7 +197,7 @@ class IntelligenceDataAdapter:
         candidates = _fetch_candidates_from_akshare(
             normalized_theme,
             normalized_limit,
-            allow_spot_fallback=False,
+            allow_spot_fallback=True,
         )
         if candidates:
             return candidates
@@ -370,8 +370,8 @@ def _write_cache(cache_key: str, value: Any, ttl_seconds: int | None = None) -> 
         _CACHE[cache_key] = entry
 
 
-def _get_spot_snapshot() -> pd.DataFrame:
-    latest = AkShareAdapter.get_a_share_spot_frame()
+def _get_spot_snapshot(stock_codes: list[str] | None = None) -> pd.DataFrame:
+    latest = AkShareAdapter.get_a_share_spot_frame(stock_codes=stock_codes)
     if latest.empty:
         raise ValueError("AkShare spot snapshot is empty")
     return latest
@@ -727,31 +727,23 @@ def _build_concept_snapshot_news(
 
 
 def _fetch_company_evidence_from_akshare(stock_code: str, concept: str) -> dict:
-    spot_df = _get_spot_snapshot()
-
-    code_column = _find_column(spot_df, ("代码", "code"))
-    name_column = _find_column(spot_df, ("名称", "name"))
-    industry_column = _find_column(spot_df, ("行业", "industry"))
-    change_column = _find_column(spot_df, ("涨跌幅", "涨跌", "change"))
-    turnover_column = _find_column(spot_df, ("换手率", "turnover"))
-    pe_column = _find_column(spot_df, ("市盈率", "pe"))
-    market_cap_column = _find_column(spot_df, ("总市值", "market", "市值"))
-
-    if not code_column or not name_column:
-        raise ValueError("AkShare spot snapshot missing required columns")
-
-    normalized_series = spot_df[code_column].astype(str).map(_normalize_stock_code)
-    matched = spot_df[normalized_series == stock_code]
-    if matched.empty:
+    snapshots = AkShareAdapter.get_stocks_by_codes([stock_code])
+    if not snapshots:
         raise ValueError(f"Stock code not found in AkShare snapshot: {stock_code}")
 
-    row = matched.iloc[0]
-    company_name = _safe_text(row.get(name_column)) or _guess_company_name(stock_code)
-    industry_name = _safe_text(row.get(industry_column)) if industry_column else "未知行业"
-    change_pct = _to_float(row.get(change_column))
-    turnover = _to_float(row.get(turnover_column))
-    pe_ratio = _to_float(row.get(pe_column))
-    market_cap = _to_float(row.get(market_cap_column))
+    snapshot = snapshots[0]
+    company_name = _safe_text(snapshot.get("name")) or _guess_company_name(stock_code)
+    industry_name = _safe_text(snapshot.get("industry")) or "未知行业"
+    change_pct = _to_float(snapshot.get("changePercent"))
+    turnover = _to_float(snapshot.get("turnoverRate"))
+    pe_ratio = _to_float(snapshot.get("pe"))
+    market_cap = _to_float(snapshot.get("marketCap"))
+    data_quality = (
+        "partial"
+        if str(snapshot.get("dataQuality") or "").strip().lower() == "partial"
+        else "complete"
+    )
+    warning_codes = _dedupe_warning_codes(snapshot.get("warnings"))
 
     stock_news = _fetch_stock_news(
         stock_code=stock_code,
@@ -827,6 +819,8 @@ def _fetch_company_evidence_from_akshare(stock_code: str, concept: str) -> dict:
         "catalysts": catalysts[:3],
         "risks": risks[:3],
         "credibilityScore": credibility_score,
+        "dataQuality": data_quality,
+        "warnings": warning_codes,
         "updatedAt": datetime.now(UTC).isoformat(),
     }
 
@@ -835,6 +829,15 @@ def _fetch_company_research_pack_from_akshare(stock_code: str, concept: str) -> 
     evidence = _fetch_company_evidence_from_akshare(stock_code, concept)
     snapshots = AkShareAdapter.get_stocks_by_codes([stock_code])
     snapshot = snapshots[0] if snapshots else {}
+    warning_codes = _dedupe_warning_codes(
+        [*list(evidence.get("warnings") or []), *list(snapshot.get("warnings") or [])]
+    )
+    data_quality = "partial"
+    if (
+        str(evidence.get("dataQuality") or "").strip().lower() != "partial"
+        and str(snapshot.get("dataQuality") or "").strip().lower() != "partial"
+    ):
+        data_quality = "complete"
 
     financial_highlights = [
         line
@@ -875,6 +878,8 @@ def _fetch_company_research_pack_from_akshare(stock_code: str, concept: str) -> 
         "financialHighlights": financial_highlights,
         "referenceItems": reference_items,
         "summaryNotes": summary_notes[:6],
+        "dataQuality": data_quality,
+        "warnings": warning_codes,
     }
 
 
@@ -1553,6 +1558,8 @@ def _build_mock_company_evidence(stock_code: str, concept: str) -> dict:
             "上游成本与政策变量扰动",
         ],
         "credibilityScore": credibility_score,
+        "dataQuality": "partial",
+        "warnings": ["mock_fallback"],
         "updatedAt": datetime.now(UTC).isoformat(),
     }
 
@@ -1583,6 +1590,8 @@ def _build_mock_company_research_pack(stock_code: str, concept: str) -> dict:
             }
         ],
         "summaryNotes": [evidence["evidenceSummary"], *evidence["risks"][:2]],
+        "dataQuality": "partial",
+        "warnings": ["mock_fallback"],
     }
 
 
@@ -1667,3 +1676,11 @@ def _guess_company_name(stock_code: str) -> str:
     }
 
     return mapping.get(stock_code, f"公司{stock_code}")
+
+
+def _dedupe_warning_codes(raw_warnings: Any) -> list[str]:
+    if not isinstance(raw_warnings, list):
+        return []
+
+    normalized = [str(item).strip() for item in raw_warnings if str(item).strip()]
+    return list(dict.fromkeys(normalized))

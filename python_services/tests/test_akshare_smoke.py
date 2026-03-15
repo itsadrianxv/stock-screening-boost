@@ -45,6 +45,33 @@ def test_ths_concept_constituents_adapter_smoke():
     assert "代码" in df.columns
 
 
+def test_stock_zh_a_spot_sina_smoke():
+    df = ak.stock_zh_a_spot()
+
+    assert not df.empty
+    assert "代码" in df.columns
+
+
+def test_fund_etf_spot_ths_matches_em_core_shape_smoke():
+    em_df = ak.fund_etf_spot_em()
+    ths_df = ak.fund_etf_spot_ths()
+
+    assert not em_df.empty
+    assert not ths_df.empty
+    assert any(column in em_df.columns for column in ("代码", "基金代码", "symbol"))
+    assert any(column in ths_df.columns for column in ("代码", "基金代码", "symbol"))
+
+
+def test_stock_board_industry_name_ths_matches_em_core_shape_smoke():
+    em_df = ak.stock_board_industry_name_em()
+    ths_df = ak.stock_board_industry_name_ths()
+
+    assert not em_df.empty
+    assert not ths_df.empty
+    assert any(column in em_df.columns for column in ("板块名称", "名称", "行业"))
+    assert any(column in ths_df.columns for column in ("name", "名称", "板块名称"))
+
+
 def test_stock_news_em_smoke():
     df = ak.stock_news_em(symbol="300308")
 

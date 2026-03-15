@@ -97,6 +97,8 @@ class TestAkShareAdapter:
         assert stocks[0]["netProfit"] == 400.0
         assert stocks[0]["pe"] == 5.5
         assert stocks[0]["pb"] == 0.8
+        assert stocks[0]["dataQuality"] == "complete"
+        assert stocks[0]["warnings"] == []
 
     @patch("app.services.akshare_adapter.ak.stock_individual_info_em")
     @patch("app.services.akshare_adapter.ak.stock_yjbb_em")
@@ -155,12 +157,12 @@ class TestAkShareAdapter:
             {"date": "2024-12-31", "value": 0.25, "isEstimated": False},
         ]
 
-    @patch("app.services.akshare_adapter.ak.stock_financial_benefit_new_ths")
+    @patch("app.services.akshare_adapter._load_ths_frame")
     def test_get_indicator_history_uses_ths_profit_table_for_revenue(
         self,
-        mock_benefit,
+        mock_load_ths_frame,
     ):
-        mock_benefit.return_value = pd.DataFrame(
+        mock_load_ths_frame.return_value = pd.DataFrame(
             {
                 "report_date": ["2022-12-31", "2023-12-31", "2024-12-31"],
                 "metric_name": ["营业总收入", "营业总收入", "营业总收入"],
@@ -175,12 +177,12 @@ class TestAkShareAdapter:
             {"date": "2024-12-31", "value": 1500.0, "isEstimated": False},
         ]
 
-    @patch("app.services.akshare_adapter.ak.stock_financial_debt_new_ths")
+    @patch("app.services.akshare_adapter._load_ths_frame")
     def test_get_indicator_history_computes_debt_ratio_from_ths_balance_sheet(
         self,
-        mock_debt,
+        mock_load_ths_frame,
     ):
-        mock_debt.return_value = pd.DataFrame(
+        mock_load_ths_frame.return_value = pd.DataFrame(
             {
                 "report_date": [
                     "2023-12-31",
@@ -235,13 +237,161 @@ class TestAkShareAdapter:
         assert industries == ["医药", "白酒", "银行"]
         mock_board.assert_called_once()
 
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot")
     @patch("app.services.akshare_adapter.ak.stock_yjbb_em")
     @patch("app.services.akshare_adapter.ak.stock_zh_a_spot_em")
-    def test_get_all_stock_codes_error_handling(self, mock_spot, mock_yjbb):
-        mock_spot.side_effect = Exception("Network error")
+    def test_get_all_stock_codes_error_handling(self, mock_spot, mock_yjbb, mock_sina_spot):
+        mock_spot.side_effect = Exception("network error")
         mock_yjbb.return_value = pd.DataFrame()
+        mock_sina_spot.side_effect = Exception("sina down")
 
         with pytest.raises(Exception) as exc_info:
             AkShareAdapter.get_all_stock_codes()
 
         assert "获取股票代码列表失败" in str(exc_info.value)
+
+    def test_concept_constituents_loader_fetches_all_pages_and_dedupes(self):
+        page_one_html = """
+        <html>
+          <span class="page_info">1 / 2</span>
+          <table>
+            <thead>
+              <tr><th>序号</th><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅(%)</th><th>换手(%)</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>2015</td><td>协鑫能科</td><td>22.28</td><td>4.31</td><td>22.36</td></tr>
+              <tr><td>2</td><td>300324</td><td>旋极信息</td><td>5.60</td><td>5.66</td><td>7.36</td></tr>
+            </tbody>
+          </table>
+        </html>
+        """
+        page_two_html = """
+        <html>
+          <span class="page_info">2 / 2</span>
+          <table>
+            <thead>
+              <tr><th>序号</th><th>代码</th><th>名称</th><th>现价</th><th>涨跌幅(%)</th><th>换手(%)</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>603019</td><td>中科曙光</td><td>41.20</td><td>2.15</td><td>1.80</td></tr>
+              <tr><td>2</td><td>300324</td><td>旋极信息</td><td>5.60</td><td>5.66</td><td>7.36</td></tr>
+            </tbody>
+          </table>
+        </html>
+        """
+
+        with patch(
+            "app.services.akshare_adapter._fetch_ths_concept_detail_html",
+            side_effect=[page_one_html, page_two_html],
+        ) as mock_fetch:
+            df = AkShareAdapter.get_concept_constituents_frame(
+                "算力租赁",
+                concept_code="309068",
+            )
+
+        assert mock_fetch.call_count == 2
+        assert df["代码"].tolist() == ["002015", "300324", "603019"]
+        assert df["最新价"].tolist() == [22.28, 5.6, 41.2]
+        assert "换手率" in df.columns
+
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot")
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot_em")
+    def test_get_a_share_spot_frame_falls_back_to_sina_with_partial_metadata(
+        self,
+        mock_em_spot,
+        mock_sina_spot,
+    ):
+        mock_em_spot.side_effect = Exception("em down")
+        mock_sina_spot.return_value = pd.DataFrame(
+            {
+                "代码": ["sh600519"],
+                "名称": ["贵州茅台"],
+                "最新价": [1678.0],
+                "涨跌额": [10.0],
+                "涨跌幅": [0.6],
+                "买入": [1677.0],
+                "卖出": [1678.0],
+                "昨收": [1668.0],
+                "今开": [1670.0],
+                "最高": [1680.0],
+                "最低": [1665.0],
+                "成交量": [1000.0],
+                "成交额": [500000.0],
+                "时间戳": ["15:00:00"],
+            }
+        )
+
+        frame = AkShareAdapter.get_a_share_spot_frame()
+
+        assert frame.iloc[0]["代码"] == "600519"
+        assert frame.attrs["data_quality"] == "partial"
+        assert "spot_snapshot_sina_fallback" in frame.attrs["warnings"]
+
+    @patch.object(AkShareAdapter, "get_latest_financial_snapshot_frame")
+    @patch.object(AkShareAdapter, "get_stock_code_name_frame")
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot")
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot_em")
+    def test_get_stocks_by_codes_builds_partial_snapshot_when_full_sources_fail(
+        self,
+        mock_em_spot,
+        mock_sina_spot,
+        mock_code_frame,
+        mock_financial_snapshot,
+    ):
+        mock_em_spot.side_effect = Exception("em down")
+        mock_sina_spot.side_effect = Exception("sina down")
+        mock_code_frame.return_value = pd.DataFrame(
+            {
+                "code": ["600519"],
+                "name": ["贵州茅台"],
+            }
+        )
+        mock_financial_snapshot.return_value = pd.DataFrame(
+            {
+                "股票代码": ["600519"],
+                "所处行业": ["白酒"],
+                "净资产收益率": [28.0],
+                "每股收益": [52.1],
+                "营业总收入-营业总收入": [1500.0],
+                "净利润-净利润": [700.0],
+            }
+        )
+
+        stocks = AkShareAdapter.get_stocks_by_codes(["600519"])
+
+        assert len(stocks) == 1
+        assert stocks[0]["code"] == "600519"
+        assert stocks[0]["name"] == "贵州茅台"
+        assert stocks[0]["industry"] == "白酒"
+        assert stocks[0]["pe"] is None
+        assert stocks[0]["pb"] is None
+        assert stocks[0]["roe"] == 28.0
+        assert stocks[0]["dataQuality"] == "partial"
+        assert stocks[0]["warnings"] == ["spot_snapshot_partial"]
+
+    @patch("app.services.akshare_adapter.ak.stock_yjbb_em")
+    @patch("app.services.akshare_adapter.ak.stock_zh_a_spot_em")
+    def test_get_stocks_by_codes_marks_partial_when_financial_snapshot_unavailable(
+        self,
+        mock_spot,
+        mock_yjbb,
+    ):
+        mock_spot.return_value = pd.DataFrame(
+            {
+                "代码": ["600519"],
+                "名称": ["贵州茅台"],
+                "市盈率-动态": [35.5],
+                "市净率": [10.2],
+                "总市值": [21000.0],
+                "流通市值": [20500.0],
+                "换手率": [0.9],
+                "涨跌幅": [1.5],
+            }
+        )
+        mock_yjbb.side_effect = Exception("financial down")
+
+        stocks = AkShareAdapter.get_stocks_by_codes(["600519"])
+
+        assert len(stocks) == 1
+        assert stocks[0]["dataQuality"] == "partial"
+        assert "financial_snapshot_unavailable" in stocks[0]["warnings"]
