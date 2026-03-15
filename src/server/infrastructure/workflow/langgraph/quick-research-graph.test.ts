@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
 import type { QuickResearchGraphState } from "~/server/domain/workflow/types";
 import {
+  QuickResearchContractLangGraph,
   QuickResearchLangGraph,
   QuickResearchODRLangGraph,
 } from "~/server/infrastructure/workflow/langgraph/quick-research-graph";
@@ -68,6 +69,17 @@ function createLegacyServiceStub() {
 
 function createODRServiceStub() {
   return {
+    buildTaskContract: vi.fn(async () => ({
+      requiredSources: ["news", "financial"],
+      requiredSections: [
+        "research_spec",
+        "trend_analysis",
+        "candidate_screening",
+      ],
+      citationRequired: false,
+      analysisDepth: "standard",
+      deadlineMinutes: 30,
+    })),
     clarifyScope: vi.fn(async () => ({
       needClarification: false,
       question: "",
@@ -202,13 +214,30 @@ function createODRServiceStub() {
         followupUnits: [],
         iteration: 0,
       },
+      reflection: {
+        status: "pass",
+        summary: "ok",
+        contractScore: 88,
+        citationCoverage: 0,
+        firstPartyRatio: 0,
+        answeredQuestionCoverage: 1,
+        missingRequirements: [],
+        unansweredQuestions: [],
+        qualityFlags: [],
+        suggestedFixes: [],
+      },
+      contractScore: 88,
+      qualityFlags: [],
+      missingRequirements: [],
     })),
   };
 }
 
 describe("quick-research-graph", () => {
   it("keeps legacy quick research graph on template v1", async () => {
-    const graph = new QuickResearchLangGraph(createLegacyServiceStub() as never);
+    const graph = new QuickResearchLangGraph(
+      createLegacyServiceStub() as never,
+    );
     const finalState = (await graph.execute({
       initialState: graph.buildInitialState({
         runId: "run-1",
@@ -224,7 +253,9 @@ describe("quick-research-graph", () => {
   });
 
   it("runs the ODR quick graph on template v2", async () => {
-    const graph = new QuickResearchODRLangGraph(createODRServiceStub() as never);
+    const graph = new QuickResearchODRLangGraph(
+      createODRServiceStub() as never,
+    );
     const finalState = (await graph.execute({
       initialState: graph.buildInitialState({
         runId: "run-2",
@@ -266,5 +297,28 @@ describe("quick-research-graph", () => {
         }),
       }),
     ).rejects.toBeInstanceOf(WorkflowPauseError);
+  });
+
+  it("runs the contract quick graph on template v3", async () => {
+    const graph = new QuickResearchContractLangGraph(
+      createODRServiceStub() as never,
+    );
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-4",
+        userId: "user-1",
+        query: "AI infra",
+        input: { query: "AI infra" },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as QuickResearchGraphState;
+
+    expect(graph.templateVersion).toBe(3);
+    expect(finalState.taskContract?.deadlineMinutes).toBe(30);
+    expect(finalState.contractScore).toBe(88);
+    expect(finalState.reflection?.status).toBe("pass");
   });
 });

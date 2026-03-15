@@ -94,6 +94,19 @@ async function assertTimingPresetExists(params: {
 }
 
 const startQuickResearchInput = z.object({
+  taskContract: z
+    .object({
+      requiredSources: z.array(z.string().min(1)).max(8),
+      requiredSections: z.array(z.string().min(1)).max(12),
+      citationRequired: z.boolean(),
+      analysisDepth: z.enum(["standard", "deep"]),
+      deadlineMinutes: z
+        .number()
+        .int()
+        .min(5)
+        .max(24 * 60),
+    })
+    .optional(),
   researchPreferences: z
     .object({
       researchGoal: z.string().trim().min(1).optional(),
@@ -110,6 +123,19 @@ const startQuickResearchInput = z.object({
 });
 
 const startCompanyResearchInput = z.object({
+  taskContract: z
+    .object({
+      requiredSources: z.array(z.string().min(1)).max(8),
+      requiredSections: z.array(z.string().min(1)).max(12),
+      citationRequired: z.boolean(),
+      analysisDepth: z.enum(["standard", "deep"]),
+      deadlineMinutes: z
+        .number()
+        .int()
+        .min(5)
+        .max(24 * 60),
+    })
+    .optional(),
   researchPreferences: z
     .object({
       researchGoal: z.string().trim().min(1).optional(),
@@ -233,6 +259,7 @@ export const workflowRouter = createTRPCRouter({
         return await commandService.startQuickResearch({
           userId: ctx.session.user.id,
           query: input.query,
+          taskContract: input.taskContract,
           researchPreferences: input.researchPreferences,
           templateCode: input.templateCode,
           templateVersion: input.templateVersion,
@@ -258,6 +285,7 @@ export const workflowRouter = createTRPCRouter({
           focusConcepts: input.focusConcepts,
           keyQuestion: input.keyQuestion,
           supplementalUrls: input.supplementalUrls,
+          taskContract: input.taskContract,
           researchPreferences: input.researchPreferences,
           templateVersion: input.templateVersion,
           idempotencyKey: input.idempotencyKey,

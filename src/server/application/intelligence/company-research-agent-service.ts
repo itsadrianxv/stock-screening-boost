@@ -5,6 +5,14 @@ import type {
   CompanyResearchPackReferenceItem,
 } from "~/server/domain/intelligence/types";
 import type {
+  CompressedFindings,
+  ResearchGapAnalysis,
+  ResearchNote,
+  ResearchReplanRecord,
+  ResearchRuntimeConfig,
+  ResearchUnitPlan,
+} from "~/server/domain/workflow/research";
+import type {
   CompanyConceptInsight,
   CompanyEvidenceNote,
   CompanyQuestionFinding,
@@ -22,13 +30,6 @@ import type {
   CompanyResearchSourceType,
   CompanyResearchVerdict,
 } from "~/server/domain/workflow/types";
-import type {
-  CompressedFindings,
-  ResearchGapAnalysis,
-  ResearchNote,
-  ResearchRuntimeConfig,
-  ResearchUnitPlan,
-} from "~/server/domain/workflow/research";
 import type { DeepSeekClient } from "~/server/infrastructure/intelligence/deepseek-client";
 import type {
   FirecrawlClient,
@@ -1599,6 +1600,7 @@ export class CompanyResearchAgentService {
     researchNotes?: ResearchNote[];
     compressedFindings?: CompressedFindings;
     gapAnalysis?: ResearchGapAnalysis;
+    replanRecords?: ResearchReplanRecord[];
     runtimeConfigSummary?: Pick<
       ResearchRuntimeConfig,
       | "allowClarification"
@@ -1635,6 +1637,7 @@ export class CompanyResearchAgentService {
       researchNotes: params.researchNotes ?? [],
       compressedFindings: params.compressedFindings,
       gapAnalysis: params.gapAnalysis,
+      replanRecords: params.replanRecords,
       runtimeConfigSummary: params.runtimeConfigSummary,
       generatedAt: new Date().toISOString(),
     };

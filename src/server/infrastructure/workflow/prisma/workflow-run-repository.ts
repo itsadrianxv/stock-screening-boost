@@ -11,9 +11,11 @@ import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
   COMPANY_RESEARCH_V1_NODE_KEYS,
   COMPANY_RESEARCH_V3_NODE_KEYS,
+  COMPANY_RESEARCH_V4_NODE_KEYS,
   QUICK_RESEARCH_NODE_KEYS,
   QUICK_RESEARCH_TEMPLATE_CODE,
   QUICK_RESEARCH_V2_NODE_KEYS,
+  QUICK_RESEARCH_V3_NODE_KEYS,
   SCREENING_INSIGHT_PIPELINE_NODE_KEYS,
   SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE,
   SCREENING_TO_TIMING_NODE_KEYS,
@@ -107,6 +109,16 @@ export class PrismaWorkflowRunRepository {
             },
           },
         },
+        taskContract: {
+          type: "object",
+          properties: {
+            requiredSources: { type: "array", items: { type: "string" } },
+            requiredSections: { type: "array", items: { type: "string" } },
+            citationRequired: { type: "boolean" },
+            analysisDepth: { type: "string" },
+            deadlineMinutes: { type: "integer" },
+          },
+        },
       },
     } as const;
 
@@ -131,7 +143,7 @@ export class PrismaWorkflowRunRepository {
       },
     });
 
-    return this.prisma.workflowTemplate.upsert({
+    await this.prisma.workflowTemplate.upsert({
       where: {
         code_version: {
           code: QUICK_RESEARCH_TEMPLATE_CODE,
@@ -143,10 +155,31 @@ export class PrismaWorkflowRunRepository {
         version: 2,
         graphConfig: buildResearchGraphConfig(QUICK_RESEARCH_V2_NODE_KEYS),
         inputSchema,
-        isActive: true,
+        isActive: false,
       },
       update: {
         graphConfig: buildResearchGraphConfig(QUICK_RESEARCH_V2_NODE_KEYS),
+        inputSchema,
+        isActive: false,
+      },
+    });
+
+    return this.prisma.workflowTemplate.upsert({
+      where: {
+        code_version: {
+          code: QUICK_RESEARCH_TEMPLATE_CODE,
+          version: 3,
+        },
+      },
+      create: {
+        code: QUICK_RESEARCH_TEMPLATE_CODE,
+        version: 3,
+        graphConfig: buildResearchGraphConfig(QUICK_RESEARCH_V3_NODE_KEYS),
+        inputSchema,
+        isActive: true,
+      },
+      update: {
+        graphConfig: buildResearchGraphConfig(QUICK_RESEARCH_V3_NODE_KEYS),
         inputSchema,
         isActive: true,
       },
@@ -203,6 +236,16 @@ export class PrismaWorkflowRunRepository {
             },
           },
         },
+        taskContract: {
+          type: "object",
+          properties: {
+            requiredSources: { type: "array", items: { type: "string" } },
+            requiredSections: { type: "array", items: { type: "string" } },
+            citationRequired: { type: "boolean" },
+            analysisDepth: { type: "string" },
+            deadlineMinutes: { type: "integer" },
+          },
+        },
       },
     } as const;
 
@@ -248,7 +291,7 @@ export class PrismaWorkflowRunRepository {
       },
     });
 
-    return this.prisma.workflowTemplate.upsert({
+    await this.prisma.workflowTemplate.upsert({
       where: {
         code_version: {
           code: COMPANY_RESEARCH_TEMPLATE_CODE,
@@ -260,10 +303,31 @@ export class PrismaWorkflowRunRepository {
         version: 3,
         graphConfig: buildResearchGraphConfig(COMPANY_RESEARCH_V3_NODE_KEYS),
         inputSchema,
-        isActive: true,
+        isActive: false,
       },
       update: {
         graphConfig: buildResearchGraphConfig(COMPANY_RESEARCH_V3_NODE_KEYS),
+        inputSchema,
+        isActive: false,
+      },
+    });
+
+    return this.prisma.workflowTemplate.upsert({
+      where: {
+        code_version: {
+          code: COMPANY_RESEARCH_TEMPLATE_CODE,
+          version: 4,
+        },
+      },
+      create: {
+        code: COMPANY_RESEARCH_TEMPLATE_CODE,
+        version: 4,
+        graphConfig: buildResearchGraphConfig(COMPANY_RESEARCH_V4_NODE_KEYS),
+        inputSchema,
+        isActive: true,
+      },
+      update: {
+        graphConfig: buildResearchGraphConfig(COMPANY_RESEARCH_V4_NODE_KEYS),
         inputSchema,
         isActive: true,
       },

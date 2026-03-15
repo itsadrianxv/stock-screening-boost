@@ -204,6 +204,9 @@ function buildQuickResearchDigest(
       3,
     ),
     metrics: [
+      ...(typeof result.contractScore === "number"
+        ? [{ label: "合同得分", value: formatNumber(result.contractScore) }]
+        : []),
       ...buildConfidenceMetrics(result.confidenceAnalysis),
       { label: "赛道热度", value: formatPercent(result.heatScore) },
       { label: "候选标的", value: String(result.candidates.length) },
@@ -253,6 +256,9 @@ function buildCompanyResearchDigest(
     ),
     nextActions: uniqueList(result.verdict.nextChecks, 4),
     metrics: [
+      ...(typeof result.contractScore === "number"
+        ? [{ label: "合同得分", value: formatNumber(result.contractScore) }]
+        : []),
       ...buildConfidenceMetrics(result.confidenceAnalysis),
       { label: "证据条数", value: String(result.evidence.length) },
       { label: "引用数量", value: String(referenceCount) },

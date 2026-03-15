@@ -31,7 +31,10 @@ import type {
   ResearchGapAnalysis,
   ResearchNote,
   ResearchPreferenceInput,
+  ResearchReflectionResult,
+  ResearchReplanRecord,
   ResearchRuntimeConfig,
+  ResearchTaskContract,
   ResearchUnitPlan,
   ResearchUnitRun,
 } from "~/server/domain/workflow/research";
@@ -70,6 +73,16 @@ export const QUICK_RESEARCH_V2_NODE_KEYS = [
   "agent6_finalize_report",
 ] as const;
 
+export const QUICK_RESEARCH_V3_NODE_KEYS = [
+  "agent0_clarify_scope",
+  "agent1_extract_research_spec",
+  "agent2_trend_analysis",
+  "agent3_candidate_screening",
+  "agent4_credibility_and_competition",
+  "agent5_report_synthesis",
+  "agent6_reflection",
+] as const;
+
 export const COMPANY_RESEARCH_V1_NODE_KEYS = [
   "agent1_company_briefing",
   "agent2_concept_mapping",
@@ -102,6 +115,23 @@ export const COMPANY_RESEARCH_V3_NODE_KEYS = [
   "agent6_compress_findings",
   "agent7_reference_enrichment",
   "agent8_investment_synthesis",
+] as const;
+
+export const COMPANY_RESEARCH_V4_NODE_KEYS = [
+  "agent0_clarify_scope",
+  "agent1_write_research_brief",
+  "agent2_plan_research_units",
+  "agent3_source_grounding",
+  "collector_official_sources",
+  "collector_financial_sources",
+  "collector_news_sources",
+  "collector_industry_sources",
+  "agent4_synthesis",
+  "agent5_gap_analysis_and_replan",
+  "agent6_compress_findings",
+  "agent7_reference_enrichment",
+  "agent8_finalize_report",
+  "agent9_reflection",
 ] as const;
 
 export const SCREENING_INSIGHT_PIPELINE_NODE_KEYS = [
@@ -163,9 +193,12 @@ export type QuickResearchNodeKey = (typeof QUICK_RESEARCH_NODE_KEYS)[number];
 export type CompanyResearchNodeKey =
   | (typeof COMPANY_RESEARCH_V1_NODE_KEYS)[number]
   | (typeof COMPANY_RESEARCH_NODE_KEYS)[number]
-  | (typeof COMPANY_RESEARCH_V3_NODE_KEYS)[number];
+  | (typeof COMPANY_RESEARCH_V3_NODE_KEYS)[number]
+  | (typeof COMPANY_RESEARCH_V4_NODE_KEYS)[number];
 export type QuickResearchV2NodeKey =
   (typeof QUICK_RESEARCH_V2_NODE_KEYS)[number];
+export type QuickResearchV3NodeKey =
+  (typeof QUICK_RESEARCH_V3_NODE_KEYS)[number];
 export type ScreeningInsightPipelineNodeKey =
   (typeof SCREENING_INSIGHT_PIPELINE_NODE_KEYS)[number];
 export type TimingSignalPipelineNodeKey =
@@ -181,6 +214,7 @@ export type TimingReviewLoopNodeKey =
 export type WorkflowNodeKey =
   | QuickResearchNodeKey
   | QuickResearchV2NodeKey
+  | QuickResearchV3NodeKey
   | CompanyResearchNodeKey
   | ScreeningInsightPipelineNodeKey
   | TimingSignalPipelineNodeKey
@@ -222,6 +256,7 @@ export type WorkflowGraphState = Record<string, unknown> & {
   resumeFromNodeKey?: WorkflowNodeKey;
   errors: string[];
   clarificationRequest?: ResearchClarificationRequest;
+  taskContract?: ResearchTaskContract;
   researchRuntimeConfig?: ResearchRuntimeConfig;
   researchBrief?: ResearchBriefV2;
   researchUnits?: ResearchUnitPlan[];
@@ -229,11 +264,17 @@ export type WorkflowGraphState = Record<string, unknown> & {
   researchNotes?: ResearchNote[];
   compressedFindings?: CompressedFindings;
   gapAnalysis?: ResearchGapAnalysis;
+  replanRecords?: ResearchReplanRecord[];
+  reflection?: ResearchReflectionResult;
+  contractScore?: number;
+  qualityFlags?: string[];
+  missingRequirements?: string[];
 };
 
 export type QuickResearchInput = {
   query: string;
   researchPreferences?: ResearchPreferenceInput;
+  taskContract?: ResearchTaskContract;
 };
 
 export type QuickResearchCandidate = {
@@ -271,6 +312,11 @@ export type QuickResearchResultDto = {
   researchNotes?: ResearchNote[];
   compressedFindings?: CompressedFindings;
   gapAnalysis?: ResearchGapAnalysis;
+  replanRecords?: ResearchReplanRecord[];
+  reflection?: ResearchReflectionResult;
+  contractScore?: number;
+  qualityFlags?: string[];
+  missingRequirements?: string[];
   generatedAt: string;
 };
 
@@ -285,7 +331,10 @@ export type WorkflowStreamEvent = {
 };
 
 export type QuickResearchGraphState = WorkflowGraphState & {
-  currentNodeKey?: QuickResearchNodeKey | QuickResearchV2NodeKey;
+  currentNodeKey?:
+    | QuickResearchNodeKey
+    | QuickResearchV2NodeKey
+    | QuickResearchV3NodeKey;
   researchInput?: QuickResearchInput;
   intent?: string;
   industryOverview?: string;
@@ -309,6 +358,7 @@ export type CompanyResearchInput = {
   keyQuestion?: string;
   supplementalUrls?: string[];
   researchPreferences?: ResearchPreferenceInput;
+  taskContract?: ResearchTaskContract;
 };
 
 export type CompanyResearchBrief = {
@@ -453,6 +503,11 @@ export type CompanyResearchResultDto = {
   researchNotes?: ResearchNote[];
   compressedFindings?: CompressedFindings;
   gapAnalysis?: ResearchGapAnalysis;
+  replanRecords?: ResearchReplanRecord[];
+  reflection?: ResearchReflectionResult;
+  contractScore?: number;
+  qualityFlags?: string[];
+  missingRequirements?: string[];
   runtimeConfigSummary?: Pick<
     ResearchRuntimeConfig,
     | "allowClarification"

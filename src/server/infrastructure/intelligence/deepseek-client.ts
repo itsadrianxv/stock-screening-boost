@@ -1,3 +1,4 @@
+import type { ZodError, ZodType } from "zod";
 import { env } from "~/env";
 import {
   WORKFLOW_ERROR_CODES,
@@ -74,6 +75,16 @@ function isTokenLimitError(message: string) {
     normalized.includes("too long") ||
     normalized.includes("token")
   );
+}
+
+function formatSchemaIssues(error: ZodError) {
+  return error.issues
+    .slice(0, 6)
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+      return `${path}: ${issue.message}`;
+    })
+    .join("; ");
 }
 
 export class DeepSeekClient {
@@ -154,7 +165,11 @@ export class DeepSeekClient {
           .filter((message) => message.role !== "system")
           .slice(-2);
 
-        nextMessages = [...systemMessages, ...prioritizedMessages, ...tailMessages]
+        nextMessages = [
+          ...systemMessages,
+          ...prioritizedMessages,
+          ...tailMessages,
+        ]
           .filter(
             (message, index, array) =>
               array.findIndex(
@@ -328,5 +343,67 @@ export class DeepSeekClient {
     }
 
     return fallbackValue;
+  }
+
+  async completeContract<T>(
+    messages: DeepSeekMessage[],
+    fallbackValue: T,
+    schema: ZodType<T>,
+    options?: DeepSeekRequestOptions,
+  ): Promise<T> {
+    const maxStructuredOutputRetries = options?.maxStructuredOutputRetries ?? 0;
+    let currentAttempt = 0;
+    let currentMessages = [...messages];
+    const normalizedFallback = schema.safeParse(fallbackValue);
+    const safeFallback = normalizedFallback.success
+      ? normalizedFallback.data
+      : fallbackValue;
+
+    while (currentAttempt <= maxStructuredOutputRetries) {
+      const raw = await this.complete(
+        currentMessages,
+        JSON.stringify(safeFallback),
+        options,
+      );
+
+      try {
+        const parsedJson = JSON.parse(extractJsonCandidate(raw)) as unknown;
+        const validated = schema.safeParse(parsedJson);
+        if (validated.success) {
+          return validated.data;
+        }
+
+        if (currentAttempt >= maxStructuredOutputRetries) {
+          return safeFallback;
+        }
+
+        currentAttempt += 1;
+        currentMessages = [
+          ...messages,
+          {
+            role: "user",
+            content: `Previous JSON did not satisfy the contract. Fix these issues and return JSON only: ${formatSchemaIssues(
+              validated.error,
+            )}`,
+          },
+        ];
+      } catch {
+        if (currentAttempt >= maxStructuredOutputRetries) {
+          return safeFallback;
+        }
+
+        currentAttempt += 1;
+        currentMessages = [
+          ...messages,
+          {
+            role: "user",
+            content:
+              "Previous output was not valid JSON. Return valid JSON only and preserve the requested schema.",
+          },
+        ];
+      }
+    }
+
+    return safeFallback;
   }
 }

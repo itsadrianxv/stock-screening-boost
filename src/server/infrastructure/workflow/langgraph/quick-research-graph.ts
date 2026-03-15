@@ -6,11 +6,13 @@ import type {
 import type { QuickResearchWorkflowService } from "~/server/application/intelligence/quick-research-workflow-service";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
 import type { ResearchPreferenceInput } from "~/server/domain/workflow/research";
+import { parseResearchTaskContract } from "~/server/domain/workflow/research";
 import type {
   QuickResearchGraphState,
   QuickResearchInput,
   QuickResearchNodeKey,
   QuickResearchV2NodeKey,
+  QuickResearchV3NodeKey,
   WorkflowGraphState,
   WorkflowNodeKey,
 } from "~/server/domain/workflow/types";
@@ -18,6 +20,7 @@ import {
   QUICK_RESEARCH_NODE_KEYS,
   QUICK_RESEARCH_TEMPLATE_CODE,
   QUICK_RESEARCH_V2_NODE_KEYS,
+  QUICK_RESEARCH_V3_NODE_KEYS,
   resolveResearchRuntimeConfig,
 } from "~/server/domain/workflow/types";
 import type { WorkflowGraphBuildInitialStateParams } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
@@ -37,16 +40,26 @@ const WorkflowState = Annotation.Root({
   currentNodeKey: Annotation<WorkflowNodeKey | undefined>,
   researchInput: Annotation<QuickResearchInput | undefined>,
   intent: Annotation<string | undefined>,
-  clarificationRequest: Annotation<QuickResearchGraphState["clarificationRequest"]>,
-  researchRuntimeConfig:
-    Annotation<QuickResearchGraphState["researchRuntimeConfig"]>,
+  clarificationRequest: Annotation<
+    QuickResearchGraphState["clarificationRequest"]
+  >,
+  taskContract: Annotation<QuickResearchGraphState["taskContract"]>,
+  researchRuntimeConfig: Annotation<
+    QuickResearchGraphState["researchRuntimeConfig"]
+  >,
   researchBrief: Annotation<QuickResearchGraphState["researchBrief"]>,
   researchUnits: Annotation<QuickResearchGraphState["researchUnits"]>,
   researchUnitRuns: Annotation<QuickResearchGraphState["researchUnitRuns"]>,
   researchNotes: Annotation<QuickResearchGraphState["researchNotes"]>,
-  compressedFindings:
-    Annotation<QuickResearchGraphState["compressedFindings"]>,
+  compressedFindings: Annotation<QuickResearchGraphState["compressedFindings"]>,
   gapAnalysis: Annotation<QuickResearchGraphState["gapAnalysis"]>,
+  replanRecords: Annotation<QuickResearchGraphState["replanRecords"]>,
+  reflection: Annotation<QuickResearchGraphState["reflection"]>,
+  contractScore: Annotation<QuickResearchGraphState["contractScore"]>,
+  qualityFlags: Annotation<QuickResearchGraphState["qualityFlags"]>,
+  missingRequirements: Annotation<
+    QuickResearchGraphState["missingRequirements"]
+  >,
   industryOverview: Annotation<string | undefined>,
   news: Annotation<QuickResearchGraphState["news"]>,
   heatAnalysis: Annotation<QuickResearchGraphState["heatAnalysis"]>,
@@ -106,11 +119,22 @@ function toResearchInput(input: Record<string, unknown>, query: string) {
         ? input.query.trim()
         : query,
     researchPreferences: toResearchPreferences(input),
+    taskContract: parseResearchTaskContract(input.taskContract),
   } satisfies QuickResearchInput;
 }
 
+function selectUnitsByCapabilities(
+  units: QuickResearchGraphState["researchUnits"],
+  capabilities: string[],
+) {
+  return (units ?? []).filter((unit) => capabilities.includes(unit.capability));
+}
+
 abstract class QuickResearchLangGraphBase<
-  NodeKey extends QuickResearchNodeKey | QuickResearchV2NodeKey,
+  NodeKey extends
+    | QuickResearchNodeKey
+    | QuickResearchV2NodeKey
+    | QuickResearchV3NodeKey,
 > extends BaseWorkflowLangGraph<QuickResearchGraphState, NodeKey> {
   readonly templateCode = QUICK_RESEARCH_TEMPLATE_CODE;
 
@@ -126,6 +150,7 @@ abstract class QuickResearchLangGraphBase<
       resumeFromNodeKey: undefined,
       currentNodeKey: undefined,
       researchInput,
+      taskContract: researchInput.taskContract,
       researchRuntimeConfig: resolveResearchRuntimeConfig(
         params.templateGraphConfig,
       ),
@@ -198,7 +223,10 @@ export class QuickResearchLangGraph extends QuickResearchLangGraphBase<QuickRese
       agent4_credibility_batch: async (state) => {
         const candidates = state.candidates ?? [];
         const result: CandidateCredibilityResult =
-          await intelligenceService.evaluateCredibility(state.query, candidates);
+          await intelligenceService.evaluateCredibility(
+            state.query,
+            candidates,
+          );
 
         return {
           credibility: result.credibility,
@@ -534,6 +562,275 @@ export class QuickResearchODRLangGraph extends QuickResearchLangGraphBase<QuickR
         topPickCount: quickState.finalReport?.topPicks.length ?? 0,
         confidenceStatus:
           quickState.finalReport?.confidenceAnalysis?.status ?? "UNAVAILABLE",
+      };
+    }
+
+    return {};
+  }
+}
+
+export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<QuickResearchV3NodeKey> {
+  readonly templateVersion = 3;
+
+  constructor(workflowService: QuickResearchWorkflowService) {
+    const nodeExecutors: Record<QuickResearchV3NodeKey, LegacyNodeExecutor> = {
+      agent0_clarify_scope: async (state) => {
+        const runtimeConfig = state.researchRuntimeConfig;
+        if (!runtimeConfig || !state.researchInput) {
+          return {};
+        }
+
+        const clarification = await workflowService.clarifyScope(
+          state.researchInput,
+          runtimeConfig,
+        );
+
+        if (clarification.needClarification) {
+          throw new WorkflowPauseError(
+            clarification.question,
+            "clarification_required",
+            {
+              clarificationRequest: clarification,
+              currentNodeKey: "agent0_clarify_scope",
+            },
+          );
+        }
+
+        return {
+          clarificationRequest: clarification,
+          intent: state.query,
+        };
+      },
+      agent1_extract_research_spec: async (state) => {
+        if (!state.researchRuntimeConfig || !state.researchInput) {
+          return {};
+        }
+
+        const taskContract = await workflowService.buildTaskContract(
+          state.researchInput,
+          state.researchRuntimeConfig,
+        );
+        const researchBrief = await workflowService.buildBrief(
+          state.researchInput,
+          state.researchRuntimeConfig,
+          state.clarificationRequest?.verification,
+        );
+        const planningState = {
+          ...state,
+          taskContract,
+          researchBrief,
+        } as QuickResearchGraphState;
+        const researchUnits = await workflowService.planUnits(
+          planningState,
+          state.researchRuntimeConfig,
+        );
+
+        return {
+          taskContract,
+          researchBrief,
+          researchUnits,
+          intent: researchBrief.researchGoal,
+        };
+      },
+      agent2_trend_analysis: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const execution = await workflowService.executeUnits({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+          units: selectUnitsByCapabilities(state.researchUnits, [
+            "theme_overview",
+            "market_heat",
+          ]),
+        });
+
+        return {
+          ...execution,
+          researchUnits: state.researchUnits,
+        };
+      },
+      agent3_candidate_screening: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const execution = await workflowService.executeUnits({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+          units: selectUnitsByCapabilities(state.researchUnits, [
+            "candidate_screening",
+          ]),
+        });
+
+        return {
+          ...execution,
+          researchUnits: state.researchUnits,
+        };
+      },
+      agent4_credibility_and_competition: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const execution = await workflowService.executeUnits({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+          units: selectUnitsByCapabilities(state.researchUnits, [
+            "credibility_lookup",
+            "competition_synthesis",
+          ]),
+        });
+        const gapAnalysis = await workflowService.runGapAnalysis({
+          state: {
+            ...state,
+            ...execution,
+            researchUnits: state.researchUnits,
+          } as QuickResearchGraphState,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+
+        return {
+          ...execution,
+          ...gapAnalysis.snapshot,
+          gapAnalysis: gapAnalysis.gapAnalysis,
+          researchNotes: gapAnalysis.researchNotes,
+          researchUnitRuns: gapAnalysis.researchUnitRuns,
+          researchUnits: gapAnalysis.researchUnits,
+          replanRecords: gapAnalysis.replanRecords,
+        };
+      },
+      agent5_report_synthesis: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const compressedFindings = await workflowService.compressFindings(
+          state,
+          state.researchRuntimeConfig,
+          state.gapAnalysis,
+        );
+        const finalReport = await workflowService.finalizeReport({
+          state: {
+            ...state,
+            compressedFindings,
+          },
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+
+        return {
+          compressedFindings,
+          finalReport,
+        };
+      },
+      agent6_reflection: async (state) => {
+        return {
+          reflection: state.finalReport?.reflection,
+          contractScore: state.finalReport?.contractScore,
+          qualityFlags: state.finalReport?.qualityFlags,
+          missingRequirements: state.finalReport?.missingRequirements,
+        };
+      },
+    };
+
+    const graphBuilder = new StateGraph(WorkflowState) as StateGraph<
+      unknown,
+      QuickResearchGraphState,
+      Partial<QuickResearchGraphState>,
+      string
+    >;
+    addWorkflowNodes(graphBuilder, QUICK_RESEARCH_V3_NODE_KEYS, nodeExecutors);
+    addResumeStart(graphBuilder, QUICK_RESEARCH_V3_NODE_KEYS);
+    addSequentialEdges(graphBuilder, QUICK_RESEARCH_V3_NODE_KEYS);
+
+    super({
+      graph: graphBuilder.compile(),
+      nodeOrder: QUICK_RESEARCH_V3_NODE_KEYS,
+    });
+  }
+
+  getNodeOutput(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
+    const quickState = state as QuickResearchGraphState;
+
+    if (nodeKey === "agent1_extract_research_spec") {
+      return {
+        taskContract: quickState.taskContract,
+        researchBrief: quickState.researchBrief,
+        plannedUnitCount: quickState.researchUnits?.length ?? 0,
+      };
+    }
+
+    if (nodeKey === "agent2_trend_analysis") {
+      return {
+        industryOverview: quickState.industryOverview,
+        heatAnalysis: quickState.heatAnalysis,
+      };
+    }
+
+    if (nodeKey === "agent3_candidate_screening") {
+      return {
+        candidateCount: quickState.candidates?.length ?? 0,
+      };
+    }
+
+    if (nodeKey === "agent4_credibility_and_competition") {
+      return {
+        credibilityCount: quickState.credibility?.length ?? 0,
+        gapAnalysis: quickState.gapAnalysis,
+        replanCount: quickState.replanRecords?.length ?? 0,
+      };
+    }
+
+    if (nodeKey === "agent5_report_synthesis") {
+      return {
+        compressedFindings: quickState.compressedFindings,
+        finalReport: quickState.finalReport,
+      };
+    }
+
+    return {
+      reflection: quickState.reflection,
+      contractScore: quickState.contractScore,
+      qualityFlags: quickState.qualityFlags,
+      missingRequirements: quickState.missingRequirements,
+    };
+  }
+
+  getNodeEventPayload(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
+    const quickState = state as QuickResearchGraphState;
+
+    if (nodeKey === "agent1_extract_research_spec") {
+      return {
+        plannedUnitCount: quickState.researchUnits?.length ?? 0,
+        analysisDepth: quickState.taskContract?.analysisDepth ?? "standard",
+      };
+    }
+
+    if (nodeKey === "agent2_trend_analysis") {
+      return {
+        heatScore: quickState.heatAnalysis?.heatScore ?? null,
+      };
+    }
+
+    if (nodeKey === "agent3_candidate_screening") {
+      return {
+        candidateCount: quickState.candidates?.length ?? 0,
+      };
+    }
+
+    if (nodeKey === "agent4_credibility_and_competition") {
+      return {
+        credibilityCount: quickState.credibility?.length ?? 0,
+        requiresFollowup: quickState.gapAnalysis?.requiresFollowup ?? false,
+        replanCount: quickState.replanRecords?.length ?? 0,
+      };
+    }
+
+    if (nodeKey === "agent6_reflection") {
+      return {
+        contractScore: quickState.contractScore ?? null,
+        qualityFlags: quickState.qualityFlags ?? [],
       };
     }
 

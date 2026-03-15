@@ -2,6 +2,7 @@ import { Annotation, END, StateGraph } from "@langchain/langgraph";
 import type { CompanyResearchAgentService } from "~/server/application/intelligence/company-research-agent-service";
 import type { CompanyResearchWorkflowService } from "~/server/application/intelligence/company-research-workflow-service";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
+import { parseResearchTaskContract } from "~/server/domain/workflow/research";
 import type {
   CompanyResearchCollectionSummary,
   CompanyResearchGraphState,
@@ -15,6 +16,7 @@ import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
   COMPANY_RESEARCH_V1_NODE_KEYS,
   COMPANY_RESEARCH_V3_NODE_KEYS,
+  COMPANY_RESEARCH_V4_NODE_KEYS,
   resolveResearchRuntimeConfig,
 } from "~/server/domain/workflow/types";
 import type { WorkflowGraphBuildInitialStateParams } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
@@ -29,6 +31,7 @@ import {
 type LegacyNodeKey = (typeof COMPANY_RESEARCH_V1_NODE_KEYS)[number];
 type V2NodeKey = (typeof COMPANY_RESEARCH_NODE_KEYS)[number];
 type V3NodeKey = (typeof COMPANY_RESEARCH_V3_NODE_KEYS)[number];
+type V4NodeKey = (typeof COMPANY_RESEARCH_V4_NODE_KEYS)[number];
 type CompanyGraphBuilder = StateGraph<
   unknown,
   CompanyResearchGraphState,
@@ -57,6 +60,46 @@ function mergeGroundedSources(
   ];
 }
 
+function mergeResearchUnits(
+  left?: CompanyResearchGraphState["researchUnits"],
+  right?: CompanyResearchGraphState["researchUnits"],
+) {
+  return [
+    ...new Map(
+      [...(left ?? []), ...(right ?? [])].map(
+        (item) => [item.id, item] as const,
+      ),
+    ).values(),
+  ];
+}
+
+function mergeResearchNotes(
+  left?: CompanyResearchGraphState["researchNotes"],
+  right?: CompanyResearchGraphState["researchNotes"],
+) {
+  return [
+    ...new Map(
+      [...(left ?? []), ...(right ?? [])].map(
+        (item) => [item.noteId, item] as const,
+      ),
+    ).values(),
+  ];
+}
+
+function mergeResearchUnitRuns(
+  left?: CompanyResearchGraphState["researchUnitRuns"],
+  right?: CompanyResearchGraphState["researchUnitRuns"],
+) {
+  return [
+    ...new Map(
+      [...(left ?? []), ...(right ?? [])].map((item) => [
+        `${item.unitId}:${item.attempt}`,
+        item,
+      ]),
+    ).values(),
+  ];
+}
+
 const WorkflowState = Annotation.Root({
   runId: Annotation<string>,
   userId: Annotation<string>,
@@ -65,16 +108,37 @@ const WorkflowState = Annotation.Root({
   resumeFromNodeKey: Annotation<WorkflowNodeKey | undefined>,
   currentNodeKey: Annotation<CompanyResearchNodeKey | undefined>,
   researchInput: Annotation<CompanyResearchInput>,
-  clarificationRequest: Annotation<CompanyResearchGraphState["clarificationRequest"]>,
-  researchRuntimeConfig:
-    Annotation<CompanyResearchGraphState["researchRuntimeConfig"]>,
+  clarificationRequest: Annotation<
+    CompanyResearchGraphState["clarificationRequest"]
+  >,
+  taskContract: Annotation<CompanyResearchGraphState["taskContract"]>,
+  researchRuntimeConfig: Annotation<
+    CompanyResearchGraphState["researchRuntimeConfig"]
+  >,
   researchBrief: Annotation<CompanyResearchGraphState["researchBrief"]>,
-  researchUnits: Annotation<CompanyResearchGraphState["researchUnits"]>,
-  researchUnitRuns: Annotation<CompanyResearchGraphState["researchUnitRuns"]>,
-  researchNotes: Annotation<CompanyResearchGraphState["researchNotes"]>,
-  compressedFindings:
-    Annotation<CompanyResearchGraphState["compressedFindings"]>,
+  researchUnits: Annotation<CompanyResearchGraphState["researchUnits"]>({
+    reducer: (left, right) => mergeResearchUnits(left, right),
+    default: () => [],
+  }),
+  researchUnitRuns: Annotation<CompanyResearchGraphState["researchUnitRuns"]>({
+    reducer: (left, right) => mergeResearchUnitRuns(left, right),
+    default: () => [],
+  }),
+  researchNotes: Annotation<CompanyResearchGraphState["researchNotes"]>({
+    reducer: (left, right) => mergeResearchNotes(left, right),
+    default: () => [],
+  }),
+  compressedFindings: Annotation<
+    CompanyResearchGraphState["compressedFindings"]
+  >,
   gapAnalysis: Annotation<CompanyResearchGraphState["gapAnalysis"]>,
+  replanRecords: Annotation<CompanyResearchGraphState["replanRecords"]>,
+  reflection: Annotation<CompanyResearchGraphState["reflection"]>,
+  contractScore: Annotation<CompanyResearchGraphState["contractScore"]>,
+  qualityFlags: Annotation<CompanyResearchGraphState["qualityFlags"]>,
+  missingRequirements: Annotation<
+    CompanyResearchGraphState["missingRequirements"]
+  >,
   brief: Annotation<CompanyResearchGraphState["brief"]>,
   conceptInsights: Annotation<CompanyResearchGraphState["conceptInsights"]>,
   deepQuestions: Annotation<CompanyResearchGraphState["deepQuestions"]>,
@@ -192,6 +256,7 @@ function toResearchInput(input: Record<string, unknown>): CompanyResearchInput {
                 : undefined,
           }
         : undefined,
+    taskContract: parseResearchTaskContract(input.taskContract),
   };
 }
 
@@ -225,6 +290,13 @@ function summarizeCollectorState(
   };
 }
 
+function findUnitByCapability(
+  units: CompanyResearchGraphState["researchUnits"],
+  capability: string,
+) {
+  return (units ?? []).find((unit) => unit.capability === capability);
+}
+
 abstract class CompanyResearchLangGraphBase<
   NodeKey extends CompanyResearchNodeKey,
 > extends BaseWorkflowLangGraph<CompanyResearchGraphState, NodeKey> {
@@ -241,6 +313,7 @@ abstract class CompanyResearchLangGraphBase<
       resumeFromNodeKey: undefined,
       currentNodeKey: undefined,
       researchInput: toResearchInput(params.input),
+      taskContract: parseResearchTaskContract(params.input.taskContract),
       researchRuntimeConfig: resolveResearchRuntimeConfig(
         params.templateGraphConfig,
       ),
@@ -754,7 +827,8 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
         return {
           researchBrief,
           brief: {
-            companyName: researchBrief.companyName ?? state.researchInput.companyName,
+            companyName:
+              researchBrief.companyName ?? state.researchInput.companyName,
             stockCode: researchBrief.stockCode,
             officialWebsite: researchBrief.officialWebsite,
             researchGoal: researchBrief.researchGoal,
@@ -841,7 +915,11 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
     const graphBuilder = new StateGraph(
       WorkflowState,
     ) as unknown as CompanyGraphBuilder;
-    addWorkflowNodes(graphBuilder, COMPANY_RESEARCH_V3_NODE_KEYS, nodeExecutors);
+    addWorkflowNodes(
+      graphBuilder,
+      COMPANY_RESEARCH_V3_NODE_KEYS,
+      nodeExecutors,
+    );
     addResumeStart(graphBuilder, COMPANY_RESEARCH_V3_NODE_KEYS);
     addSequentialEdges(graphBuilder, COMPANY_RESEARCH_V3_NODE_KEYS);
 
@@ -875,8 +953,9 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
       return {
         noteCount: companyState.researchNotes?.length ?? 0,
         unitRunCount: companyState.researchUnitRuns?.length ?? 0,
-        rawCollectors: Object.keys(companyState.collectedEvidenceByCollector ?? {})
-          .length,
+        rawCollectors: Object.keys(
+          companyState.collectedEvidenceByCollector ?? {},
+        ).length,
       };
     }
     if (nodeKey === "agent4_evidence_curation") {
@@ -932,8 +1011,9 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
     if (nodeKey === "agent3_execute_research_units") {
       return {
         noteCount: companyState.researchNotes?.length ?? 0,
-        collectorCount:
-          Object.keys(companyState.collectedEvidenceByCollector ?? {}).length,
+        collectorCount: Object.keys(
+          companyState.collectedEvidenceByCollector ?? {},
+        ).length,
       };
     }
     if (nodeKey === "agent4_evidence_curation") {
@@ -955,6 +1035,409 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
         findingCount: companyState.findings?.length ?? 0,
         confidenceStatus:
           companyState.finalReport?.confidenceAnalysis?.status ?? "UNAVAILABLE",
+      };
+    }
+
+    return {};
+  }
+}
+
+export class CompanyResearchContractLangGraph extends CompanyResearchLangGraphBase<V4NodeKey> {
+  readonly templateVersion = 4;
+
+  protected getResumeNodeKey(startNodeIndex?: number): V4NodeKey | undefined {
+    if (startNodeIndex === undefined) {
+      return undefined;
+    }
+
+    const requestedNodeKey = COMPANY_RESEARCH_V4_NODE_KEYS[startNodeIndex];
+    if (
+      requestedNodeKey === "collector_official_sources" ||
+      requestedNodeKey === "collector_financial_sources" ||
+      requestedNodeKey === "collector_news_sources" ||
+      requestedNodeKey === "collector_industry_sources"
+    ) {
+      return "agent3_source_grounding";
+    }
+
+    return super.getResumeNodeKey(startNodeIndex) as V4NodeKey | undefined;
+  }
+
+  constructor(workflowService: CompanyResearchWorkflowService) {
+    const nodeExecutors: Record<V4NodeKey, NodeExecutor> = {
+      agent0_clarify_scope: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const clarification = await workflowService.clarifyScope(
+          state.researchInput,
+          state.researchRuntimeConfig,
+        );
+
+        if (clarification.needClarification) {
+          throw new WorkflowPauseError(
+            clarification.question,
+            "clarification_required",
+            {
+              clarificationRequest: clarification,
+              currentNodeKey: "agent0_clarify_scope",
+            },
+          );
+        }
+
+        return {
+          clarificationRequest: clarification,
+        };
+      },
+      agent1_write_research_brief: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const taskContract = await workflowService.buildTaskContract(
+          state.researchInput,
+          state.researchRuntimeConfig,
+        );
+        const researchBrief = await workflowService.buildBrief(
+          state.researchInput,
+          state.researchRuntimeConfig,
+          state.clarificationRequest?.verification,
+        );
+
+        return {
+          taskContract,
+          researchBrief,
+          brief: {
+            companyName:
+              researchBrief.companyName ?? state.researchInput.companyName,
+            stockCode: researchBrief.stockCode,
+            officialWebsite: researchBrief.officialWebsite,
+            researchGoal: researchBrief.researchGoal,
+            focusConcepts: researchBrief.focusConcepts,
+            keyQuestions: researchBrief.keyQuestions,
+          },
+        };
+      },
+      agent2_plan_research_units: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        return workflowService.planUnits({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+      },
+      agent3_source_grounding: async (state) =>
+        workflowService.groundSources(state),
+      collector_official_sources: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+        const unit = findUnitByCapability(
+          state.researchUnits,
+          "official_search",
+        );
+        if (!unit) {
+          return {};
+        }
+        return workflowService.executeCollectorUnit({
+          unit,
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+      },
+      collector_financial_sources: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+        const unit = findUnitByCapability(
+          state.researchUnits,
+          "financial_pack",
+        );
+        if (!unit) {
+          return {};
+        }
+        return workflowService.executeCollectorUnit({
+          unit,
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+      },
+      collector_news_sources: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+        const unit = findUnitByCapability(state.researchUnits, "news_search");
+        if (!unit) {
+          return {};
+        }
+        return workflowService.executeCollectorUnit({
+          unit,
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+      },
+      collector_industry_sources: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+        const unit = findUnitByCapability(
+          state.researchUnits,
+          "industry_search",
+        );
+        if (!unit) {
+          return {};
+        }
+        return workflowService.executeCollectorUnit({
+          unit,
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+      },
+      agent4_synthesis: async (state) => {
+        const curated = workflowService.synthesizeEvidence(state);
+        return {
+          evidence: curated.evidence,
+          references: curated.references,
+          collectionSummary: curated.collectionSummary,
+          crawlerSummary: curated.crawler,
+        };
+      },
+      agent5_gap_analysis_and_replan: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const result = await workflowService.runGapLoop({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+
+        return {
+          ...result.state,
+          gapAnalysis: result.gapAnalysis,
+        };
+      },
+      agent6_compress_findings: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        return {
+          compressedFindings: await workflowService.compressFindings(
+            state,
+            state.researchRuntimeConfig,
+          ),
+        };
+      },
+      agent7_reference_enrichment: async (state) =>
+        workflowService.enrichReferences(state),
+      agent8_finalize_report: async (state) => {
+        if (!state.researchRuntimeConfig) {
+          return {};
+        }
+
+        const finalReport = await workflowService.finalizeReport({
+          state,
+          runtimeConfig: state.researchRuntimeConfig,
+        });
+
+        return {
+          findings: finalReport.findings,
+          finalReport,
+        };
+      },
+      agent9_reflection: async (state) => ({
+        reflection: state.finalReport?.reflection,
+        contractScore: state.finalReport?.contractScore,
+        qualityFlags: state.finalReport?.qualityFlags,
+        missingRequirements: state.finalReport?.missingRequirements,
+      }),
+    };
+
+    const graphBuilder = new StateGraph(
+      WorkflowState,
+    ) as unknown as CompanyGraphBuilder;
+    addWorkflowNodes(
+      graphBuilder,
+      COMPANY_RESEARCH_V4_NODE_KEYS,
+      nodeExecutors,
+    );
+    addResumeStart(graphBuilder, COMPANY_RESEARCH_V4_NODE_KEYS);
+    graphBuilder.addEdge("agent0_clarify_scope", "agent1_write_research_brief");
+    graphBuilder.addEdge(
+      "agent1_write_research_brief",
+      "agent2_plan_research_units",
+    );
+    graphBuilder.addEdge(
+      "agent2_plan_research_units",
+      "agent3_source_grounding",
+    );
+    addFanOutAndJoinEdges(graphBuilder, {
+      startNode: "agent3_source_grounding",
+      parallelNodes: [
+        "collector_official_sources",
+        "collector_financial_sources",
+        "collector_news_sources",
+        "collector_industry_sources",
+      ],
+      joinNode: "agent4_synthesis",
+    });
+    graphBuilder.addEdge("agent4_synthesis", "agent5_gap_analysis_and_replan");
+    graphBuilder.addEdge(
+      "agent5_gap_analysis_and_replan",
+      "agent6_compress_findings",
+    );
+    graphBuilder.addEdge(
+      "agent6_compress_findings",
+      "agent7_reference_enrichment",
+    );
+    graphBuilder.addEdge(
+      "agent7_reference_enrichment",
+      "agent8_finalize_report",
+    );
+    graphBuilder.addEdge("agent8_finalize_report", "agent9_reflection");
+    graphBuilder.addEdge("agent9_reflection", END);
+
+    super({
+      graph: graphBuilder.compile(),
+      nodeOrder: COMPANY_RESEARCH_V4_NODE_KEYS,
+    });
+  }
+
+  getNodeOutput(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
+    const companyState = state as CompanyResearchGraphState;
+
+    if (nodeKey === "agent1_write_research_brief") {
+      return {
+        taskContract: companyState.taskContract,
+        researchBrief: companyState.researchBrief,
+        brief: companyState.brief,
+      };
+    }
+    if (nodeKey === "agent2_plan_research_units") {
+      return {
+        plannedUnitCount: companyState.researchUnits?.length ?? 0,
+        questionCount: companyState.deepQuestions?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent3_source_grounding") {
+      return {
+        groundedSources: companyState.groundedSources,
+        firstPartySeedCount:
+          companyState.groundedSources?.filter((item) => item.isFirstParty)
+            .length ?? 0,
+      };
+    }
+    if (
+      nodeKey === "collector_official_sources" ||
+      nodeKey === "collector_financial_sources" ||
+      nodeKey === "collector_news_sources" ||
+      nodeKey === "collector_industry_sources"
+    ) {
+      return summarizeCollectorState(
+        companyState,
+        nodeKey.replace("collector_", "") as Parameters<
+          typeof summarizeCollectorState
+        >[1],
+      );
+    }
+    if (nodeKey === "agent4_synthesis") {
+      return {
+        evidenceCount: companyState.evidence?.length ?? 0,
+        referenceCount: companyState.references?.length ?? 0,
+        collectionSummary: companyState.collectionSummary,
+      };
+    }
+    if (nodeKey === "agent5_gap_analysis_and_replan") {
+      return {
+        gapAnalysis: companyState.gapAnalysis,
+        replanCount: companyState.replanRecords?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent6_compress_findings") {
+      return {
+        compressedFindings: companyState.compressedFindings,
+      };
+    }
+    if (nodeKey === "agent7_reference_enrichment") {
+      return {
+        referenceCount: companyState.references?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent8_finalize_report") {
+      return {
+        findingCount: companyState.findings?.length ?? 0,
+        finalReport: companyState.finalReport,
+      };
+    }
+
+    return {
+      reflection: companyState.reflection,
+      contractScore: companyState.contractScore,
+      qualityFlags: companyState.qualityFlags,
+      missingRequirements: companyState.missingRequirements,
+    };
+  }
+
+  getNodeEventPayload(nodeKey: WorkflowNodeKey, state: WorkflowGraphState) {
+    const companyState = state as CompanyResearchGraphState;
+
+    if (nodeKey === "agent1_write_research_brief") {
+      return {
+        analysisDepth: companyState.taskContract?.analysisDepth ?? "standard",
+        citationRequired: companyState.taskContract?.citationRequired ?? false,
+      };
+    }
+    if (nodeKey === "agent2_plan_research_units") {
+      return {
+        plannedUnitCount: companyState.researchUnits?.length ?? 0,
+        questionCount: companyState.deepQuestions?.length ?? 0,
+      };
+    }
+    if (
+      nodeKey === "collector_official_sources" ||
+      nodeKey === "collector_financial_sources" ||
+      nodeKey === "collector_news_sources" ||
+      nodeKey === "collector_industry_sources"
+    ) {
+      return summarizeCollectorState(
+        companyState,
+        nodeKey.replace("collector_", "") as Parameters<
+          typeof summarizeCollectorState
+        >[1],
+      );
+    }
+    if (nodeKey === "agent4_synthesis") {
+      return {
+        rawCount: companyState.collectionSummary?.totalRawCount ?? 0,
+        curatedCount: companyState.collectionSummary?.totalCuratedCount ?? 0,
+        referenceCount:
+          companyState.collectionSummary?.totalReferenceCount ?? 0,
+        firstPartyRatio:
+          (companyState.collectionSummary?.totalReferenceCount ?? 0) > 0
+            ? Number(
+                (
+                  (companyState.collectionSummary?.totalFirstPartyCount ?? 0) /
+                  (companyState.collectionSummary?.totalReferenceCount ?? 1)
+                ).toFixed(2),
+              )
+            : 0,
+      };
+    }
+    if (nodeKey === "agent5_gap_analysis_and_replan") {
+      return {
+        requiresFollowup: companyState.gapAnalysis?.requiresFollowup ?? false,
+        missingAreaCount: companyState.gapAnalysis?.missingAreas.length ?? 0,
+        replanCount: companyState.replanRecords?.length ?? 0,
+      };
+    }
+    if (nodeKey === "agent9_reflection") {
+      return {
+        contractScore: companyState.contractScore ?? null,
+        qualityFlags: companyState.qualityFlags ?? [],
       };
     }
 

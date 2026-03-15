@@ -1,10 +1,13 @@
 import type { IntelligenceAgentService } from "~/server/application/intelligence/intelligence-agent-service";
+import { reflectQuickResearch } from "~/server/application/intelligence/research-reflection";
 import {
   analyzeResearchGaps,
+  buildDefaultTaskContract,
   clarifyResearchScope,
   compressResearchFindings,
   planResearchUnits,
   writeResearchBrief,
+  writeTaskContract,
 } from "~/server/application/intelligence/research-workflow-kernel";
 import type {
   CompanyEvidence,
@@ -14,6 +17,7 @@ import type {
   CompressedFindings,
   ResearchGapAnalysis,
   ResearchNote,
+  ResearchReplanRecord,
   ResearchRuntimeConfig,
   ResearchUnitCapability,
   ResearchUnitPlan,
@@ -75,6 +79,31 @@ function buildNote(params: {
   };
 }
 
+function buildFallbackBrief(state: QuickResearchGraphState) {
+  return {
+    query: state.query,
+    researchGoal: state.query,
+    focusConcepts: [],
+    keyQuestions: [],
+    mustAnswerQuestions: [state.query],
+    forbiddenEvidenceTypes: [],
+    preferredSources: [],
+    freshnessWindowDays: 180,
+    scopeAssumptions: [],
+  } satisfies QuickResearchResultDto["brief"];
+}
+
+function resolveTaskContract(state: QuickResearchGraphState) {
+  return (
+    state.taskContract ??
+    buildDefaultTaskContract({
+      subject: "quick",
+      preferences: state.researchInput?.researchPreferences,
+      taskContract: state.researchInput?.taskContract,
+    })
+  );
+}
+
 export class QuickResearchWorkflowService {
   private readonly client: DeepSeekClient;
   private readonly intelligenceService: IntelligenceAgentService;
@@ -82,6 +111,19 @@ export class QuickResearchWorkflowService {
   constructor(dependencies: QuickResearchWorkflowServiceDependencies) {
     this.client = dependencies.client;
     this.intelligenceService = dependencies.intelligenceService;
+  }
+
+  async buildTaskContract(
+    input: QuickResearchInput,
+    runtimeConfig: ResearchRuntimeConfig,
+  ) {
+    return writeTaskContract({
+      client: this.client,
+      subject: "quick",
+      preferences: input.researchPreferences,
+      taskContract: input.taskContract,
+      runtimeConfig,
+    });
   }
 
   async clarifyScope(
@@ -107,6 +149,7 @@ export class QuickResearchWorkflowService {
       subject: "quick",
       query: input.query,
       preferences: input.researchPreferences,
+      taskContract: input.taskContract,
       runtimeConfig,
       clarificationSummary,
     });
@@ -130,6 +173,13 @@ export class QuickResearchWorkflowService {
         freshnessWindowDays: 180,
         scopeAssumptions: [],
       },
+      taskContract:
+        state.taskContract ??
+        buildDefaultTaskContract({
+          subject: "quick",
+          preferences: state.researchInput?.researchPreferences,
+          taskContract: state.researchInput?.taskContract,
+        }),
       allowedCapabilities: QUICK_ALLOWED_CAPABILITIES,
       runtimeConfig,
     });
@@ -147,9 +197,10 @@ export class QuickResearchWorkflowService {
 
     try {
       if (unit.capability === "theme_overview") {
-        const overview = await this.intelligenceService.generateIndustryOverview(
-          unit.objective || state.industryOverview || "",
-        );
+        const overview =
+          await this.intelligenceService.generateIndustryOverview(
+            unit.objective || state.industryOverview || "",
+          );
         return {
           patch: {
             industryOverview: overview.overview,
@@ -160,13 +211,19 @@ export class QuickResearchWorkflowService {
             summary: overview.overview,
             keyFacts: overview.news.slice(0, 3).map((item) => item.title),
             missingInfo:
-              overview.news.length === 0 ? ["No recent theme news returned."] : [],
+              overview.news.length === 0
+                ? ["No recent theme news returned."]
+                : [],
           }),
           run: {
             unitId: unit.id,
             title: unit.title,
             capability: unit.capability,
             status: "completed",
+            attempt: 1,
+            repairCount: 0,
+            validationErrors: [],
+            qualityFlags: overview.news.length === 0 ? ["no_theme_news"] : [],
             startedAt,
             completedAt: new Date().toISOString(),
             notes: [overview.overview],
@@ -202,6 +259,10 @@ export class QuickResearchWorkflowService {
             title: unit.title,
             capability: unit.capability,
             status: "completed",
+            attempt: 1,
+            repairCount: 0,
+            validationErrors: [],
+            qualityFlags: heat.news.length === 0 ? ["no_heat_news"] : [],
             startedAt,
             completedAt: new Date().toISOString(),
             notes: [heat.heatConclusion],
@@ -234,6 +295,10 @@ export class QuickResearchWorkflowService {
             title: unit.title,
             capability: unit.capability,
             status: "completed",
+            attempt: 1,
+            repairCount: 0,
+            validationErrors: [],
+            qualityFlags: candidates.length === 0 ? ["no_candidates"] : [],
             startedAt,
             completedAt: new Date().toISOString(),
             notes: [`Candidate count: ${candidates.length}`],
@@ -258,9 +323,8 @@ export class QuickResearchWorkflowService {
             summary: `Validated ${credibility.credibility.length} candidates.`,
             keyFacts: credibility.credibility
               .slice(0, 3)
-              .map(
-                (item) =>
-                  `${item.stockCode}:${item.credibilityScore} ${item.highlights[0] ?? ""}`.trim(),
+              .map((item) =>
+                `${item.stockCode}:${item.credibilityScore} ${item.highlights[0] ?? ""}`.trim(),
               ),
             missingInfo:
               credibility.evidenceList.length === 0
@@ -272,6 +336,13 @@ export class QuickResearchWorkflowService {
             title: unit.title,
             capability: unit.capability,
             status: "completed",
+            attempt: 1,
+            repairCount: 0,
+            validationErrors: [],
+            qualityFlags:
+              credibility.evidenceList.length === 0
+                ? ["no_external_evidence"]
+                : [],
             startedAt,
             completedAt: new Date().toISOString(),
             notes: [`Evidence count: ${credibility.evidenceList.length}`],
@@ -300,6 +371,12 @@ export class QuickResearchWorkflowService {
           title: unit.title,
           capability: unit.capability,
           status: "completed",
+          attempt: 1,
+          repairCount: 0,
+          validationErrors: [],
+          qualityFlags: state.credibility?.length
+            ? []
+            : ["no_credibility_context"],
           startedAt,
           completedAt: new Date().toISOString(),
           notes: [competition],
@@ -321,6 +398,12 @@ export class QuickResearchWorkflowService {
           title: unit.title,
           capability: unit.capability,
           status: "failed",
+          attempt: 1,
+          repairCount: 0,
+          validationErrors: [
+            error instanceof Error ? error.message : "unknown error",
+          ],
+          qualityFlags: ["unit_failed"],
           startedAt,
           completedAt: new Date().toISOString(),
           notes: [],
@@ -350,10 +433,14 @@ export class QuickResearchWorkflowService {
     const notes = [...(params.state.researchNotes ?? [])];
     const completedUnitIds = new Set(unitRuns.map((run) => run.unitId));
 
-    const pendingUnits = params.units.filter((unit) => !completedUnitIds.has(unit.id));
+    const pendingUnits = params.units.filter(
+      (unit) => !completedUnitIds.has(unit.id),
+    );
     while (pendingUnits.length > 0) {
       const readyUnits = pendingUnits.filter((unit) =>
-        unit.dependsOn.every((dependencyId) => completedUnitIds.has(dependencyId)),
+        unit.dependsOn.every((dependencyId) =>
+          completedUnitIds.has(dependencyId),
+        ),
       );
       const batch =
         readyUnits.length > 0
@@ -398,12 +485,14 @@ export class QuickResearchWorkflowService {
     researchNotes: ResearchNote[];
     researchUnitRuns: ResearchUnitRun[];
     researchUnits: ResearchUnitPlan[];
+    replanRecords: ResearchReplanRecord[];
     snapshot: QuickExecutionSnapshot;
   }> {
     let gapIteration = 0;
     let notes = [...(params.state.researchNotes ?? [])];
     let unitRuns = [...(params.state.researchUnitRuns ?? [])];
     let units = [...(params.state.researchUnits ?? [])];
+    let replanRecords = [...(params.state.replanRecords ?? [])];
     let snapshot: QuickExecutionSnapshot = {
       industryOverview: params.state.industryOverview,
       news: params.state.news,
@@ -423,21 +512,12 @@ export class QuickResearchWorkflowService {
     };
 
     while (gapIteration <= params.runtimeConfig.maxGapIterations) {
+      const brief =
+        params.state.researchBrief ?? buildFallbackBrief(params.state);
       const compressed = await compressResearchFindings({
         client: this.client,
-        brief:
-          params.state.researchBrief ??
-          ({
-            query: params.state.query,
-            researchGoal: params.state.query,
-            focusConcepts: [],
-            keyQuestions: [],
-            mustAnswerQuestions: [params.state.query],
-            forbiddenEvidenceTypes: [],
-            preferredSources: [],
-            freshnessWindowDays: 180,
-            scopeAssumptions: [],
-          } satisfies QuickResearchResultDto["brief"]),
+        brief,
+        taskContract: resolveTaskContract(params.state),
         noteSummaries: notes.map((note) => note.summary),
         gapAnalysis,
         runtimeConfig: params.runtimeConfig,
@@ -445,19 +525,8 @@ export class QuickResearchWorkflowService {
 
       gapAnalysis = await analyzeResearchGaps({
         client: this.client,
-        brief:
-          params.state.researchBrief ??
-          ({
-            query: params.state.query,
-            researchGoal: params.state.query,
-            focusConcepts: [],
-            keyQuestions: [],
-            mustAnswerQuestions: [params.state.query],
-            forbiddenEvidenceTypes: [],
-            preferredSources: [],
-            freshnessWindowDays: 180,
-            scopeAssumptions: [],
-          } satisfies QuickResearchResultDto["brief"]),
+        brief,
+        taskContract: resolveTaskContract(params.state),
         compressedFindings: compressed,
         gapIteration,
         runtimeConfig: params.runtimeConfig,
@@ -469,6 +538,20 @@ export class QuickResearchWorkflowService {
       }
 
       units = [...units, ...gapAnalysis.followupUnits];
+      replanRecords = [
+        ...replanRecords,
+        {
+          replanId: `quick_gap_${gapIteration + 1}`,
+          iteration: gapIteration + 1,
+          triggerNodeKey: "agent4_credibility_and_competition",
+          reason: "material_research_gap",
+          missingAreas: gapAnalysis.missingAreas,
+          action: "append_followup_units",
+          fallbackCapability: gapAnalysis.followupUnits[0]?.capability,
+          resultSummary: gapAnalysis.summary,
+          createdAt: new Date().toISOString(),
+        },
+      ];
       const execution = await this.executeUnits({
         state: {
           ...params.state,
@@ -505,6 +588,7 @@ export class QuickResearchWorkflowService {
       researchNotes: notes,
       researchUnitRuns: unitRuns,
       researchUnits: units,
+      replanRecords,
       snapshot,
     };
   }
@@ -516,19 +600,8 @@ export class QuickResearchWorkflowService {
   ): Promise<CompressedFindings> {
     return compressResearchFindings({
       client: this.client,
-      brief:
-        state.researchBrief ??
-        ({
-          query: state.query,
-          researchGoal: state.query,
-          focusConcepts: [],
-          keyQuestions: [],
-          mustAnswerQuestions: [state.query],
-          forbiddenEvidenceTypes: [],
-          preferredSources: [],
-          freshnessWindowDays: 180,
-          scopeAssumptions: [],
-        } satisfies QuickResearchResultDto["brief"]),
+      brief: state.researchBrief ?? buildFallbackBrief(state),
+      taskContract: resolveTaskContract(state),
       noteSummaries: (state.researchNotes ?? []).map((note) => note.summary),
       gapAnalysis,
       runtimeConfig,
@@ -539,10 +612,14 @@ export class QuickResearchWorkflowService {
     state: QuickResearchGraphState;
     runtimeConfig: ResearchRuntimeConfig;
   }): Promise<QuickResearchResultDto> {
+    const taskContract = resolveTaskContract(params.state);
     const overview =
       params.state.industryOverview ??
-      (await this.intelligenceService.generateIndustryOverview(params.state.query))
-        .overview;
+      (
+        await this.intelligenceService.generateIndustryOverview(
+          params.state.query,
+        )
+      ).overview;
     const heatAnalysis =
       params.state.heatAnalysis ??
       (await this.intelligenceService.analyzeMarketHeat(params.state.query));
@@ -582,7 +659,7 @@ export class QuickResearchWorkflowService {
         evidenceList: credibilityResult.evidenceList,
       });
 
-    return {
+    const report = {
       ...this.intelligenceService.buildFinalReport({
         overview,
         heatScore: heatAnalysis.heatScore,
@@ -592,11 +669,24 @@ export class QuickResearchWorkflowService {
         competitionSummary: competition,
         confidenceAnalysis,
       }),
-      brief: params.state.researchBrief,
+      brief: params.state.researchBrief ?? buildFallbackBrief(params.state),
       researchPlan: params.state.researchUnits,
       researchNotes: params.state.researchNotes,
       compressedFindings: params.state.compressedFindings,
       gapAnalysis: params.state.gapAnalysis,
+      replanRecords: params.state.replanRecords,
+    } satisfies QuickResearchResultDto;
+    const reflection = reflectQuickResearch({
+      taskContract,
+      result: report,
+    });
+
+    return {
+      ...report,
+      reflection,
+      contractScore: reflection.contractScore,
+      qualityFlags: reflection.qualityFlags,
+      missingRequirements: reflection.missingRequirements,
     };
   }
 }

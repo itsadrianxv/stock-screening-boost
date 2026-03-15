@@ -1,17 +1,17 @@
 import { v4 as uuidv4 } from "uuid";
 import type { CompanyResearchAgentService } from "~/server/application/intelligence/company-research-agent-service";
+import { reflectCompanyResearch } from "~/server/application/intelligence/research-reflection";
+import type { ResearchToolRegistry } from "~/server/application/intelligence/research-tool-registry";
 import {
   analyzeResearchGaps,
+  buildDefaultTaskContract,
   clarifyResearchScope,
   compressResearchFindings,
   planResearchUnits,
   writeResearchBrief,
+  writeTaskContract,
 } from "~/server/application/intelligence/research-workflow-kernel";
-import type { ResearchToolRegistry } from "~/server/application/intelligence/research-tool-registry";
-import type {
-  CompanyResearchPack,
-  ThemeNewsItem,
-} from "~/server/domain/intelligence/types";
+import type { CompanyResearchPack } from "~/server/domain/intelligence/types";
 import type {
   CompressedFindings,
   ResearchGapAnalysis,
@@ -22,7 +22,6 @@ import type {
   ResearchUnitRun,
 } from "~/server/domain/workflow/research";
 import type {
-  CompanyConceptInsight,
   CompanyEvidenceNote,
   CompanyResearchBrief,
   CompanyResearchCollectorKey,
@@ -136,7 +135,7 @@ function toCompanyBrief(
     focusConcepts:
       brief?.focusConcepts.length && brief.focusConcepts.length > 0
         ? brief.focusConcepts
-        : input.focusConcepts ?? [],
+        : (input.focusConcepts ?? []),
     keyQuestions:
       brief?.keyQuestions.length && brief.keyQuestions.length > 0
         ? brief.keyQuestions
@@ -150,6 +149,41 @@ function toCompanyBrief(
   };
 }
 
+function buildFallbackResearchBrief(
+  input: CompanyResearchInput,
+  brief: CompanyResearchGraphState["brief"],
+): NonNullable<CompanyResearchGraphState["researchBrief"]> {
+  return {
+    query: input.keyQuestion?.trim() || input.companyName,
+    companyName: brief?.companyName ?? input.companyName,
+    stockCode: brief?.stockCode ?? input.stockCode,
+    officialWebsite:
+      brief?.officialWebsite ?? normalizeUrl(input.officialWebsite),
+    researchGoal: brief?.researchGoal ?? input.keyQuestion ?? input.companyName,
+    focusConcepts: brief?.focusConcepts ?? input.focusConcepts ?? [],
+    keyQuestions: brief?.keyQuestions ?? [],
+    mustAnswerQuestions:
+      brief?.keyQuestions && brief.keyQuestions.length > 0
+        ? brief.keyQuestions
+        : [input.keyQuestion?.trim() || input.companyName],
+    forbiddenEvidenceTypes: [],
+    preferredSources: [],
+    freshnessWindowDays: 180,
+    scopeAssumptions: [],
+  };
+}
+
+function resolveTaskContract(state: CompanyResearchGraphState) {
+  return (
+    state.taskContract ??
+    buildDefaultTaskContract({
+      subject: "company",
+      preferences: state.researchInput.researchPreferences,
+      taskContract: state.researchInput.taskContract,
+    })
+  );
+}
+
 function buildCollectorQueries(params: {
   collectorKey: CompanyResearchCollectorKey;
   brief: CompanyResearchGraphState["researchBrief"];
@@ -159,7 +193,9 @@ function buildCollectorQueries(params: {
 }) {
   const companyName = params.companyBrief.companyName;
   const leadConcept =
-    params.brief?.focusConcepts[0] ?? params.companyBrief.focusConcepts[0] ?? "核心业务";
+    params.brief?.focusConcepts[0] ??
+    params.companyBrief.focusConcepts[0] ??
+    "核心业务";
   const leadQuestion =
     params.deepQuestions[0]?.targetMetric ??
     params.companyBrief.keyQuestions[0] ??
@@ -255,6 +291,19 @@ export class CompanyResearchWorkflowService {
     this.researchToolRegistry = dependencies.researchToolRegistry;
   }
 
+  async buildTaskContract(
+    input: CompanyResearchInput,
+    runtimeConfig: ResearchRuntimeConfig,
+  ) {
+    return writeTaskContract({
+      client: this.client,
+      subject: "company",
+      preferences: input.researchPreferences,
+      taskContract: input.taskContract,
+      runtimeConfig,
+    });
+  }
+
   async clarifyScope(
     input: CompanyResearchInput,
     runtimeConfig: ResearchRuntimeConfig,
@@ -286,9 +335,24 @@ export class CompanyResearchWorkflowService {
       focusConcepts: input.focusConcepts,
       keyQuestion: input.keyQuestion,
       preferences: input.researchPreferences,
+      taskContract: input.taskContract,
       clarificationSummary,
       runtimeConfig,
     });
+  }
+
+  groundSources(state: CompanyResearchGraphState) {
+    const companyBrief =
+      state.brief ?? toCompanyBrief(state.researchInput, state.researchBrief);
+    const grounded = this.companyResearchService.groundSources({
+      input: state.researchInput,
+      brief: companyBrief,
+    });
+
+    return {
+      groundedSources: grounded.groundedSources,
+      collectionNotes: grounded.notes,
+    };
   }
 
   async planUnits(params: {
@@ -299,32 +363,21 @@ export class CompanyResearchWorkflowService {
       params.state.researchInput,
       params.state.researchBrief,
     );
-    const conceptInsights = await this.companyResearchService.mapConceptInsights(
-      companyBrief,
+    const conceptInsights =
+      await this.companyResearchService.mapConceptInsights(companyBrief);
+    const deepQuestions = await this.companyResearchService.designDeepQuestions(
+      {
+        brief: companyBrief,
+        conceptInsights,
+      },
     );
-    const deepQuestions = await this.companyResearchService.designDeepQuestions({
-      brief: companyBrief,
-      conceptInsights,
-    });
     const units = await planResearchUnits({
       client: this.client,
       subject: "company",
       brief:
         params.state.researchBrief ??
-        ({
-          query: params.state.query,
-          companyName: companyBrief.companyName,
-          stockCode: companyBrief.stockCode,
-          officialWebsite: companyBrief.officialWebsite,
-          researchGoal: companyBrief.researchGoal,
-          focusConcepts: companyBrief.focusConcepts,
-          keyQuestions: companyBrief.keyQuestions,
-          mustAnswerQuestions: companyBrief.keyQuestions,
-          forbiddenEvidenceTypes: [],
-          preferredSources: [],
-          freshnessWindowDays: 180,
-          scopeAssumptions: [],
-        } satisfies CompanyResearchGraphState["researchBrief"]),
+        buildFallbackResearchBrief(params.state.researchInput, companyBrief),
+      taskContract: resolveTaskContract(params.state),
       allowedCapabilities: COMPANY_ALLOWED_CAPABILITIES,
       runtimeConfig: params.runtimeConfig,
     });
@@ -355,7 +408,8 @@ export class CompanyResearchWorkflowService {
   }> {
     const startedAt = new Date().toISOString();
     const companyBrief =
-      params.state.brief ?? toCompanyBrief(params.state.researchInput, params.state.researchBrief);
+      params.state.brief ??
+      toCompanyBrief(params.state.researchInput, params.state.researchBrief);
     const officialHosts = buildOfficialHostSet(companyBrief.officialWebsite);
     const grounded = this.companyResearchService.groundSources({
       input: params.state.researchInput,
@@ -391,7 +445,8 @@ export class CompanyResearchWorkflowService {
           isFirstParty: false,
           snippet: item.snippet,
           extractedFact: item.extractedFact,
-          relevance: "Structured financial evidence from the Python intelligence service.",
+          relevance:
+            "Structured financial evidence from the Python intelligence service.",
           publishedAt: item.publishedAt,
         }));
 
@@ -420,6 +475,11 @@ export class CompanyResearchWorkflowService {
             title: params.unit.title,
             capability: params.unit.capability,
             status: "completed",
+            attempt: 1,
+            repairCount: 0,
+            fallbackUsed: pack ? undefined : "official_search",
+            validationErrors: [],
+            qualityFlags: pack ? [] : ["financial_pack_unavailable"],
             startedAt,
             completedAt: new Date().toISOString(),
             notes: pack?.summaryNotes ?? [],
@@ -505,7 +565,8 @@ export class CompanyResearchWorkflowService {
               sourceName: page.sourceName,
               summary: page.summary,
               snippet: page.snippet,
-              relevance: "First-party page scrape used to confirm company claims.",
+              relevance:
+                "First-party page scrape used to confirm company claims.",
             }),
           );
         }
@@ -543,6 +604,10 @@ export class CompanyResearchWorkflowService {
           title: params.unit.title,
           capability: params.unit.capability,
           status: "completed",
+          attempt: 1,
+          repairCount: 0,
+          validationErrors: [],
+          qualityFlags: evidence.length === 0 ? [`${collectorKey}_empty`] : [],
           startedAt,
           completedAt: new Date().toISOString(),
           notes: queries,
@@ -571,6 +636,12 @@ export class CompanyResearchWorkflowService {
           title: params.unit.title,
           capability: params.unit.capability,
           status: "failed",
+          attempt: 1,
+          repairCount: 0,
+          validationErrors: [
+            error instanceof Error ? error.message : "unknown error",
+          ],
+          qualityFlags: ["unit_failed"],
           startedAt,
           completedAt: new Date().toISOString(),
           notes: [],
@@ -580,6 +651,59 @@ export class CompanyResearchWorkflowService {
         },
       };
     }
+  }
+
+  async executeCollectorUnit(params: {
+    unit: ResearchUnitPlan;
+    state: CompanyResearchGraphState;
+    runtimeConfig: ResearchRuntimeConfig;
+  }) {
+    const snapshot: CompanyExecutionSnapshot = {
+      groundedSources: params.state.groundedSources ?? [],
+      collectedEvidenceByCollector: {
+        ...(params.state.collectedEvidenceByCollector ?? {}),
+      },
+      collectorRunInfo: {
+        ...(params.state.collectorRunInfo ?? {}),
+      },
+      collectorPacks: {
+        ...(params.state.collectorPacks ?? {}),
+      },
+      collectionNotes: [...(params.state.collectionNotes ?? [])],
+    };
+    const result = await this.runCollectorUnit({
+      unit: params.unit,
+      state: params.state,
+      snapshot,
+      runtimeConfig: params.runtimeConfig,
+    });
+
+    return {
+      groundedSources: result.groundedSources ?? snapshot.groundedSources,
+      collectedEvidenceByCollector: {
+        [result.collectorKey]: result.evidence,
+      },
+      collectorRunInfo: {
+        [result.collectorKey]: {
+          collectorKey: result.collectorKey,
+          configured: result.configured,
+          queries: uniqueStrings(result.queries, 8),
+          notes: uniqueStrings(result.notes, 8),
+        },
+      },
+      collectorPacks: result.pack
+        ? {
+            [result.collectorKey]: result.pack,
+          }
+        : {},
+      collectionNotes: uniqueStrings(
+        [...snapshot.collectionNotes, ...result.notes],
+        24,
+      ),
+      researchNotes: [result.researchNote],
+      researchUnitRuns: [result.run],
+      researchUnits: [params.unit],
+    };
   }
 
   async executeUnits(params: {
@@ -603,7 +727,9 @@ export class CompanyResearchWorkflowService {
     const researchNotes = [...(params.state.researchNotes ?? [])];
     const researchUnitRuns = [...(params.state.researchUnitRuns ?? [])];
     const completedUnits = new Set(researchUnitRuns.map((item) => item.unitId));
-    const pendingUnits = params.units.filter((unit) => !completedUnits.has(unit.id));
+    const pendingUnits = params.units.filter(
+      (unit) => !completedUnits.has(unit.id),
+    );
 
     while (pendingUnits.length > 0) {
       const readyUnits = pendingUnits.filter((unit) =>
@@ -625,7 +751,8 @@ export class CompanyResearchWorkflowService {
       );
 
       for (const result of batchResults) {
-        snapshot.groundedSources = result.groundedSources ?? snapshot.groundedSources;
+        snapshot.groundedSources =
+          result.groundedSources ?? snapshot.groundedSources;
         snapshot.collectedEvidenceByCollector[result.collectorKey] = [
           ...(snapshot.collectedEvidenceByCollector[result.collectorKey] ?? []),
           ...result.evidence,
@@ -674,6 +801,7 @@ export class CompanyResearchWorkflowService {
   }) {
     let workingState = { ...params.state };
     let gapIteration = 0;
+    let replanRecords = [...(params.state.replanRecords ?? [])];
     let gapAnalysis: ResearchGapAnalysis = {
       requiresFollowup: false,
       summary: "No gap analysis yet.",
@@ -683,24 +811,16 @@ export class CompanyResearchWorkflowService {
     };
 
     while (gapIteration <= params.runtimeConfig.maxGapIterations) {
+      const brief =
+        workingState.researchBrief ??
+        buildFallbackResearchBrief(
+          workingState.researchInput,
+          workingState.brief,
+        );
       const compressed = await compressResearchFindings({
         client: this.client,
-        brief:
-          workingState.researchBrief ??
-          ({
-            query: workingState.query,
-            companyName: workingState.brief?.companyName,
-            stockCode: workingState.brief?.stockCode,
-            officialWebsite: workingState.brief?.officialWebsite,
-            researchGoal: workingState.brief?.researchGoal ?? workingState.query,
-            focusConcepts: workingState.brief?.focusConcepts ?? [],
-            keyQuestions: workingState.brief?.keyQuestions ?? [],
-            mustAnswerQuestions: workingState.brief?.keyQuestions ?? [workingState.query],
-            forbiddenEvidenceTypes: [],
-            preferredSources: [],
-            freshnessWindowDays: 180,
-            scopeAssumptions: [],
-          }),
+        brief,
+        taskContract: resolveTaskContract(workingState),
         noteSummaries: [
           ...(workingState.researchNotes ?? []).map((note) => note.summary),
           ...(workingState.evidence ?? [])
@@ -713,22 +833,8 @@ export class CompanyResearchWorkflowService {
 
       gapAnalysis = await analyzeResearchGaps({
         client: this.client,
-        brief:
-          workingState.researchBrief ??
-          ({
-            query: workingState.query,
-            companyName: workingState.brief?.companyName,
-            stockCode: workingState.brief?.stockCode,
-            officialWebsite: workingState.brief?.officialWebsite,
-            researchGoal: workingState.brief?.researchGoal ?? workingState.query,
-            focusConcepts: workingState.brief?.focusConcepts ?? [],
-            keyQuestions: workingState.brief?.keyQuestions ?? [],
-            mustAnswerQuestions: workingState.brief?.keyQuestions ?? [workingState.query],
-            forbiddenEvidenceTypes: [],
-            preferredSources: [],
-            freshnessWindowDays: 180,
-            scopeAssumptions: [],
-          }),
+        brief,
+        taskContract: resolveTaskContract(workingState),
         compressedFindings: compressed,
         gapIteration,
         runtimeConfig: params.runtimeConfig,
@@ -740,10 +846,26 @@ export class CompanyResearchWorkflowService {
           state: {
             ...workingState,
             gapAnalysis,
+            replanRecords,
           },
           gapAnalysis,
         };
       }
+
+      replanRecords = [
+        ...replanRecords,
+        {
+          replanId: `company_gap_${gapIteration + 1}`,
+          iteration: gapIteration + 1,
+          triggerNodeKey: "agent5_gap_analysis_and_replan",
+          reason: "material_research_gap",
+          missingAreas: gapAnalysis.missingAreas,
+          action: "append_followup_units",
+          fallbackCapability: gapAnalysis.followupUnits[0]?.capability,
+          resultSummary: gapAnalysis.summary,
+          createdAt: new Date().toISOString(),
+        },
+      ];
 
       const executed = await this.executeUnits({
         state: {
@@ -760,9 +882,13 @@ export class CompanyResearchWorkflowService {
       const curated = this.companyResearchService.curateEvidence({
         brief:
           workingState.brief ??
-          toCompanyBrief(workingState.researchInput, workingState.researchBrief),
+          toCompanyBrief(
+            workingState.researchInput,
+            workingState.researchBrief,
+          ),
         questions: workingState.deepQuestions ?? [],
-        collectedEvidenceByCollector: executed.collectedEvidenceByCollector ?? {},
+        collectedEvidenceByCollector:
+          executed.collectedEvidenceByCollector ?? {},
         collectorRunInfo: executed.collectorRunInfo ?? {},
         collectionNotes: executed.collectionNotes ?? [],
       });
@@ -782,6 +908,7 @@ export class CompanyResearchWorkflowService {
         ],
         compressedFindings: compressed,
         gapAnalysis,
+        replanRecords,
       };
       gapIteration += 1;
     }
@@ -790,15 +917,19 @@ export class CompanyResearchWorkflowService {
       state: {
         ...workingState,
         gapAnalysis,
+        replanRecords,
       },
       gapAnalysis,
     };
   }
 
+  synthesizeEvidence(state: CompanyResearchGraphState) {
+    return this.curateEvidence(state);
+  }
+
   curateEvidence(state: CompanyResearchGraphState) {
     const brief =
-      state.brief ??
-      toCompanyBrief(state.researchInput, state.researchBrief);
+      state.brief ?? toCompanyBrief(state.researchInput, state.researchBrief);
     return this.companyResearchService.curateEvidence({
       brief,
       questions: state.deepQuestions ?? [],
@@ -823,20 +954,8 @@ export class CompanyResearchWorkflowService {
       client: this.client,
       brief:
         state.researchBrief ??
-        ({
-          query: state.query,
-          companyName: state.brief?.companyName,
-          stockCode: state.brief?.stockCode,
-          officialWebsite: state.brief?.officialWebsite,
-          researchGoal: state.brief?.researchGoal ?? state.query,
-          focusConcepts: state.brief?.focusConcepts ?? [],
-          keyQuestions: state.brief?.keyQuestions ?? [],
-          mustAnswerQuestions: state.brief?.keyQuestions ?? [state.query],
-          forbiddenEvidenceTypes: [],
-          preferredSources: [],
-          freshnessWindowDays: 180,
-          scopeAssumptions: [],
-        }),
+        buildFallbackResearchBrief(state.researchInput, state.brief),
+      taskContract: resolveTaskContract(state),
       noteSummaries: [
         ...(state.researchNotes ?? []).map((note) => note.summary),
         ...(state.evidence ?? [])
@@ -852,6 +971,7 @@ export class CompanyResearchWorkflowService {
     state: CompanyResearchGraphState;
     runtimeConfig: ResearchRuntimeConfig;
   }): Promise<CompanyResearchResultDto> {
+    const taskContract = resolveTaskContract(params.state);
     const brief =
       params.state.brief ??
       toCompanyBrief(params.state.researchInput, params.state.researchBrief);
@@ -875,7 +995,7 @@ export class CompanyResearchWorkflowService {
         references: params.state.references ?? [],
       });
 
-    return this.companyResearchService.buildFinalReport({
+    const report = this.companyResearchService.buildFinalReport({
       brief,
       conceptInsights: params.state.conceptInsights ?? [],
       deepQuestions: params.state.deepQuestions ?? [],
@@ -883,19 +1003,19 @@ export class CompanyResearchWorkflowService {
       evidence: params.state.evidence ?? [],
       references: params.state.references ?? [],
       collectionSummary: params.state.collectionSummary,
-      crawler:
-        params.state.crawlerSummary ?? {
-          provider: "firecrawl",
-          configured: false,
-          queries: [],
-          notes: [],
-        },
+      crawler: params.state.crawlerSummary ?? {
+        provider: "firecrawl",
+        configured: false,
+        queries: [],
+        notes: [],
+      },
       verdict,
       confidenceAnalysis,
       researchPlan: params.state.researchUnits,
       researchNotes: params.state.researchNotes,
       compressedFindings: params.state.compressedFindings,
       gapAnalysis: params.state.gapAnalysis,
+      replanRecords: params.state.replanRecords,
       runtimeConfigSummary: {
         allowClarification: params.runtimeConfig.allowClarification,
         maxConcurrentResearchUnits:
@@ -905,5 +1025,17 @@ export class CompanyResearchWorkflowService {
         maxEvidencePerUnit: params.runtimeConfig.maxEvidencePerUnit,
       },
     });
+    const reflection = reflectCompanyResearch({
+      taskContract,
+      result: report,
+    });
+
+    return {
+      ...report,
+      reflection,
+      contractScore: reflection.contractScore,
+      qualityFlags: reflection.qualityFlags,
+      missingRequirements: reflection.missingRequirements,
+    };
   }
 }

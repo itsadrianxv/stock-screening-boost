@@ -18,6 +18,7 @@ describe("research-view-models", () => {
       credibility: [],
       topPicks: [],
       competitionSummary: "Competition",
+      contractScore: 91,
       confidenceAnalysis: {
         status: "COMPLETE",
         finalScore: 88,
@@ -41,6 +42,14 @@ describe("research-view-models", () => {
     };
 
     expect(extractConfidenceAnalysis(result)?.finalScore).toBe(88);
+    expect(
+      buildResearchDigest({
+        templateCode: QUICK_RESEARCH_TEMPLATE_CODE,
+        query: "AI",
+        status: "SUCCEEDED",
+        result,
+      }).metrics.some((item) => item.label === "合同得分"),
+    ).toBe(true);
   });
 
   it("keeps generic digest working for legacy results without confidence", () => {
@@ -129,6 +138,8 @@ describe("research-view-models", () => {
           queries: [],
           notes: [],
         },
+        contractScore: 84,
+        qualityFlags: ["citation_coverage_low"],
         generatedAt: "2026-03-12T00:00:00.000Z",
       },
     });
@@ -136,5 +147,6 @@ describe("research-view-models", () => {
     expect(digest.templateLabel).toBe("公司判断");
     expect(digest.metrics.some((item) => item.label === "引用数量")).toBe(true);
     expect(digest.metrics.some((item) => item.label === "一手信源")).toBe(true);
+    expect(digest.metrics.some((item) => item.label === "合同得分")).toBe(true);
   });
 });

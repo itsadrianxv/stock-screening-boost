@@ -97,6 +97,42 @@ class StockResearchPackData(BaseModel):
     researchPack: CompanyResearchPack
 
 
+class ResearchTaskContract(BaseModel):
+    requiredSources: list[str] = Field(default_factory=list)
+    requiredSections: list[str] = Field(default_factory=list)
+    citationRequired: bool = False
+    analysisDepth: Literal["standard", "deep"] = "standard"
+    deadlineMinutes: int = Field(default=30, ge=5, le=24 * 60)
+
+
+class ResearchReplanRecord(BaseModel):
+    replanId: str
+    iteration: int = Field(ge=0)
+    triggerNodeKey: str
+    reason: str
+    missingAreas: list[str] = Field(default_factory=list)
+    action: str
+    fallbackProvider: str | None = None
+    fallbackCapability: str | None = None
+    reasoningSummary: str | None = None
+    decisionLog: list[str] = Field(default_factory=list)
+    resultSummary: str
+    createdAt: str
+
+
+class ResearchReflectionResult(BaseModel):
+    status: Literal["pass", "warn", "fail"]
+    summary: str
+    contractScore: float = Field(ge=0, le=100)
+    citationCoverage: float = Field(ge=0, le=1)
+    firstPartyRatio: float = Field(ge=0, le=1)
+    answeredQuestionCoverage: float = Field(ge=0, le=1)
+    missingRequirements: list[str] = Field(default_factory=list)
+    unansweredQuestions: list[str] = Field(default_factory=list)
+    qualityFlags: list[str] = Field(default_factory=list)
+    suggestedFixes: list[str] = Field(default_factory=list)
+
+
 class ConfidenceReferenceItem(BaseModel):
     id: str
     title: str

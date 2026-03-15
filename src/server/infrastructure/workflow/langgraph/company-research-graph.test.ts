@@ -5,6 +5,7 @@ import type {
   CompanyResearchReferenceItem,
 } from "~/server/domain/workflow/types";
 import {
+  CompanyResearchContractLangGraph,
   CompanyResearchLangGraph,
   LegacyCompanyResearchLangGraph,
 } from "~/server/infrastructure/workflow/langgraph/company-research-graph";
@@ -55,6 +56,19 @@ function createGraphServiceStub() {
   };
 
   const service = {
+    buildTaskContract: vi.fn(async () => ({
+      requiredSources: ["official", "financial", "news", "industry"],
+      requiredSections: [
+        "research_brief",
+        "evidence_summary",
+        "findings",
+        "verdict",
+        "risks",
+      ],
+      citationRequired: true,
+      analysisDepth: "deep",
+      deadlineMinutes: 90,
+    })),
     buildResearchBrief: vi.fn(async () => {
       callCount.buildResearchBrief += 1;
       return {
@@ -372,5 +386,218 @@ describe("company-research-graph", () => {
       "agent4_evidence_collection",
       "agent5_investment_synthesis",
     ]);
+  });
+
+  it("runs the contract graph on template v4 and exposes reflection fields", async () => {
+    const workflowService = {
+      clarifyScope: vi.fn(async () => ({
+        needClarification: false,
+        question: "",
+        verification: "ready",
+        missingScopeFields: [] as string[],
+        suggestedInputPatch: {} as Record<string, unknown>,
+      })),
+      buildTaskContract: vi.fn(async () => ({
+        requiredSources: ["official", "financial", "news", "industry"],
+        requiredSections: ["research_brief", "findings", "verdict"],
+        citationRequired: true,
+        analysisDepth: "deep" as const,
+        deadlineMinutes: 90,
+      })),
+      buildBrief: vi.fn(async () => ({
+        query: "绀轰緥鍏徃",
+        companyName: "绀轰緥鍏徃",
+        stockCode: "600519",
+        officialWebsite: "https://example.com",
+        researchGoal: "楠岃瘉鍒╂鼎鍏戠幇",
+        focusConcepts: ["绠楀姏"],
+        keyQuestions: ["Q1"],
+        mustAnswerQuestions: ["Q1"],
+        forbiddenEvidenceTypes: [],
+        preferredSources: [],
+        freshnessWindowDays: 180,
+        scopeAssumptions: [],
+      })),
+      planUnits: vi.fn(async () => ({
+        brief: {
+          companyName: "绀轰緥鍏徃",
+          stockCode: "600519",
+          officialWebsite: "https://example.com",
+          researchGoal: "楠岃瘉鍒╂鼎鍏戠幇",
+          focusConcepts: ["绠楀姏"],
+          keyQuestions: ["Q1"],
+        },
+        conceptInsights: [],
+        deepQuestions: [],
+        researchUnits: [
+          {
+            id: "official_search",
+            title: "Official search",
+            objective: "Find official sources",
+            keyQuestions: ["Q1"],
+            priority: "high",
+            capability: "official_search",
+            dependsOn: [],
+            role: "official_collector",
+            expectedArtifact: "official_evidence_bundle",
+            fallbackCapabilities: ["news_search"],
+            acceptanceCriteria: ["Return URLs"],
+          },
+          {
+            id: "financial_pack",
+            title: "Financial pack",
+            objective: "Find finance",
+            keyQuestions: ["Q1"],
+            priority: "high",
+            capability: "financial_pack",
+            dependsOn: [],
+            role: "financial_collector",
+            expectedArtifact: "financial_evidence_bundle",
+            fallbackCapabilities: ["official_search"],
+            acceptanceCriteria: ["Return evidence"],
+          },
+        ],
+      })),
+      groundSources: vi.fn(() => ({
+        groundedSources: [],
+        collectionNotes: [],
+      })),
+      executeCollectorUnit: vi.fn(async ({ unit }) => ({
+        groundedSources: [],
+        collectedEvidenceByCollector: {
+          [unit.capability === "financial_pack"
+            ? "financial_sources"
+            : "official_sources"]: [],
+        },
+        collectorRunInfo: {},
+        collectorPacks: {},
+        collectionNotes: [],
+        researchNotes: [],
+        researchUnitRuns: [],
+        researchUnits: [unit],
+      })),
+      synthesizeEvidence: vi.fn(() => ({
+        evidence: [],
+        references: [],
+        collectionSummary: {
+          collectors: [],
+          totalRawCount: 0,
+          totalCuratedCount: 0,
+          totalReferenceCount: 0,
+          totalFirstPartyCount: 0,
+          notes: [],
+        },
+        crawler: {
+          provider: "firecrawl" as const,
+          configured: false,
+          queries: [],
+          notes: [],
+        },
+      })),
+      runGapLoop: vi.fn(async ({ state }) => ({
+        state: {
+          ...state,
+          gapAnalysis: {
+            requiresFollowup: false,
+            summary: "enough",
+            missingAreas: [],
+            followupUnits: [],
+            iteration: 0,
+          },
+          replanRecords: [],
+        },
+        gapAnalysis: {
+          requiresFollowup: false,
+          summary: "enough",
+          missingAreas: [],
+          followupUnits: [],
+          iteration: 0,
+        },
+      })),
+      compressFindings: vi.fn(async () => ({
+        summary: "compressed",
+        highlights: [],
+        openQuestions: [],
+        noteIds: [],
+      })),
+      enrichReferences: vi.fn(async (state) => ({
+        references: state.references ?? [],
+        evidence: state.evidence ?? [],
+      })),
+      finalizeReport: vi.fn(async () => ({
+        brief: {
+          companyName: "绀轰緥鍏徃",
+          researchGoal: "楠岃瘉鍒╂鼎鍏戠幇",
+          focusConcepts: ["绠楀姏"],
+          keyQuestions: ["Q1"],
+        },
+        conceptInsights: [],
+        deepQuestions: [],
+        findings: [],
+        evidence: [],
+        references: [],
+        verdict: {
+          stance: "浼樺厛鐮旂┒" as const,
+          summary: "summary",
+          bullPoints: [],
+          bearPoints: [],
+          nextChecks: [],
+        },
+        collectionSummary: {
+          collectors: [],
+          totalRawCount: 0,
+          totalCuratedCount: 0,
+          totalReferenceCount: 0,
+          totalFirstPartyCount: 0,
+          notes: [],
+        },
+        crawler: {
+          provider: "firecrawl" as const,
+          configured: false,
+          queries: [],
+          notes: [],
+        },
+        reflection: {
+          status: "warn" as const,
+          summary: "needs more coverage",
+          contractScore: 72,
+          citationCoverage: 0.3,
+          firstPartyRatio: 0,
+          answeredQuestionCoverage: 1,
+          missingRequirements: ["citation_coverage_below_target"],
+          unansweredQuestions: [],
+          qualityFlags: ["citation_coverage_low"],
+          suggestedFixes: ["Add more citations"],
+        },
+        contractScore: 72,
+        qualityFlags: ["citation_coverage_low"],
+        missingRequirements: ["citation_coverage_below_target"],
+        generatedAt: new Date().toISOString(),
+      })),
+    };
+    const graph = new CompanyResearchContractLangGraph(
+      workflowService as never,
+    );
+
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-4",
+        userId: "user-1",
+        query: "绀轰緥鍏徃",
+        input: {
+          companyName: "绀轰緥鍏徃",
+          stockCode: "600519",
+          officialWebsite: "https://example.com",
+        },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as CompanyResearchGraphState;
+
+    expect(graph.templateVersion).toBe(4);
+    expect(finalState.taskContract?.citationRequired).toBe(true);
+    expect(finalState.reflection?.contractScore).toBeTypeOf("number");
   });
 });

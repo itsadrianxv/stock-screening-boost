@@ -5,8 +5,8 @@ import { ConfidenceAnalysisService } from "~/server/application/intelligence/con
 import { InsightSynthesisService } from "~/server/application/intelligence/insight-synthesis-service";
 import { IntelligenceAgentService } from "~/server/application/intelligence/intelligence-agent-service";
 import { QuickResearchWorkflowService } from "~/server/application/intelligence/quick-research-workflow-service";
-import { ResearchToolRegistry } from "~/server/application/intelligence/research-tool-registry";
 import { ReminderSchedulingService } from "~/server/application/intelligence/reminder-scheduling-service";
+import { ResearchToolRegistry } from "~/server/application/intelligence/research-tool-registry";
 import { InsightQualityService } from "~/server/domain/intelligence/services/insight-quality-service";
 import { ReviewPlanPolicy } from "~/server/domain/intelligence/services/review-plan-policy";
 import {
@@ -27,12 +27,14 @@ import { PythonConfidenceAnalysisClient } from "~/server/infrastructure/intellig
 import { PythonIntelligenceDataClient } from "~/server/infrastructure/intelligence/python-intelligence-data-client";
 import { PrismaScreeningSessionRepository } from "~/server/infrastructure/screening/prisma-screening-session-repository";
 import {
+  CompanyResearchContractLangGraph,
   CompanyResearchLangGraph,
   LegacyCompanyResearchLangGraph,
   ODRCompanyResearchLangGraph,
 } from "~/server/infrastructure/workflow/langgraph/company-research-graph";
 import { WorkflowGraphRegistry } from "~/server/infrastructure/workflow/langgraph/graph-registry";
 import {
+  QuickResearchContractLangGraph,
   QuickResearchLangGraph,
   QuickResearchODRLangGraph,
 } from "~/server/infrastructure/workflow/langgraph/quick-research-graph";
@@ -142,9 +144,11 @@ export function createWorkflowExecutionService(
     graphs: options?.graphs ?? [
       new QuickResearchLangGraph(intelligenceService),
       new QuickResearchODRLangGraph(quickResearchWorkflowService),
+      new QuickResearchContractLangGraph(quickResearchWorkflowService),
       new LegacyCompanyResearchLangGraph(companyResearchService),
       new CompanyResearchLangGraph(companyResearchService),
       new ODRCompanyResearchLangGraph(companyResearchWorkflowService),
+      new CompanyResearchContractLangGraph(companyResearchWorkflowService),
       new ScreeningInsightPipelineLangGraph({
         screeningSessionRepository: new PrismaScreeningSessionRepository(
           prisma,

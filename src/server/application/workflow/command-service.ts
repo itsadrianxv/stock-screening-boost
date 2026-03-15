@@ -3,6 +3,10 @@ import {
   WORKFLOW_ERROR_CODES,
   WorkflowDomainError,
 } from "~/server/domain/workflow/errors";
+import type {
+  ResearchPreferenceInput,
+  ResearchTaskContract,
+} from "~/server/domain/workflow/research";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
   getWorkflowNodeKeysFromGraphConfig,
@@ -16,13 +20,13 @@ import {
   type WorkflowEventStreamType,
   type WorkflowGraphState,
 } from "~/server/domain/workflow/types";
-import type { ResearchPreferenceInput } from "~/server/domain/workflow/research";
 import type { PrismaWorkflowRunRepository } from "~/server/infrastructure/workflow/prisma/workflow-run-repository";
 import { RedisWorkflowRuntimeStore } from "~/server/infrastructure/workflow/redis/redis-workflow-runtime-store";
 
 export type StartQuickResearchCommand = {
   userId: string;
   query: string;
+  taskContract?: ResearchTaskContract;
   researchPreferences?: ResearchPreferenceInput;
   templateCode?: string;
   templateVersion?: number;
@@ -37,6 +41,7 @@ export type StartCompanyResearchCommand = {
   focusConcepts?: string[];
   keyQuestion?: string;
   supplementalUrls?: string[];
+  taskContract?: ResearchTaskContract;
   researchPreferences?: ResearchPreferenceInput;
   templateVersion?: number;
   idempotencyKey?: string;
@@ -176,6 +181,7 @@ export class WorkflowCommandService {
       input: {
         query: command.query,
         researchPreferences: command.researchPreferences,
+        taskContract: command.taskContract,
       },
       idempotencyKey: command.idempotencyKey,
     });
@@ -194,6 +200,7 @@ export class WorkflowCommandService {
         focusConcepts: command.focusConcepts,
         keyQuestion: command.keyQuestion,
         supplementalUrls: command.supplementalUrls,
+        taskContract: command.taskContract,
         researchPreferences: command.researchPreferences,
       },
       idempotencyKey: command.idempotencyKey,
@@ -442,7 +449,7 @@ export class WorkflowCommandService {
     if (
       command.templateCode === QUICK_RESEARCH_TEMPLATE_CODE &&
       command.templateVersion === undefined &&
-      (!template || template.version < 2)
+      (!template || template.version < 3)
     ) {
       template = await this.repository.ensureQuickResearchTemplate();
     }
@@ -450,7 +457,7 @@ export class WorkflowCommandService {
     if (
       command.templateCode === COMPANY_RESEARCH_TEMPLATE_CODE &&
       command.templateVersion === undefined &&
-      (!template || template.version < 3)
+      (!template || template.version < 4)
     ) {
       template = await this.repository.ensureCompanyResearchTemplate();
     }

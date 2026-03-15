@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -9,12 +11,14 @@ function normalizeStringList(value: unknown, limit = 12) {
     return [];
   }
 
-  return [...new Set(
-    value
-      .filter((item): item is string => typeof item === "string")
-      .map((item) => item.trim())
-      .filter(Boolean),
-  )].slice(0, limit);
+  return [
+    ...new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, limit);
 }
 
 function normalizeString(value: unknown) {
@@ -40,6 +44,16 @@ export type ResearchPreferenceInput = {
   forbiddenEvidenceTypes?: string[];
   preferredSources?: string[];
   freshnessWindowDays?: number;
+};
+
+export type ResearchAnalysisDepth = "standard" | "deep";
+
+export type ResearchTaskContract = {
+  requiredSources: string[];
+  requiredSections: string[];
+  citationRequired: boolean;
+  analysisDepth: ResearchAnalysisDepth;
+  deadlineMinutes: number;
 };
 
 export type ResearchClarificationRequest = {
@@ -68,6 +82,8 @@ export type ResearchBriefV2 = {
 
 export type ResearchUnitPriority = "high" | "medium" | "low";
 
+export type ResearchUnitRole = string;
+
 export type ResearchUnitCapability =
   | "theme_overview"
   | "market_heat"
@@ -88,6 +104,10 @@ export type ResearchUnitPlan = {
   priority: ResearchUnitPriority;
   capability: ResearchUnitCapability;
   dependsOn: string[];
+  role: ResearchUnitRole;
+  expectedArtifact: string;
+  fallbackCapabilities: ResearchUnitCapability[];
+  acceptanceCriteria: string[];
 };
 
 export type ResearchUnitRunStatus =
@@ -102,6 +122,11 @@ export type ResearchUnitRun = {
   title: string;
   capability: ResearchUnitCapability;
   status: ResearchUnitRunStatus;
+  attempt: number;
+  repairCount: number;
+  fallbackUsed?: string;
+  validationErrors: string[];
+  qualityFlags: string[];
   startedAt: string;
   completedAt?: string;
   notes: string[];
@@ -127,6 +152,36 @@ export type ResearchGapAnalysis = {
   missingAreas: string[];
   followupUnits: ResearchUnitPlan[];
   iteration: number;
+};
+
+export type ResearchReplanRecord = {
+  replanId: string;
+  iteration: number;
+  triggerNodeKey: string;
+  reason: string;
+  missingAreas: string[];
+  action: string;
+  fallbackProvider?: string;
+  fallbackCapability?: ResearchUnitCapability;
+  reasoningSummary?: string;
+  decisionLog?: string[];
+  resultSummary: string;
+  createdAt: string;
+};
+
+export type ResearchReflectionStatus = "pass" | "warn" | "fail";
+
+export type ResearchReflectionResult = {
+  status: ResearchReflectionStatus;
+  summary: string;
+  contractScore: number;
+  citationCoverage: number;
+  firstPartyRatio: number;
+  answeredQuestionCoverage: number;
+  missingRequirements: string[];
+  unansweredQuestions: string[];
+  qualityFlags: string[];
+  suggestedFixes: string[];
 };
 
 export type CompressedFindings = {
@@ -200,6 +255,18 @@ export const DEFAULT_RESEARCH_RUNTIME_CONFIG: ResearchRuntimeConfig = {
   },
 };
 
+const researchTaskContractSchema = z.object({
+  requiredSources: z.array(z.string().trim().min(1)).max(8),
+  requiredSections: z.array(z.string().trim().min(1)).max(12),
+  citationRequired: z.boolean(),
+  analysisDepth: z.enum(["standard", "deep"]),
+  deadlineMinutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(24 * 60),
+});
+
 export function parseResearchPreferenceInput(
   value: unknown,
 ): ResearchPreferenceInput | undefined {
@@ -239,6 +306,17 @@ export function parseResearchPreferenceInput(
   };
 }
 
+export function parseResearchTaskContract(
+  value: unknown,
+): ResearchTaskContract | undefined {
+  const parsed = researchTaskContractSchema.safeParse(value);
+  if (!parsed.success) {
+    return undefined;
+  }
+
+  return parsed.data;
+}
+
 export function parseWorkflowTemplateGraphConfig(
   graphConfig: unknown,
 ): WorkflowTemplateGraphConfig {
@@ -252,7 +330,9 @@ export function parseWorkflowTemplateGraphConfig(
   }
 
   const nodes = Array.isArray(graphConfig.nodes)
-    ? graphConfig.nodes.filter((node): node is string => typeof node === "string")
+    ? graphConfig.nodes.filter(
+        (node): node is string => typeof node === "string",
+      )
     : [];
 
   const rawResearchDefaults = isRecord(graphConfig.researchDefaults)
