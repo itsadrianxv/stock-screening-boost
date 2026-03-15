@@ -6,6 +6,65 @@ from app.providers.akshare.client import AkShareProviderClient
 from app.services.akshare_adapter import AkShareAdapter
 
 
+@patch("app.providers.akshare.client.AkShareAdapter.get_all_stock_codes")
+@patch("app.providers.akshare.client.AkShareAdapter.get_stock_code_name_frame")
+def test_get_all_stock_codes_prefers_dedicated_code_table(
+    mock_code_frame,
+    mock_fallback_codes,
+):
+    AkShareAdapter.clear_caches()
+    mock_code_frame.return_value = pd.DataFrame(
+        {
+            "code": ["000001", "600519", "000001"],
+            "name": ["pingan", "moutai", "pingan"],
+        }
+    )
+
+    client = AkShareProviderClient()
+    codes = client.get_all_stock_codes()
+
+    assert codes == ["000001", "600519"]
+    mock_fallback_codes.assert_not_called()
+
+
+@patch("app.providers.akshare.client.AkShareAdapter.get_all_stock_codes")
+@patch("app.providers.akshare.client.AkShareAdapter.get_stock_code_name_frame")
+def test_get_all_stock_codes_handles_exchange_specific_code_columns(
+    mock_code_frame,
+    mock_fallback_codes,
+):
+    AkShareAdapter.clear_caches()
+    mock_code_frame.return_value = pd.DataFrame(
+        {
+            "\u8bc1\u5238\u4ee3\u7801": ["600000", "000001", "920000"],
+            "\u8bc1\u5238\u7b80\u79f0": ["pfbank", "pingan", "phoenix"],
+        }
+    )
+
+    client = AkShareProviderClient()
+    codes = client.get_all_stock_codes()
+
+    assert codes == ["600000", "000001", "920000"]
+    mock_fallback_codes.assert_not_called()
+
+
+@patch("app.providers.akshare.client.AkShareAdapter.get_all_stock_codes")
+@patch("app.providers.akshare.client.AkShareAdapter.get_stock_code_name_frame")
+def test_get_all_stock_codes_falls_back_when_dedicated_table_fails(
+    mock_code_frame,
+    mock_fallback_codes,
+):
+    AkShareAdapter.clear_caches()
+    mock_code_frame.side_effect = Exception("code table unavailable")
+    mock_fallback_codes.return_value = ["600519", "000001"]
+
+    client = AkShareProviderClient()
+    codes = client.get_all_stock_codes()
+
+    assert codes == ["600519", "000001"]
+    mock_fallback_codes.assert_called_once()
+
+
 @patch("app.providers.akshare.client.ak.stock_zh_a_hist")
 def test_get_stock_bars_normalizes_start_and_end_dates(mock_hist):
     mock_hist.return_value = pd.DataFrame(

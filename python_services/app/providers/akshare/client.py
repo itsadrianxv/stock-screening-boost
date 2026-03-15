@@ -23,12 +23,54 @@ _ETF_PREFIXES = (
     "159",
 )
 
+_CONCEPT_NAME_COLUMNS = (
+    "\u677f\u5757\u540d\u79f0",
+    "\u6982\u5ff5\u540d\u79f0",
+)
+_CONCEPT_CODE_COLUMNS = (
+    "\u677f\u5757\u4ee3\u7801",
+    "\u4ee3\u7801",
+)
+_CONCEPT_LEADING_COLUMNS = (
+    "\u9886\u6da8\u80a1\u7968",
+    "\u9886\u6da8",
+)
+_CONCEPT_CHANGE_COLUMN = "\u6da8\u8dcc\u5e45"
+_CONCEPT_UP_COUNT_COLUMN = "\u4e0a\u6da8\u5bb6\u6570"
+_CONCEPT_DOWN_COUNT_COLUMN = "\u4e0b\u8dcc\u5bb6\u6570"
+
+_STOCK_CODE_COLUMN = "\u4ee3\u7801"
+_STOCK_NAME_COLUMN = "\u540d\u79f0"
+_STOCK_LATEST_PRICE_COLUMN = "\u6700\u65b0\u4ef7"
+_STOCK_CHANGE_PERCENT_COLUMN = "\u6da8\u8dcc\u5e45"
+_STOCK_TURNOVER_RATE_COLUMN = "\u6362\u624b\u7387"
+
 
 class AkShareProviderClient:
     provider_name = "akshare"
 
     def get_all_stock_codes(self) -> list[str]:
-        return AkShareAdapter.get_all_stock_codes()
+        code_table_error: Exception | None = None
+
+        try:
+            codes = _extract_stock_codes_from_frame(
+                AkShareAdapter.get_stock_code_name_frame()
+            )
+            if codes:
+                return codes
+            code_table_error = RuntimeError("stock code table returned empty payload")
+        except Exception as exc:  # noqa: BLE001
+            code_table_error = exc
+
+        try:
+            return AkShareAdapter.get_all_stock_codes()
+        except Exception as exc:  # noqa: BLE001
+            detail = str(code_table_error) if code_table_error is not None else "unknown error"
+            raise Exception(
+                "failed to load stock codes: "
+                f"dedicated code table failed: {detail}; "
+                f"spot fallback failed: {exc}"
+            ) from exc
 
     def get_stock_universe(self) -> list[dict]:
         return AkShareAdapter.get_stock_universe()
@@ -41,7 +83,7 @@ class AkShareProviderClient:
                 return item
             raise GatewayError(
                 code="stock_not_found",
-                message=f"未找到证券 {normalized_code}",
+                message=f"Security not found: {normalized_code}",
                 status_code=404,
                 provider=self.provider_name,
             )
@@ -50,7 +92,7 @@ class AkShareProviderClient:
         if not items:
             raise GatewayError(
                 code="stock_not_found",
-                message=f"未找到股票 {normalized_code}",
+                message=f"Stock not found: {normalized_code}",
                 status_code=404,
                 provider=self.provider_name,
             )
@@ -125,7 +167,7 @@ class AkShareProviderClient:
         except Exception as exc:  # noqa: BLE001
             raise GatewayError(
                 code="bars_unavailable",
-                message=f"{normalized_code} 日线行情获取失败: {exc}",
+                message=f"Failed to load daily bars for {normalized_code}: {exc}",
                 status_code=503,
                 provider=self.provider_name,
             ) from exc
@@ -133,7 +175,7 @@ class AkShareProviderClient:
         if frame.empty:
             raise GatewayError(
                 code="bars_not_found",
-                message=f"未找到 {normalized_code} 的日线行情",
+                message=f"Daily bars not found for {normalized_code}",
                 status_code=404,
                 provider=self.provider_name,
             )
@@ -174,12 +216,12 @@ class AkShareProviderClient:
         for _, row in df.iterrows():
             items.append(
                 {
-                    "conceptName": str(row.get("板块名称") or row.get("概念名称") or "").strip(),
-                    "conceptCode": str(row.get("板块代码") or row.get("代码") or "").strip(),
-                    "leadingStock": str(row.get("领涨股票") or row.get("领涨") or "").strip(),
-                    "changePercent": _safe_float(row.get("涨跌幅")),
-                    "upCount": _safe_int(row.get("上涨家数")),
-                    "downCount": _safe_int(row.get("下跌家数")),
+                    "conceptName": _first_non_empty_text(row, _CONCEPT_NAME_COLUMNS),
+                    "conceptCode": _first_non_empty_text(row, _CONCEPT_CODE_COLUMNS),
+                    "leadingStock": _first_non_empty_text(row, _CONCEPT_LEADING_COLUMNS),
+                    "changePercent": _safe_float(row.get(_CONCEPT_CHANGE_COLUMN)),
+                    "upCount": _safe_int(row.get(_CONCEPT_UP_COUNT_COLUMN)),
+                    "downCount": _safe_int(row.get(_CONCEPT_DOWN_COUNT_COLUMN)),
                 }
             )
         return [item for item in items if item["conceptName"]]
@@ -201,11 +243,11 @@ class AkShareProviderClient:
             items.append(
                 {
                     "conceptName": concept_name,
-                    "stockCode": str(row.get("代码") or "").strip(),
-                    "stockName": str(row.get("名称") or "").strip(),
-                    "latestPrice": _safe_float(row.get("最新价")),
-                    "changePercent": _safe_float(row.get("涨跌幅")),
-                    "turnoverRate": _safe_float(row.get("换手率")),
+                    "stockCode": str(row.get(_STOCK_CODE_COLUMN) or "").strip(),
+                    "stockName": str(row.get(_STOCK_NAME_COLUMN) or "").strip(),
+                    "latestPrice": _safe_float(row.get(_STOCK_LATEST_PRICE_COLUMN)),
+                    "changePercent": _safe_float(row.get(_STOCK_CHANGE_PERCENT_COLUMN)),
+                    "turnoverRate": _safe_float(row.get(_STOCK_TURNOVER_RATE_COLUMN)),
                 }
             )
         return [item for item in items if item["stockCode"]]
@@ -232,6 +274,65 @@ def _normalize_stock_code(value: str | None) -> str:
 
 def _is_etf_code(stock_code: str) -> bool:
     return any(stock_code.startswith(prefix) for prefix in _ETF_PREFIXES)
+
+
+def _extract_stock_codes_from_frame(frame: pd.DataFrame) -> list[str]:
+    if frame.empty:
+        return []
+
+    code_column = _find_stock_code_column(frame)
+    if code_column is None:
+        return []
+
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw_code in frame[code_column].tolist():
+        code = _normalize_stock_code(raw_code)
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        codes.append(code)
+    return codes
+
+
+def _find_stock_code_column(frame: pd.DataFrame) -> str | None:
+    exact_code_column = next(
+        (
+            str(column)
+            for column in frame.columns
+            if _normalize_column_name(column) == "code"
+        ),
+        None,
+    )
+    if exact_code_column is not None:
+        return exact_code_column
+
+    best_column: str | None = None
+    best_score = 0.0
+    for column in frame.columns:
+        values = [value for value in frame[column].tolist() if str(value or "").strip()]
+        if not values:
+            continue
+        sample = values[:50]
+        matched = sum(1 for value in sample if _normalize_stock_code(str(value)) != "")
+        score = matched / len(sample)
+        if matched >= 3 and score > best_score:
+            best_column = str(column)
+            best_score = score
+
+    return best_column if best_score >= 0.6 else None
+
+
+def _normalize_column_name(value: object) -> str:
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]", "", str(value or "").strip().lower())
+
+
+def _first_non_empty_text(row: pd.Series, columns: tuple[str, ...]) -> str:
+    for column in columns:
+        text = str(row.get(column) or "").strip()
+        if text:
+            return text
+    return ""
 
 
 def _safe_float(value: object) -> float | None:

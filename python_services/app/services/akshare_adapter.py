@@ -17,6 +17,7 @@ _T = TypeVar("_T")
 
 _SPOT_CACHE_TTL_SECONDS = 30
 _ETF_SPOT_CACHE_TTL_SECONDS = 30
+_STOCK_CODE_CACHE_TTL_SECONDS = 24 * 60 * 60
 _FINANCIAL_SNAPSHOT_CACHE_TTL_SECONDS = 24 * 60 * 60
 _HISTORY_FRAME_CACHE_TTL_SECONDS = 6 * 60 * 60
 _INDIVIDUAL_INFO_CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -57,6 +58,15 @@ class AkShareAdapter:
             ttl_seconds=_ETF_SPOT_CACHE_TTL_SECONDS,
             fetch_fn=ak.fund_etf_spot_em,
             error_prefix="获取 ETF 快照失败",
+        )
+
+    @staticmethod
+    def get_stock_code_name_frame() -> pd.DataFrame:
+        return _get_cached_dataframe(
+            cache_key="stock-code-name",
+            ttl_seconds=_STOCK_CODE_CACHE_TTL_SECONDS,
+            fetch_fn=_load_stock_code_name_frame,
+            error_prefix="failed to load stock code table",
         )
 
     @staticmethod
@@ -411,6 +421,43 @@ def _load_latest_financial_snapshot_frame() -> pd.DataFrame:
         )
         if not frame.empty:
             return frame
+
+    return pd.DataFrame()
+
+
+def _load_stock_code_name_frame() -> pd.DataFrame:
+    errors: list[str] = []
+
+    try:
+        frame = ak.stock_info_a_code_name()
+        if not frame.empty:
+            return frame
+        errors.append("stock_info_a_code_name returned empty frame")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"stock_info_a_code_name: {exc}")
+
+    exchange_loaders: tuple[tuple[str, Callable[[], pd.DataFrame]], ...] = (
+        ("stock_info_sh_name_code", ak.stock_info_sh_name_code),
+        ("stock_info_sz_name_code", ak.stock_info_sz_name_code),
+        ("stock_info_bj_name_code", ak.stock_info_bj_name_code),
+    )
+    exchange_frames: list[pd.DataFrame] = []
+    for loader_name, fetch_fn in exchange_loaders:
+        try:
+            frame = fetch_fn()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{loader_name}: {exc}")
+            continue
+        if frame.empty:
+            errors.append(f"{loader_name} returned empty frame")
+            continue
+        exchange_frames.append(frame)
+
+    if exchange_frames:
+        return pd.concat(exchange_frames, ignore_index=True, sort=False)
+
+    if errors:
+        raise Exception("; ".join(errors))
 
     return pd.DataFrame()
 
