@@ -2,30 +2,30 @@
   <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f172a,50:0f766e,100:14b8a6&height=240&section=header&text=Stock%20Screening%20Boost&fontSize=40&fontColor=f8fafc&animation=fadeIn&desc=%E8%82%A1%E7%A5%A8%E6%8A%95%E7%A0%94%E5%B7%A5%E4%BD%9C%E6%B5%81%E5%AE%9A%E5%88%B6%E5%8C%96%E5%B9%B3%E5%8F%B0&descSize=18&descAlignY=68" alt="Stock Screening Boost hero" />
 
   <p>
-    <strong>让选股不再依赖零散灵感，而是沉淀为可执行、可追溯、可复用的研究流水线。</strong>
+    <strong>集成股票海选、行业研究、公司研究与择时组合工作流的股票投研平台</strong>
   </p>
 
   <p>
-    基于 <code>Next.js 15 + tRPC + Prisma + LangGraph.js + FastAPI</code>，
-    把策略筛选、行业快研、自选股管理与异步执行统一到同一个投资研究驾驶舱里。
+
+    
   </p>
 </div>
 
 <!-- readme-gen:start:badges -->
 <div align="center">
-  <img alt="Next.js 15" src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=nextdotjs" />
-  <img alt="TypeScript Strict" src="https://img.shields.io/badge/TypeScript-Strict-3178C6?style=flat-square&logo=typescript&logoColor=white" />
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=nextdotjs" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Strict-3178C6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="tRPC" src="https://img.shields.io/badge/tRPC-End--to--End%20Types-2596BE?style=flat-square&logo=trpc&logoColor=white" />
   <img alt="Prisma PostgreSQL" src="https://img.shields.io/badge/Prisma-PostgreSQL-2D3748?style=flat-square&logo=prisma&logoColor=white" />
   <img alt="FastAPI AkShare" src="https://img.shields.io/badge/FastAPI-AkShare-009688?style=flat-square&logo=fastapi&logoColor=white" />
   <img alt="LangGraph Redis Workers" src="https://img.shields.io/badge/LangGraph-Redis%20Workers-10B981?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/Tests-25%20TS%20%2B%206%20Py-22C55E?style=flat-square" />
+
 </div>
 <!-- readme-gen:end:badges -->
 
 <!-- readme-gen:start:tech-stack -->
 <div align="center">
-  <img src="https://skillicons.dev/icons?i=nextjs,ts,react,tailwind,prisma,postgres,py,redis,nodejs" alt="tech stack icons" />
+  <img src="https://skillicons.dev/icons?i=nextjs,ts,react,tailwind,prisma,postgres,py,redis,fastapi," alt="tech stack icons" />
 </div>
 <!-- readme-gen:end:tech-stack -->
 
