@@ -923,8 +923,8 @@ def _load_concept_rows_from_akshare(theme: str) -> list[dict]:
     if concept_df.empty:
         return []
 
-    name_column = _find_column(concept_df, ("板块名称", "概念名称", "名称"))
-    code_column = _find_column(concept_df, ("板块代码", "代码"))
+    name_column = _find_column(concept_df, ("name", "板块名称", "概念名称", "名称"))
+    code_column = _find_column(concept_df, ("code", "板块代码", "代码"))
     change_column = _find_column(concept_df, ("涨跌幅", "涨跌", "change"))
     leader_column = _find_column(concept_df, ("领涨股票", "领涨"))
     up_count_column = _find_column(concept_df, ("上涨家数", "上涨"))

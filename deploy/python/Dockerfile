@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
   && rm -rf vendor
 
 COPY python_services/app ./app
+COPY python_services/scripts ./scripts
 
 EXPOSE 8000
 

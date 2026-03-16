@@ -2,17 +2,17 @@
 
 本目录提供完整的 Docker Compose 编排，用于启动以下服务：
 
-- `web`：Next.js 应用
-- `python-service`：FastAPI 金融与情报数据网关
-- `workflow-worker`：工作流执行器
-- `screening-worker`：筛选任务执行器
-- `redis`：运行时缓存与队列状态
-- `postgres`：PostgreSQL 数据库
+- `web`: Next.js 应用
+- `python-service`: FastAPI 金融与情报数据网关
+- `workflow-worker`: 工作流执行器
+- `screening-worker`: 筛选任务执行器
+- `redis`: 运行时缓存与队列
+- `postgres`: PostgreSQL 数据库
 
 ## 前置条件
 
 - 已安装并启动 Docker Desktop
-- `docker version` 与 `docker compose version` 可正常执行
+- `docker version` 和 `docker compose version` 可以正常执行
 
 ## 1. 准备环境变量
 
@@ -28,44 +28,71 @@ cp deploy/.env.example deploy/.env
 - `POSTGRES_PASSWORD`
 - `WEB_PORT` / `PYTHON_SERVICE_PORT` / `POSTGRES_PORT`
 
-如需尽可能启用完整能力，建议同时配置：
+建议同时配置：
 
-- `DEEPSEEK_API_KEY`：启用工作流总结、Insight 归档等增强摘要能力
-- `FIRECRAWL_API_KEY`：启用公司研究中的网页搜索与抓取
-- `ZHIPU_API_KEY`：启用主题到概念映射的智谱 Web Search
-- `IFIND_USERNAME` / `IFIND_PASSWORD`：启用 iFinD 作为主筛选数据源
-- `REFCHECKER_*`：启用 RefChecker 可信度分析，而不是仅使用 heuristic fallback
+- `DEEPSEEK_API_KEY`: 启用工作流摘要、Insight 增强等能力
+- `FIRECRAWL_API_KEY`: 启用公司研究网页抓取
+- `ZHIPU_API_KEY`: 启用主题到概念映射的智谱 Web Search
+- `IFIND_USERNAME` / `IFIND_PASSWORD`: 启用 iFinD 作为主筛选数据源
+- `REFCHECKER_*`: 启用 RefChecker 可信度分析
 
-## 2. 可选的 iFinD 厂商安装包
+## 2. 可选的 iFinD 厂商包
 
-公共 PyPI 当前没有可直接安装的 `iFinDPy` 发行版，因此 Docker 不能仅靠公网依赖把 iFinD 跑起来。
-如果你要在 Linux 容器内真正启用 iFinD，请把厂商提供的安装包放到：
+公共 PyPI 当前没有可直接安装的 `iFinDPy` 发行版。如果需要在 Linux 容器内启用 iFinD，请将厂商提供的安装包放到：
 
 ```text
 deploy/python/vendor/
 ```
 
-支持的包格式：
+支持格式：
 
 - `*.whl`
 - `*.tar.gz`
 - `*.zip`
 
-如果该目录中没有厂商包，Python 服务仍然可以正常构建，并按 `SCREENING_ENABLE_AKSHARE_FALLBACK`
-退回到 AkShare。
+如果该目录为空，Python 服务仍可构建，并按 `SCREENING_ENABLE_AKSHARE_FALLBACK` 退回到 AkShare。
 
-## 3. 规则持久化
+## 3. 主题规则持久化
 
-主题概念规则现在会持久化到 Docker 命名卷 `python_theme_rules_data`。
-默认写入路径为：
+主题概念规则默认持久化到 Docker 命名卷 `python_theme_rules_data`，默认路径：
 
 ```text
 /data/theme-concept-rules/theme_concept_rules.json
 ```
 
-如有需要，也可以通过 `INTELLIGENCE_THEME_CONCEPT_RULES_FILE` 覆盖该路径。
+如有需要，可通过 `INTELLIGENCE_THEME_CONCEPT_RULES_FILE` 覆盖。
 
-## 4. 启动服务
+## 4. THS 概念目录文件
+
+概念目录主链路现在使用本地 THS 快照文件，而不是在请求时直接调用 `stock_board_concept_name_ths`。
+
+- 容器内默认路径：`/app/data/ths_concept_catalog.csv`
+- 宿主机路径：仓库根目录下的 [ths_concept_catalog.csv](D:/课外项目/stock-screening-boost/data/ths_concept_catalog.csv)
+- `python-service` 会将仓库根 `data/` 目录绑定挂载到容器内 `/app/data`
+
+可以通过 `INTELLIGENCE_CONCEPT_CATALOG_FILE` 覆盖默认路径。
+
+### 刷新命令
+
+建议至少每日盘前或盘后刷新一次：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm python-service python scripts/refresh_concept_catalog.py --output /app/data/ths_concept_catalog.csv
+```
+
+如果你是在本地 Python 环境中执行，也可以在 `python_services/` 目录下运行：
+
+```bash
+python scripts/refresh_concept_catalog.py --output ../data/ths_concept_catalog.csv
+```
+
+### 运维注意事项
+
+- 刷新脚本会从 THS 拉取最新概念目录，并覆盖写入 `ths_concept_catalog.csv`
+- 如果概念目录文件缺失、为空或列结构损坏，概念相关接口会显式报错，不会自动回退到 live THS
+- 更新本地 `data/ths_concept_catalog.csv` 后，无需重建镜像；后续请求会按文件更新时间自动热加载
+
+## 5. 启动服务
 
 在仓库根目录执行：
 
@@ -79,13 +106,13 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 - `workflow-worker` 会轮询并执行工作流任务
 - `screening-worker` 会轮询并执行筛选任务
 
-## 5. 访问地址
+## 6. 访问地址
 
-- Web：`http://localhost:3000`
-- Python API Docs：`http://localhost:8000/docs`
-- PostgreSQL：默认 `localhost:5432`，如果改了 `POSTGRES_PORT` 则以该端口为准
+- Web: `http://localhost:3000`
+- Python API Docs: `http://localhost:8000/docs`
+- PostgreSQL: 默认 `localhost:5432`
 
-## 6. 常用命令
+## 7. 常用命令
 
 查看全部日志：
 
@@ -93,7 +120,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs -f
 ```
 
-查看工作流 Worker 日志：
+查看 workflow worker 日志：
 
 ```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs -f workflow-worker

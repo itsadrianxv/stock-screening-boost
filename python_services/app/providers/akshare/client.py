@@ -24,10 +24,12 @@ _ETF_PREFIXES = (
 )
 
 _CONCEPT_NAME_COLUMNS = (
+    "name",
     "\u677f\u5757\u540d\u79f0",
     "\u6982\u5ff5\u540d\u79f0",
 )
 _CONCEPT_CODE_COLUMNS = (
+    "code",
     "\u677f\u5757\u4ee3\u7801",
     "\u4ee3\u7801",
 )

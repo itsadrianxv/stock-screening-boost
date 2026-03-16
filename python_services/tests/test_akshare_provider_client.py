@@ -131,13 +131,13 @@ def test_get_stock_bars_routes_etf_codes_to_fund_history(
 
 
 @patch("app.services.akshare_adapter._load_concept_constituents_frame_ths")
-@patch("app.services.akshare_adapter._load_concept_catalog_frame_ths")
-def test_concept_loaders_reuse_shared_adapter_cache(mock_catalog, mock_constituents):
+@patch("app.providers.akshare.client.AkShareAdapter.get_concept_catalog_frame")
+def test_get_concept_catalog_reads_local_ths_snapshot(mock_catalog, mock_constituents):
     AkShareAdapter.clear_caches()
     mock_catalog.return_value = pd.DataFrame(
         {
-            "板块名称": ["AI"],
-            "板块代码": ["BK1234"],
+            "name": ["AI"],
+            "code": ["BK1234"],
             "涨跌幅": [1.2],
             "领涨股票": ["603019"],
             "上涨家数": [8],
@@ -162,5 +162,5 @@ def test_concept_loaders_reuse_shared_adapter_cache(mock_catalog, mock_constitue
 
     assert catalog_one == catalog_two
     assert members_one == members_two
-    mock_catalog.assert_called_once()
+    assert mock_catalog.call_count == 2
     mock_constituents.assert_called_once_with("AI", concept_code="BK1234")

@@ -54,4 +54,5 @@ deploy/.env
 
 temp/
 
-data/
+data/*
+!data/ths_concept_catalog.csv

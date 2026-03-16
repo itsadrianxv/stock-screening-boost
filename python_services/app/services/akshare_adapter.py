@@ -19,6 +19,10 @@ import requests
 from requests import exceptions as requests_exceptions
 
 from app.policies.retry_policy import RetryPolicy, retry_sync
+from app.services.ths_concept_catalog import (
+    clear_ths_concept_catalog_cache,
+    load_ths_concept_catalog_frame,
+)
 
 _T = TypeVar("_T")
 
@@ -47,8 +51,8 @@ _THS_USER_AGENT = (
 )
 _THS_PAGE_INFO_PATTERN = re.compile(r'<span class="page_info">\s*(\d+)\s*/\s*(\d+)\s*</span>')
 _THS_CONCEPT_COLUMN_RENAMES = {
-    "name": "板块名称",
-    "code": "板块代码",
+    "name": "name",
+    "code": "code",
 }
 _THS_CONSTITUENT_COLUMN_RENAMES = {
     "现价": "最新价",
@@ -100,6 +104,7 @@ class AkShareAdapter:
     def clear_caches() -> None:
         with _CACHE_LOCK:
             _CACHE.clear()
+        clear_ths_concept_catalog_cache()
 
     @staticmethod
     def get_a_share_spot_frame(stock_codes: list[str] | None = None) -> pd.DataFrame:
@@ -139,12 +144,11 @@ class AkShareAdapter:
 
     @staticmethod
     def get_concept_catalog_frame() -> pd.DataFrame:
-        return _get_cached_dataframe(
-            cache_key="concept-catalog",
-            ttl_seconds=_CONCEPT_CACHE_TTL_SECONDS,
-            fetch_fn=_load_concept_catalog_frame_ths,
-            error_prefix="获取概念板块列表失败",
-        )
+        return load_ths_concept_catalog_frame()
+
+    @staticmethod
+    def get_live_concept_catalog_frame() -> pd.DataFrame:
+        return _fetch_live_concept_catalog_frame_ths()
 
     @staticmethod
     def get_concept_constituents_frame(
@@ -631,7 +635,7 @@ def _load_stock_code_name_frame() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _load_concept_catalog_frame_ths() -> pd.DataFrame:
+def _fetch_live_concept_catalog_frame_ths() -> pd.DataFrame:
     frame = _retry_ths_concept_fetch(
         operation_name="stock_board_concept_name_ths",
         fetch_fn=ak.stock_board_concept_name_ths,
@@ -640,12 +644,12 @@ def _load_concept_catalog_frame_ths() -> pd.DataFrame:
         return frame
 
     normalized = frame.rename(columns=_THS_CONCEPT_COLUMN_RENAMES).copy()
-    if "板块名称" in normalized.columns:
-        normalized["板块名称"] = normalized["板块名称"].map(
+    if "name" in normalized.columns:
+        normalized["name"] = normalized["name"].map(
             lambda value: str(value).strip()
         )
-    if "板块代码" in normalized.columns:
-        normalized["板块代码"] = normalized["板块代码"].map(
+    if "code" in normalized.columns:
+        normalized["code"] = normalized["code"].map(
             lambda value: str(value).strip()
         )
 
@@ -850,15 +854,20 @@ def _resolve_ths_concept_code(
     if normalized_code:
         return normalized_code
 
-    catalog = _load_concept_catalog_frame_ths()
+    catalog = AkShareAdapter.get_concept_catalog_frame()
     if catalog.empty:
         return ""
 
-    matched = catalog[catalog["板块名称"].astype(str).str.strip() == concept_name.strip()]
+    name_column = _find_column(catalog, ("name", "板块名称", "概念名称", "名称"))
+    code_column = _find_column(catalog, ("code", "板块代码", "代码"))
+    if not name_column or not code_column:
+        return ""
+
+    matched = catalog[catalog[name_column].astype(str).str.strip() == concept_name.strip()]
     if matched.empty:
         return ""
 
-    return str(matched.iloc[0].get("板块代码") or "").strip()
+    return str(matched.iloc[0].get(code_column) or "").strip()
 
 
 def _fetch_ths_concept_detail_html(*, concept_code: str, page: int) -> str:

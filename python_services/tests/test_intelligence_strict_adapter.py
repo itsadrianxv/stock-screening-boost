@@ -1,12 +1,9 @@
 from datetime import UTC, datetime, timedelta
-from http.client import RemoteDisconnected
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from requests import exceptions as requests_exceptions
 
-from app.services import akshare_adapter as akshare_adapter_module
 from app.services import intelligence_data_adapter as adapter_module
 from app.services.akshare_adapter import AkShareAdapter
 from app.services.intelligence_data_adapter import IntelligenceDataAdapter
@@ -66,31 +63,19 @@ def test_get_candidates_strict_raises_when_no_theme_specific_candidates():
             IntelligenceDataAdapter.get_candidates_strict(theme="AI", limit=5)
 
 
-@patch("app.policies.retry_policy.time.sleep", return_value=None)
-def test_get_candidates_strict_retries_transient_concept_catalog_disconnect(_mock_sleep):
-    retry_policy = adapter_module.RetryPolicy(
-        max_attempts=2,
-        base_delay_ms=0,
-        multiplier=1.0,
-        max_delay_ms=0,
-        jitter_ratio=0.0,
-    )
-
+def test_get_candidates_strict_uses_local_catalog_snapshot():
     with (
-        patch.object(akshare_adapter_module, "_THS_CONCEPT_RETRY_POLICY", retry_policy),
         patch(
-            "app.services.akshare_adapter.ak.stock_board_concept_name_ths",
-            side_effect=[
-                requests_exceptions.ConnectionError(
-                    "Connection aborted.",
-                    RemoteDisconnected("Remote end closed connection without response"),
-                ),
-                _concept_df(),
-            ],
-        ) as mock_catalog,
+            "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_catalog_frame",
+            return_value=_concept_df(),
+        ),
         patch(
             "app.services.intelligence_data_adapter.AkShareAdapter.get_concept_constituents_frame",
             return_value=_constituents_df(),
+        ),
+        patch(
+            "app.services.akshare_adapter.ak.stock_board_concept_name_ths",
+            side_effect=AssertionError("live THS concept catalog should not be called"),
         ),
         patch(
             "app.services.intelligence_data_adapter._RULES_REGISTRY.get_rules",
@@ -104,7 +89,7 @@ def test_get_candidates_strict_retries_transient_concept_catalog_disconnect(_moc
                     "code": "BK001",
                     "aliases": [],
                     "confidence": 0.91,
-                    "reason": "retry path",
+                    "reason": "local snapshot path",
                     "source": "zhipu_web_search",
                 }
             ],
@@ -112,7 +97,6 @@ def test_get_candidates_strict_retries_transient_concept_catalog_disconnect(_moc
     ):
         payload = IntelligenceDataAdapter.get_candidates_strict(theme="AI", limit=5)
 
-    assert mock_catalog.call_count == 2
     assert len(payload) == 1
     assert payload[0]["stockCode"] == "300308"
 

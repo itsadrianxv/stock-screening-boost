@@ -1,28 +1,29 @@
 # AkShare EM/THS 决策矩阵（2026-03-15）
 
-本轮只修复用户可见 blocker，不把“发现某个 THS 接口存在”直接当成“可以无损替换”。
+本轮只处理用户可见的 blocker，不把“发现某个 THS 接口存在”直接等价成“可以无损替换”。
 
-| 当前接口 | 当前用途 | 本轮动作 | 暂留原因 | 后续切换前需要验证 |
-| --- | --- | --- | --- | --- |
-| `stock_board_concept_name_em` | 概念目录 | 已切到 THS | THS 原始目录与适配层 smoke 可用 | 持续观察目录稳定性与耗时 |
-| `stock_board_concept_cons_em` | 概念成分股 | 已切到 THS 并补全分页 | 之前只抓到第 1 页，现已修正 | 持续验证多页概念与去重行为 |
-| `stock_zh_a_spot_em` | `evidence` / `research-pack` / 候选股 spot fallback | 不直接切 THS，新增 AkShare-only fallback | 未找到明确 THS 等效；当前主问题是 EM 失效而非字段映射 | 新浪源稳定性、限流风险、缺失字段对上层影响 |
-| `fund_etf_spot_em` | ETF 快照 | 本轮只加 smoke 对比，不切换 | 发现 `fund_etf_spot_ths()` 但未验证字段一致性 | 核心字段列名、覆盖范围、ETF 代码匹配率 |
-| `fund_etf_hist_em` | ETF 日线 | 本轮不切换 | 未找到明确 THS 历史等效 | 是否存在等价历史接口，复权与日期参数是否一致 |
-| `stock_board_industry_name_em` | 行业列表 | 本轮只加 smoke 对比，不切换 | 发现 `stock_board_industry_name_ths()` 但未验证返回语义 | 行业名称口径、去重结果、缓存收益 |
-| `stock_yjbb_em` | 最新财务快照 | 本轮不切换，失败时允许 partial degrade | THS 没有确认的一对一“全市场最新快照”接口 | 全市场覆盖率、更新时间、字段口径 |
-| `stock_individual_info_em` | 行业补全 | 本轮不切换 | 当前只是兜底单股补全，替换收益有限 | 单股行业字段可用率、限流风险 |
-| `stock_financial_analysis_indicator_em` | 历史财务指标 | 本轮不切换 | THS 只有部分替代思路，未证明可一对一复现 | ROE/EPS/PB 等历史序列的字段映射与时间顺序 |
-| `stock_news_em` | 个股新闻 | 本轮不切换 | 未找到明确 THS 新闻等效 | 新闻时效、字段结构、去重与发布日期可用性 |
+| 当前接口 | 当前用途 | 当前策略 | 备注 |
+| --- | --- | --- | --- |
+| `stock_board_concept_name_em` | 概念目录 | 改为 THS 本地快照主链路 | 运行时读取 [ths_concept_catalog.csv](D:/课外项目/stock-screening-boost/data/ths_concept_catalog.csv)，仅刷新脚本调用 `stock_board_concept_name_ths` |
+| `stock_board_concept_cons_em` | 概念成分股 | 已切到 THS 并补全分页 | 仍保持 live THS 调用，不做静态化 |
+| `stock_zh_a_spot_em` | `evidence` / `research-pack` / 候选股 spot fallback | 不直接切 THS | 继续保留现有多级降级策略 |
+| `fund_etf_spot_em` | ETF 快照 | 本轮不切换 | 持续观察字段等价性 |
+| `fund_etf_hist_em` | ETF 日线 | 本轮不切换 | 未确认 THS 等价历史接口 |
+| `stock_board_industry_name_em` | 行业列表 | 本轮不切换 | 后续再看字段和口径一致性 |
+| `stock_yjbb_em` | 最新财务快照 | 本轮不切换 | 失败时仍允许 partial degrade |
+| `stock_individual_info_em` | 行业补全 | 本轮不切换 | 当前仅作兜底补全 |
+| `stock_financial_analysis_indicator_em` | 历史财务指标 | 本轮不切换 | 未证明 THS 可一对一复现 |
+| `stock_news_em` | 个股新闻 | 本轮不切换 | 未确认 THS 等效新闻源 |
 
 ## 本轮落地结论
 
-- 概念链路已经以 THS 为主，并补上了全分页。
-- `theme_concepts`、`theme_candidates`、`company_evidence`、`company_research_pack` 现在都允许 stale cache 回退。
-- `stock_zh_a_spot_em` 失效时，会按 `EM -> 新浪 -> per-code partial snapshot` 依次降级，不再直接把所有问题放大成 503。
+- 概念目录从“live THS 请求链路”切换为“THS 生成的本地快照文件”。
+- 快照文件固定为 [ths_concept_catalog.csv](D:/课外项目/stock-screening-boost/data/ths_concept_catalog.csv)。
+- 运维需要定期执行刷新脚本，至少每日盘前或盘后一次。
+- 如果快照文件缺失、为空或结构损坏，概念相关接口显式报错，不自动回退 live THS。
 
 ## 后续替换原则
 
-- 先证明“字段与行为等效”，再切主路径。
-- 先替换直接造成用户故障的接口，再处理低收益的边缘接口。
-- 优先保留可观测性：切换后必须保留 smoke test、data quality 标记和 warning。
+- 先证明“字段和行为等价”，再切主链路。
+- 先替换直接影响用户正确性的链路，再处理低收益边缘接口。
+- 切换后保留可观测性，包括 smoke test、warning 和数据质量标记。
