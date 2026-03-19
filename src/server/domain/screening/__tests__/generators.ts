@@ -5,14 +5,21 @@
  */
 
 import * as fc from "fast-check";
-import { IndicatorField, INDICATOR_FIELD_METADATA, IndicatorValueType } from "../enums/indicator-field";
+import { FilterGroup } from "../entities/filter-group";
+import { Stock } from "../entities/stock";
 import { ComparisonOperator } from "../enums/comparison-operator";
+import {
+  INDICATOR_FIELD_METADATA,
+  IndicatorField,
+  IndicatorValueType,
+} from "../enums/indicator-field";
 import { LogicalOperator } from "../enums/logical-operator";
 import { FilterCondition } from "../value-objects/filter-condition";
-import { FilterGroup } from "../entities/filter-group";
-import { ScoringConfig, NormalizationMethod } from "../value-objects/scoring-config";
 import type { IndicatorValue } from "../value-objects/indicator-value";
-import { Stock } from "../entities/stock";
+import {
+  NormalizationMethod,
+  ScoringConfig,
+} from "../value-objects/scoring-config";
 import { StockCode } from "../value-objects/stock-code";
 
 /**
@@ -20,8 +27,8 @@ import { StockCode } from "../value-objects/stock-code";
  */
 export const arbStockCode = fc
   .tuple(
-    fc.constantFrom("0", "3", "6"),
-    fc.integer({ min: 0, max: 99999 })
+    fc.constantFrom("0", "3", "6", "9"),
+    fc.integer({ min: 0, max: 99999 }),
   )
   .map(([prefix, num]) => `${prefix}${num.toString().padStart(5, "0")}`);
 
@@ -37,7 +44,7 @@ export const arbNumericIndicatorField = fc.constantFrom(
   IndicatorField.NET_PROFIT,
   IndicatorField.DEBT_RATIO,
   IndicatorField.MARKET_CAP,
-  IndicatorField.FLOAT_MARKET_CAP
+  IndicatorField.FLOAT_MARKET_CAP,
 );
 
 /**
@@ -45,7 +52,7 @@ export const arbNumericIndicatorField = fc.constantFrom(
  */
 export const arbTextIndicatorField = fc.constantFrom(
   IndicatorField.INDUSTRY,
-  IndicatorField.SECTOR
+  IndicatorField.SECTOR,
 );
 
 /**
@@ -53,7 +60,7 @@ export const arbTextIndicatorField = fc.constantFrom(
  */
 export const arbIndicatorField = fc.oneof(
   arbNumericIndicatorField,
-  arbTextIndicatorField
+  arbTextIndicatorField,
 );
 
 /**
@@ -74,7 +81,10 @@ export const arbTextValue = fc
  * 生成列表型 IndicatorValue
  */
 export const arbListValue = fc
-  .array(fc.string({ minLength: 1, maxLength: 20 }), { minLength: 1, maxLength: 5 })
+  .array(fc.string({ minLength: 1, maxLength: 20 }), {
+    minLength: 1,
+    maxLength: 5,
+  })
   .map((values): IndicatorValue => ({ type: "list", values }));
 
 /**
@@ -83,7 +93,7 @@ export const arbListValue = fc
 export const arbRangeValue = fc
   .tuple(
     fc.double({ min: -1000, max: 10000, noNaN: true }),
-    fc.double({ min: -1000, max: 10000, noNaN: true })
+    fc.double({ min: -1000, max: 10000, noNaN: true }),
   )
   .map(([a, b]): IndicatorValue => {
     const min = Math.min(a, b);
@@ -99,18 +109,20 @@ export const arbTimeSeriesValue = fc
     years: fc.integer({ min: 1, max: 10 }),
     threshold: fc.option(fc.double({ min: -1000, max: 10000, noNaN: true })),
   })
-  .map((config): IndicatorValue => ({
-    type: "timeSeries",
-    years: config.years,
-    threshold: config.threshold ?? undefined,
-  }));
+  .map(
+    (config): IndicatorValue => ({
+      type: "timeSeries",
+      years: config.years,
+      threshold: config.threshold ?? undefined,
+    }),
+  );
 
 /**
  * 检查 IndicatorField 和 IndicatorValue 类型是否匹配
  */
 function isValueTypeCompatible(
   field: IndicatorField,
-  value: IndicatorValue
+  value: IndicatorValue,
 ): boolean {
   const metadata = INDICATOR_FIELD_METADATA[field];
 
@@ -134,7 +146,7 @@ function isValueTypeCompatible(
  */
 function isOperatorCompatible(
   operator: ComparisonOperator,
-  value: IndicatorValue
+  value: IndicatorValue,
 ): boolean {
   switch (operator) {
     case ComparisonOperator.GREATER_THAN:
@@ -172,8 +184,8 @@ export const arbValidFilterCondition = fc
       arbTextValue,
       arbListValue,
       arbRangeValue,
-      arbTimeSeriesValue
-    )
+      arbTimeSeriesValue,
+    ),
   )
   .filter(([field, operator, value]) => {
     return (
@@ -182,7 +194,7 @@ export const arbValidFilterCondition = fc
     );
   })
   .map(([field, operator, value]) =>
-    FilterCondition.create(field, operator, value)
+    FilterCondition.create(field, operator, value),
   );
 
 /**
@@ -192,10 +204,13 @@ export const arbFilterGroup = (maxDepth = 3): fc.Arbitrary<FilterGroup> => {
   const arbLeafGroup = fc
     .record({
       operator: fc.constantFrom(LogicalOperator.AND, LogicalOperator.OR),
-      conditions: fc.array(arbValidFilterCondition, { minLength: 1, maxLength: 3 }),
+      conditions: fc.array(arbValidFilterCondition, {
+        minLength: 1,
+        maxLength: 3,
+      }),
     })
     .map(({ operator, conditions }) =>
-      FilterGroup.create(operator, conditions, [])
+      FilterGroup.create(operator, conditions, []),
     );
 
   if (maxDepth <= 1) {
@@ -212,19 +227,18 @@ export const arbFilterGroup = (maxDepth = 3): fc.Arbitrary<FilterGroup> => {
       }),
     })
     .map(({ operator, conditions, subGroups }) =>
-      FilterGroup.create(operator, conditions, subGroups)
+      FilterGroup.create(operator, conditions, subGroups),
     );
 
   // NOT 组特殊处理：只能有一个子元素
-  const arbNotGroup = fc
-    .oneof(
-      arbValidFilterCondition.map((condition) =>
-        FilterGroup.create(LogicalOperator.NOT, [condition], [])
-      ),
-      arbFilterGroup(maxDepth - 1).map((subGroup) =>
-        FilterGroup.create(LogicalOperator.NOT, [], [subGroup])
-      )
-    );
+  const arbNotGroup = fc.oneof(
+    arbValidFilterCondition.map((condition) =>
+      FilterGroup.create(LogicalOperator.NOT, [condition], []),
+    ),
+    arbFilterGroup(maxDepth - 1).map((subGroup) =>
+      FilterGroup.create(LogicalOperator.NOT, [], [subGroup]),
+    ),
+  );
 
   return fc.oneof(arbLeafGroup, arbRecursiveGroup, arbNotGroup);
 };
@@ -236,14 +250,14 @@ export const arbScoringConfig = fc
   .array(
     fc.tuple(
       arbNumericIndicatorField,
-      fc.double({ min: 0.01, max: 1, noNaN: true, noDefaultInfinity: true })
+      fc.double({ min: 0.01, max: 1, noNaN: true, noDefaultInfinity: true }),
     ),
-    { minLength: 1, maxLength: 5 }
+    { minLength: 1, maxLength: 5 },
   )
   .chain((pairs) => {
     // 去重：确保每个指标只出现一次
     const uniquePairs = Array.from(
-      new Map(pairs.map(([field, weight]) => [field, weight])).entries()
+      new Map(pairs.map(([field, weight]) => [field, weight])).entries(),
     );
 
     if (uniquePairs.length === 0) {
@@ -251,26 +265,31 @@ export const arbScoringConfig = fc
       return fc.constant(
         ScoringConfig.create(
           new Map([[IndicatorField.ROE, 1.0]]),
-          NormalizationMethod.MIN_MAX
-        )
+          NormalizationMethod.MIN_MAX,
+        ),
       );
     }
 
     // 归一化权重使其和为 1.0
-    const totalWeight = uniquePairs.reduce((sum, [, weight]) => sum + weight, 0);
+    const totalWeight = uniquePairs.reduce(
+      (sum, [, weight]) => sum + weight,
+      0,
+    );
     const normalizedWeights = new Map(
-      uniquePairs.map(([field, weight]) => [field, weight / totalWeight])
+      uniquePairs.map(([field, weight]) => [field, weight / totalWeight]),
     );
 
     return fc.constant(
-      ScoringConfig.create(normalizedWeights, NormalizationMethod.MIN_MAX)
+      ScoringConfig.create(normalizedWeights, NormalizationMethod.MIN_MAX),
     );
   });
 
 /**
  * 生成策略名称（非空且不仅包含空白字符）
  */
-export const arbStrategyName = fc.string({ minLength: 1, maxLength: 50 }).filter(name => name.trim().length > 0);
+export const arbStrategyName = fc
+  .string({ minLength: 1, maxLength: 50 })
+  .filter((name) => name.trim().length > 0);
 
 /**
  * 生成用户ID
@@ -280,37 +299,39 @@ export const arbUserId = fc.uuid();
 /**
  * 生成 Stock 实体
  */
-export const arbStock = fc.record({
-  code: arbStockCode,
-  name: fc.string({ minLength: 2, maxLength: 10 }),
-  industry: fc.constantFrom("白酒", "医药", "银行", "科技", "制造"),
-  sector: fc.constantFrom("主板", "创业板", "科创板"),
-  roe: fc.option(fc.double({ min: -0.5, max: 1.0, noNaN: true })),
-  pe: fc.option(fc.double({ min: 0, max: 200, noNaN: true })),
-  pb: fc.option(fc.double({ min: 0, max: 50, noNaN: true })),
-  eps: fc.option(fc.double({ min: -10, max: 100, noNaN: true })),
-  revenue: fc.option(fc.double({ min: 0, max: 10000, noNaN: true })),
-  netProfit: fc.option(fc.double({ min: -1000, max: 5000, noNaN: true })),
-  debtRatio: fc.option(fc.double({ min: 0, max: 1.0, noNaN: true })),
-  marketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true })),
-  floatMarketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true })),
-}).map((props) => {
-  return new Stock({
-    code: StockCode.create(props.code),
-    name: props.name,
-    industry: props.industry,
-    sector: props.sector,
-    roe: props.roe ?? null,
-    pe: props.pe ?? null,
-    pb: props.pb ?? null,
-    eps: props.eps ?? null,
-    revenue: props.revenue ?? null,
-    netProfit: props.netProfit ?? null,
-    debtRatio: props.debtRatio ?? null,
-    marketCap: props.marketCap ?? null,
-    floatMarketCap: props.floatMarketCap ?? null,
+export const arbStock = fc
+  .record({
+    code: arbStockCode,
+    name: fc.string({ minLength: 2, maxLength: 10 }),
+    industry: fc.constantFrom("白酒", "医药", "银行", "科技", "制造"),
+    sector: fc.constantFrom("主板", "创业板", "科创板"),
+    roe: fc.option(fc.double({ min: -0.5, max: 1.0, noNaN: true })),
+    pe: fc.option(fc.double({ min: 0, max: 200, noNaN: true })),
+    pb: fc.option(fc.double({ min: 0, max: 50, noNaN: true })),
+    eps: fc.option(fc.double({ min: -10, max: 100, noNaN: true })),
+    revenue: fc.option(fc.double({ min: 0, max: 10000, noNaN: true })),
+    netProfit: fc.option(fc.double({ min: -1000, max: 5000, noNaN: true })),
+    debtRatio: fc.option(fc.double({ min: 0, max: 1.0, noNaN: true })),
+    marketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true })),
+    floatMarketCap: fc.option(fc.double({ min: 10, max: 100000, noNaN: true })),
+  })
+  .map((props) => {
+    return new Stock({
+      code: StockCode.create(props.code),
+      name: props.name,
+      industry: props.industry,
+      sector: props.sector,
+      roe: props.roe ?? null,
+      pe: props.pe ?? null,
+      pb: props.pb ?? null,
+      eps: props.eps ?? null,
+      revenue: props.revenue ?? null,
+      netProfit: props.netProfit ?? null,
+      debtRatio: props.debtRatio ?? null,
+      marketCap: props.marketCap ?? null,
+      floatMarketCap: props.floatMarketCap ?? null,
+    });
   });
-});
 
 /**
  * 生成 ScreeningStrategy 聚合根
@@ -321,13 +342,17 @@ export const arbScreeningStrategy = fc
     description: fc.option(fc.string({ maxLength: 200 })),
     filters: arbFilterGroup(),
     scoringConfig: arbScoringConfig,
-    tags: fc.array(fc.string({ minLength: 1, maxLength: 20 }), { maxLength: 5 }),
+    tags: fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+      maxLength: 5,
+    }),
     isTemplate: fc.boolean(),
     userId: arbUserId,
   })
   .map((props) => {
     // 动态导入以避免循环依赖
-    const { ScreeningStrategy } = require("../aggregates/screening-strategy.js");
+    const {
+      ScreeningStrategy,
+    } = require("../aggregates/screening-strategy.js");
     return ScreeningStrategy.create({
       name: props.name,
       description: props.description ?? undefined,
@@ -344,7 +369,9 @@ export const arbScreeningStrategy = fc
  */
 export const arbWatchList = fc
   .record({
-    name: fc.string({ minLength: 1, maxLength: 50 }).filter(name => name.trim().length > 0),
+    name: fc
+      .string({ minLength: 1, maxLength: 50 })
+      .filter((name) => name.trim().length > 0),
     description: fc.option(fc.string({ maxLength: 200 })),
     userId: arbUserId,
     stocks: fc.array(
@@ -352,15 +379,17 @@ export const arbWatchList = fc
         code: arbStockCode,
         name: fc.string({ minLength: 2, maxLength: 10 }),
         note: fc.option(fc.string({ maxLength: 100 })),
-        tags: fc.array(fc.string({ minLength: 1, maxLength: 20 }), { maxLength: 5 }),
+        tags: fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          maxLength: 5,
+        }),
       }),
-      { maxLength: 20 }
+      { maxLength: 20 },
     ),
   })
   .map((props) => {
     // 动态导入以避免循环依赖
     const { WatchList } = require("../aggregates/watch-list.js");
-    
+
     const watchList = WatchList.create({
       name: props.name,
       description: props.description ?? undefined,
@@ -369,7 +398,7 @@ export const arbWatchList = fc
 
     // 添加股票（去重以避免 DuplicateStockError）
     const uniqueStocks = new Map(
-      props.stocks.map(stock => [stock.code, stock])
+      props.stocks.map((stock) => [stock.code, stock]),
     );
 
     for (const stock of uniqueStocks.values()) {
@@ -377,7 +406,7 @@ export const arbWatchList = fc
         StockCode.create(stock.code),
         stock.name,
         stock.note ?? undefined,
-        stock.tags
+        stock.tags,
       );
     }
 

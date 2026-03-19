@@ -36,8 +36,8 @@ describe("PythonDataServiceClient", () => {
       ok: true,
       json: async () => ({
         data: {
-          codes: ["600519", "000001"],
-          total: 2,
+          codes: ["600519", "000001", "920000"],
+          total: 3,
         },
       }),
     });
@@ -52,7 +52,11 @@ describe("PythonDataServiceClient", () => {
         }),
       }),
     );
-    expect(result.map((item) => item.value)).toEqual(["600519", "000001"]);
+    expect(result.map((item) => item.value)).toEqual([
+      "600519",
+      "000001",
+      "920000",
+    ]);
   });
 
   it("maps v1 stock snapshot payload to Stock", async () => {
