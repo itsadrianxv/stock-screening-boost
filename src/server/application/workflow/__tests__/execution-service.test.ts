@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
 import {
   WorkflowEventType,
   WorkflowNodeRunStatus,
   WorkflowRunStatus,
 } from "@prisma/client";
+import { describe, expect, it, vi } from "vitest";
 import { WorkflowCommandService } from "~/server/application/workflow/command-service";
 import { WorkflowExecutionService } from "~/server/application/workflow/execution-service";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
@@ -102,7 +102,7 @@ class RecoverableGraph implements WorkflowGraphRunner {
         updatedState: WorkflowGraphState,
       ) => Promise<void> | void;
     };
-  }) {
+  }): Promise<WorkflowGraphState> {
     let state = params.initialState as RecoverableState;
     const nodeOrder = this.getNodeOrder();
 
@@ -213,7 +213,7 @@ class ReviewPauseGraph implements WorkflowGraphRunner {
         updatedState: WorkflowGraphState,
       ) => Promise<void> | void;
     };
-  }) {
+  }): Promise<WorkflowGraphState> {
     let state = params.initialState as ReviewPauseState;
 
     for (const nodeKey of this.getNodeOrder().slice(
@@ -305,9 +305,11 @@ class ClarificationPauseGraph implements WorkflowGraphRunner {
     return {
       clarificationRequired: true,
       question:
-        (state as WorkflowGraphState & {
-          clarificationRequest?: { question?: string };
-        }).clarificationRequest?.question ?? "Need more detail",
+        (
+          state as WorkflowGraphState & {
+            clarificationRequest?: { question?: string };
+          }
+        ).clarificationRequest?.question ?? "Need more detail",
       missingScopeFields: ["query"],
       suggestedInputPatch: {
         researchPreferences: {
@@ -420,7 +422,7 @@ class FailingActiveNodeGraph implements WorkflowGraphRunner {
         updatedState: WorkflowGraphState,
       ) => Promise<void> | void;
     };
-  }) {
+  }): Promise<WorkflowGraphState> {
     let state = params.initialState;
 
     await params.hooks?.onNodeStarted?.("first_node");
