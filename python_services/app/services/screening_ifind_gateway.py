@@ -5,11 +5,7 @@ from __future__ import annotations
 from datetime import date
 import re
 
-from app.providers.screening.ifind_provider import (
-    IFIND_AVAILABLE,
-    THS_DR,
-    IFindScreeningProvider,
-)
+from app.providers.screening.ifind_provider import THS_DR, IFindScreeningProvider
 
 
 class IFindWorkbenchGateway:
@@ -18,7 +14,8 @@ class IFindWorkbenchGateway:
 
     def load_universe(self) -> list[dict[str, str]]:
         self._provider._ensure_login()  # noqa: SLF001
-        if not IFIND_AVAILABLE or THS_DR is None:
+        self._provider._ensure_ifind_api_loaded()  # noqa: SLF001
+        if THS_DR is None:
             raise RuntimeError("iFinDPy 未安装，无法加载股票池")
 
         raw = THS_DR(

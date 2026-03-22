@@ -26,7 +26,7 @@ def _infer_retrieval_mode(category_name: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=1)
 def load_indicator_catalog() -> dict[str, list[dict[str, object]]]:
-    project_root = Path(__file__).resolve().parents[3]
+    project_root = Path(__file__).resolve().parents[2]
     mapping_path = (
         project_root
         / "temp"

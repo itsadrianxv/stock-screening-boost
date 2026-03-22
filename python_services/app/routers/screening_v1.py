@@ -7,6 +7,7 @@ from functools import lru_cache
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.services.akshare_adapter import AkShareAdapter
 from app.services.screening_catalog import load_indicator_catalog
 from app.services.screening_formula_engine import SafeFormulaEngine
 from app.services.screening_ifind_gateway import IFindWorkbenchGateway, resolve_periods
@@ -28,10 +29,40 @@ class ScreeningQueryRequest(BaseModel):
     timeConfig: dict[str, str]
 
 
+def _infer_market(stock_code: str) -> str:
+    if stock_code.startswith(("0", "3")):
+        return "SZ"
+    if stock_code.startswith(("4", "8")):
+        return "BJ"
+    return "SH"
+
+
+def load_stock_search_universe() -> list[dict[str, str]]:
+    frame = AkShareAdapter.get_stock_code_name_frame()
+    if frame.empty:
+        return []
+
+    records: list[dict[str, str]] = []
+    for _, row in frame.iterrows():
+        stock_code = str(row.get("code") or "").strip()
+        stock_name = str(row.get("name") or "").strip()
+        if not stock_code or not stock_name:
+            continue
+
+        records.append(
+            {
+                "stockCode": stock_code,
+                "stockName": stock_name,
+                "market": _infer_market(stock_code),
+            }
+        )
+
+    return records
+
+
 @lru_cache(maxsize=1)
 def get_stock_searcher() -> ScreeningStockSearcher:
-    gateway = IFindWorkbenchGateway()
-    return ScreeningStockSearcher(universe_loader=gateway.load_universe)
+    return ScreeningStockSearcher(universe_loader=load_stock_search_universe)
 
 
 @router.get("/stocks/search")
