@@ -20,6 +20,7 @@ import {
   workspaceSummarySchema,
 } from "~/contracts/screening";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { LocalStockSearchService } from "~/server/infrastructure/screening/local-stock-search-service";
 import { PythonScreeningWorkbenchClient } from "~/server/infrastructure/screening/python-screening-workbench-client";
 
 type ScreeningFormulaRecord = {
@@ -204,10 +205,9 @@ export const screeningRouter = createTRPCRouter({
         limit: z.number().int().min(1).max(20).default(20),
       }),
     )
-    .query(async ({ input }) => {
-      const client = new PythonScreeningWorkbenchClient();
-      return client.searchStocks(input.keyword, input.limit);
-    }),
+    .query(async ({ input }) =>
+      new LocalStockSearchService().search(input.keyword, input.limit),
+    ),
 
   listIndicatorCatalog: protectedProcedure.query(async () => {
     const client = new PythonScreeningWorkbenchClient();
