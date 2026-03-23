@@ -148,3 +148,24 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml down
 ```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v
 ```
+## Recommended Entry Point
+
+Use `deploy/deploy-main.ps1` as the only supported Docker deployment entrypoint.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\deploy-main.ps1 `
+  -Services web,python-service,workflow-worker `
+  -RequiredEnv AUTH_SECRET,NEXTAUTH_URL
+```
+
+The script always resolves these paths from `.worktrees/deploy-main` instead of the current shell directory:
+
+- `.worktrees/deploy-main`
+- `.worktrees/deploy-main/deploy/docker-compose.yml`
+- `.worktrees/deploy-main/.env`
+
+It verifies three things before reporting success:
+
+- `docker compose config`
+- target services reach the running state
+- required env vars exist inside the target containers
