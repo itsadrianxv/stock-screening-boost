@@ -105,6 +105,7 @@ function runDeployScript(root: string, binDir: string, extraArgs: string[]) {
       encoding: "utf8",
       env: {
         ...process.env,
+        CODEX_DEPLOY_MAIN_REPO_ROOT: root,
         DOCKER_LOG: path.join(root, "docker.log"),
         PATH: `${binDir};${process.env.PATH ?? ""}`,
       },

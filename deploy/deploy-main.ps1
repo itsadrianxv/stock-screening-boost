@@ -37,6 +37,25 @@ function Assert-RequiredPath {
   return (Resolve-Path -LiteralPath $LiteralPath).Path
 }
 
+function Resolve-RepositoryRoot {
+  param([string]$FallbackRoot)
+
+  if (-not [string]::IsNullOrWhiteSpace($env:CODEX_DEPLOY_MAIN_REPO_ROOT)) {
+    return $env:CODEX_DEPLOY_MAIN_REPO_ROOT
+  }
+
+  try {
+    $commonDir = & git rev-parse --path-format=absolute --git-common-dir 2>$null
+
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($commonDir)) {
+      return Split-Path -Parent $commonDir.Trim()
+    }
+  } catch {
+  }
+
+  return $FallbackRoot
+}
+
 function Invoke-Compose {
   param([string[]]$ComposeArgs)
 
@@ -61,7 +80,7 @@ if ($Services.Count -eq 0) {
 }
 
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Split-Path -Parent $scriptDirectory
+$repoRoot = Resolve-RepositoryRoot -FallbackRoot (Split-Path -Parent $scriptDirectory)
 $deployMainRoot = Join-Path $repoRoot ".worktrees/deploy-main"
 $composeFilePath = Join-Path $deployMainRoot "deploy/docker-compose.yml"
 $envFilePath = Join-Path $deployMainRoot ".env"
