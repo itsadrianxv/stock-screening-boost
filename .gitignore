@@ -42,6 +42,11 @@ yarn-error.log*
 deploy/.env
 deploy/python/vendor/*
 !deploy/python/vendor/README.md
+!deploy/python/vendor/iFinDPy.py
+!deploy/python/vendor/iFinDAPI/
+!deploy/python/vendor/iFinDAPI/**
+deploy/python/vendor/iFinDAPI/**/__pycache__/
+deploy/python/vendor/iFinDAPI/**/*.pyc
 
 # vercel
 .vercel
