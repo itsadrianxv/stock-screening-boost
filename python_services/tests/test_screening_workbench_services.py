@@ -136,3 +136,13 @@ def test_screening_query_service_chunks_statement_queries_by_budget():
         "2022",
     )
     assert gateway.statement_calls[2][2] == "2023"
+
+
+def test_load_indicator_catalog_returns_non_empty_snapshot():
+    from app.services.screening_catalog import load_indicator_catalog
+
+    load_indicator_catalog.cache_clear()
+    catalog = load_indicator_catalog()
+
+    assert catalog["categories"]
+    assert catalog["items"]
