@@ -101,7 +101,7 @@ Write-Host "Validating docker compose configuration..."
 $null = Invoke-Compose -ComposeArgs @("config")
 
 Write-Host "Starting target services..."
-$null = Invoke-Compose -ComposeArgs (@("up", "-d") + $Services)
+$null = Invoke-Compose -ComposeArgs (@("up", "-d", "--build") + $Services)
 
 Write-Host "Checking running services..."
 $runningServices = Invoke-Compose -ComposeArgs (@("ps", "--services", "--status", "running") + $Services)

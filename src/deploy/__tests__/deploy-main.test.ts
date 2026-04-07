@@ -188,7 +188,7 @@ describe("deploy-main.ps1", () => {
     expect(log).toContain(
       path.join(root, ".worktrees", "deploy-main", "deploy"),
     );
-    expect(log).toContain("up -d web");
+    expect(log).toContain("up -d --build web");
     expect(log).toContain("exec -T web");
   });
 });
