@@ -20,7 +20,7 @@ import { TimingActionPolicy } from "~/server/domain/timing/services/timing-actio
 import { TimingConfidencePolicy } from "~/server/domain/timing/services/timing-confidence-policy";
 import { TimingReviewPolicy } from "~/server/domain/timing/services/timing-review-policy";
 import { DeepSeekClient } from "~/server/infrastructure/intelligence/deepseek-client";
-import { FirecrawlClient } from "~/server/infrastructure/intelligence/firecrawl-client";
+import { PythonCapabilityGatewayClient } from "~/server/infrastructure/capabilities/python-capability-gateway-client";
 import { PrismaResearchReminderRepository } from "~/server/infrastructure/intelligence/prisma-research-reminder-repository";
 import { PythonConfidenceAnalysisClient } from "~/server/infrastructure/intelligence/python-confidence-analysis-client";
 import { PythonIntelligenceDataClient } from "~/server/infrastructure/intelligence/python-intelligence-data-client";
@@ -50,6 +50,7 @@ import { RedisWorkflowRuntimeStore } from "~/server/infrastructure/workflow/redi
 const workflowRepository = new PrismaWorkflowRunRepository(db);
 const deepSeekClient = new DeepSeekClient();
 const pythonDataClient = new PythonIntelligenceDataClient();
+const capabilityGatewayClient = new PythonCapabilityGatewayClient();
 const confidenceAnalysisService = new ConfidenceAnalysisService({
   client: new PythonConfidenceAnalysisClient(),
 });
@@ -109,7 +110,7 @@ const executionService = new WorkflowExecutionService({
     new CompanyResearchLangGraph(
       new CompanyResearchAgentService({
         deepSeekClient,
-        firecrawlClient: new FirecrawlClient(),
+        pythonCapabilityGatewayClient: capabilityGatewayClient,
         pythonIntelligenceDataClient: pythonDataClient,
         confidenceAnalysisService,
       }),
@@ -117,7 +118,7 @@ const executionService = new WorkflowExecutionService({
     new LegacyCompanyResearchLangGraph(
       new CompanyResearchAgentService({
         deepSeekClient,
-        firecrawlClient: new FirecrawlClient(),
+        pythonCapabilityGatewayClient: capabilityGatewayClient,
         pythonIntelligenceDataClient: pythonDataClient,
         confidenceAnalysisService,
       }),

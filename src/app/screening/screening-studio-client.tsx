@@ -249,7 +249,7 @@ export function ScreeningStudioClient() {
       setFormulaValidation(
         result.valid
           ? `校验通过：${result.normalizedExpression ?? formulaExpression}`
-          : result.errors.join("；"),
+          : (result.errors ?? []).join("；"),
       ),
     onError: (error) => setFormulaValidation(error.message),
   });

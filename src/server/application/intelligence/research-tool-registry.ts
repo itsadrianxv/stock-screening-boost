@@ -9,10 +9,10 @@ import type {
   DeepSeekRequestOptions,
 } from "~/server/infrastructure/intelligence/deepseek-client";
 import type {
-  FirecrawlClient,
   FirecrawlScrapeDocument,
   FirecrawlSearchResult,
 } from "~/server/infrastructure/intelligence/firecrawl-client";
+import type { PythonCapabilityGatewayClient } from "~/server/infrastructure/capabilities/python-capability-gateway-client";
 import type {
   IntelligenceCandidateItem,
   PythonIntelligenceDataClient,
@@ -29,7 +29,7 @@ export type ResearchWebDocument = {
 
 type ResearchToolRegistryDependencies = {
   deepSeekClient: DeepSeekClient;
-  firecrawlClient: FirecrawlClient;
+  pythonCapabilityGatewayClient: PythonCapabilityGatewayClient;
   pythonIntelligenceDataClient: PythonIntelligenceDataClient;
 };
 
@@ -60,12 +60,12 @@ function summarizeInlineContent(content: string, maxLength: number) {
 
 export class ResearchToolRegistry {
   private readonly deepSeekClient: DeepSeekClient;
-  private readonly firecrawlClient: FirecrawlClient;
+  private readonly firecrawlClient: PythonCapabilityGatewayClient;
   private readonly pythonIntelligenceDataClient: PythonIntelligenceDataClient;
 
   constructor(dependencies: ResearchToolRegistryDependencies) {
     this.deepSeekClient = dependencies.deepSeekClient;
-    this.firecrawlClient = dependencies.firecrawlClient;
+    this.firecrawlClient = dependencies.pythonCapabilityGatewayClient;
     this.pythonIntelligenceDataClient =
       dependencies.pythonIntelligenceDataClient;
   }
@@ -269,3 +269,6 @@ export class ResearchToolRegistry {
     });
   }
 }
+
+
+

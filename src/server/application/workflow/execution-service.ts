@@ -20,7 +20,7 @@ import type {
   WorkflowNodeKey,
 } from "~/server/domain/workflow/types";
 import { DeepSeekClient } from "~/server/infrastructure/intelligence/deepseek-client";
-import { FirecrawlClient } from "~/server/infrastructure/intelligence/firecrawl-client";
+import { PythonCapabilityGatewayClient } from "~/server/infrastructure/capabilities/python-capability-gateway-client";
 import { PrismaResearchReminderRepository } from "~/server/infrastructure/intelligence/prisma-research-reminder-repository";
 import { PrismaScreeningInsightRepository } from "~/server/infrastructure/intelligence/prisma-screening-insight-repository";
 import { PythonConfidenceAnalysisClient } from "~/server/infrastructure/intelligence/python-confidence-analysis-client";
@@ -99,7 +99,7 @@ export function createWorkflowExecutionService(
   const prisma = repository.getPrismaClient();
   const deepSeekClient = new DeepSeekClient();
   const intelligenceDataClient = new PythonIntelligenceDataClient();
-  const firecrawlClient = new FirecrawlClient();
+  const capabilityGatewayClient = new PythonCapabilityGatewayClient();
   const confidenceAnalysisService = new ConfidenceAnalysisService({
     client: new PythonConfidenceAnalysisClient(),
   });
@@ -110,13 +110,13 @@ export function createWorkflowExecutionService(
   });
   const companyResearchService = new CompanyResearchAgentService({
     deepSeekClient,
-    firecrawlClient,
+    pythonCapabilityGatewayClient: capabilityGatewayClient,
     pythonIntelligenceDataClient: intelligenceDataClient,
     confidenceAnalysisService,
   });
   const researchToolRegistry = new ResearchToolRegistry({
     deepSeekClient,
-    firecrawlClient,
+    pythonCapabilityGatewayClient: capabilityGatewayClient,
     pythonIntelligenceDataClient: intelligenceDataClient,
   });
   const quickResearchWorkflowService = new QuickResearchWorkflowService({
@@ -223,7 +223,7 @@ export class WorkflowExecutionService {
     if (!run) {
       throw new WorkflowDomainError(
         WORKFLOW_ERROR_CODES.WORKFLOW_RUN_NOT_FOUND,
-        `工作流运行不存在: ${runId}`,
+        `宸ヤ綔娴佽繍琛屼笉瀛樺湪: ${runId}`,
       );
     }
 
@@ -349,7 +349,7 @@ export class WorkflowExecutionService {
             if (!nodeRunId) {
               throw new WorkflowDomainError(
                 WORKFLOW_ERROR_CODES.WORKFLOW_NODE_EXECUTION_FAILED,
-                `节点跳过记录缺失: ${nodeKey}`,
+                `鑺傜偣璺宠繃璁板綍缂哄け: ${nodeKey}`,
               );
             }
 
@@ -390,7 +390,7 @@ export class WorkflowExecutionService {
             if (!nodeRunId) {
               throw new WorkflowDomainError(
                 WORKFLOW_ERROR_CODES.WORKFLOW_NODE_EXECUTION_FAILED,
-                `节点执行记录缺失: ${nodeKey}`,
+                `鑺傜偣鎵ц璁板綍缂哄け: ${nodeKey}`,
               );
             }
 
@@ -493,7 +493,7 @@ export class WorkflowExecutionService {
           ? error.code
           : WORKFLOW_ERROR_CODES.WORKFLOW_NODE_EXECUTION_FAILED;
       const errorMessage =
-        error instanceof Error ? error.message : "未知执行错误";
+        error instanceof Error ? error.message : "鏈煡鎵ц閿欒";
 
       const failedNodeKey =
         activeNodeKey ??
@@ -618,3 +618,5 @@ export class WorkflowExecutionService {
     });
   }
 }
+
+

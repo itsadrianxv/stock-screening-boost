@@ -1,4 +1,4 @@
-﻿"""Zhipu Web Search client for A-share concept mapping."""
+"""Zhipu Web Search client for A-share concept mapping."""
 
 from __future__ import annotations
 
@@ -82,13 +82,26 @@ class ZhipuSearchClient:
     def search_theme_concepts(self, theme: str, limit: int) -> list[dict]:
         """Search concept boards for the given theme and return cleaned concepts."""
         normalized_theme = theme.strip()
-        normalized_limit = max(1, min(limit, 20))
         if not normalized_theme:
             return []
 
         if not self.api_key:
             LOGGER.info("ZHIPU_API_KEY not configured, skip web search for theme '%s'", theme)
             return []
+
+        try:
+            return self.search_theme_concepts_strict(theme=normalized_theme, limit=limit)
+        except Exception:  # noqa: BLE001
+            return []
+    def search_theme_concepts_strict(self, theme: str, limit: int) -> list[dict]:
+        """Strict variant used by capability gateway."""
+        normalized_theme = theme.strip()
+        normalized_limit = max(1, min(limit, 20))
+        if not normalized_theme:
+            return []
+
+        if not self.api_key:
+            raise RuntimeError("ZHIPU_API_KEY not configured")
 
         payload = self._build_request_payload(normalized_theme, normalized_limit)
         headers = {
@@ -101,7 +114,10 @@ class ZhipuSearchClient:
                 with httpx.Client(timeout=self.timeout_seconds) as client:
                     response = client.post(self.endpoint, json=payload, headers=headers)
                 response.raise_for_status()
-                return self._parse_response_payload(response.json(), normalized_limit)
+                results = self._parse_response_payload(response.json(), normalized_limit)
+                if not results:
+                    raise RuntimeError("Zhipu web search returned no concept matches")
+                return results
             except Exception as exc:  # noqa: BLE001
                 if attempt < self.retries:
                     LOGGER.debug(
@@ -122,7 +138,7 @@ class ZhipuSearchClient:
                 if attempt < self.retries:
                     time.sleep(min(1.2 * (attempt + 1), 2.5))
 
-        return []
+        raise RuntimeError(f"Zhipu web search failed for '{normalized_theme}'")
 
     def _build_request_payload(self, theme: str, limit: int) -> dict:
         system_prompt = (

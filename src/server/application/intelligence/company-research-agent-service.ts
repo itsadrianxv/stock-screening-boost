@@ -33,15 +33,15 @@ import type {
 } from "~/server/domain/workflow/types";
 import type { DeepSeekClient } from "~/server/infrastructure/intelligence/deepseek-client";
 import type {
-  FirecrawlClient,
   FirecrawlScrapeDocument,
   FirecrawlSearchResult,
 } from "~/server/infrastructure/intelligence/firecrawl-client";
+import type { PythonCapabilityGatewayClient } from "~/server/infrastructure/capabilities/python-capability-gateway-client";
 import type { PythonIntelligenceDataClient } from "~/server/infrastructure/intelligence/python-intelligence-data-client";
 
 export type CompanyResearchAgentServiceDependencies = {
   deepSeekClient: DeepSeekClient;
-  firecrawlClient: FirecrawlClient;
+  pythonCapabilityGatewayClient: PythonCapabilityGatewayClient;
   pythonIntelligenceDataClient: PythonIntelligenceDataClient;
   confidenceAnalysisService: ConfidenceAnalysisService;
 };
@@ -851,7 +851,7 @@ function buildLegacySearchQueries(
 }
 
 async function collectSearchEvidence(params: {
-  client: FirecrawlClient;
+  client: PythonCapabilityGatewayClient;
   queries: string[];
   collectorKey: CompanyResearchCollectorKey;
   sourceType: CompanyResearchSourceType;
@@ -907,13 +907,13 @@ async function collectSearchEvidence(params: {
 
 export class CompanyResearchAgentService {
   private readonly deepSeekClient: DeepSeekClient;
-  private readonly firecrawlClient: FirecrawlClient;
+  private readonly firecrawlClient: PythonCapabilityGatewayClient;
   private readonly pythonIntelligenceDataClient: PythonIntelligenceDataClient;
   private readonly confidenceAnalysisService: ConfidenceAnalysisService;
 
   constructor(dependencies: CompanyResearchAgentServiceDependencies) {
     this.deepSeekClient = dependencies.deepSeekClient;
-    this.firecrawlClient = dependencies.firecrawlClient;
+    this.firecrawlClient = dependencies.pythonCapabilityGatewayClient;
     this.pythonIntelligenceDataClient =
       dependencies.pythonIntelligenceDataClient;
     this.confidenceAnalysisService = dependencies.confidenceAnalysisService;

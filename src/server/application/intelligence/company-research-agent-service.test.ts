@@ -3,26 +3,27 @@ import { CompanyResearchAgentService } from "~/server/application/intelligence/c
 import { createUnavailableConfidenceAnalysis } from "~/server/domain/intelligence/confidence";
 
 function createService(overrides?: {
-  isConfigured?: boolean;
   scrapeUrl?: ReturnType<typeof vi.fn>;
+  search?: ReturnType<typeof vi.fn>;
 }) {
   const scrapeUrl =
     overrides?.scrapeUrl ??
     vi.fn(async (url: string) => ({
       title: `Scraped ${url}`,
       url,
-      markdown: "补齐后的网页正文，包含更完整的事实摘要。",
+      markdown: "supplemental markdown content with richer factual detail",
     }));
+  const search = overrides?.search ?? vi.fn(async () => []);
 
   return {
     service: new CompanyResearchAgentService({
       deepSeekClient: {
         completeJson: vi.fn(async (_messages, fallback) => fallback),
       } as never,
-      firecrawlClient: {
-        isConfigured: vi.fn(() => overrides?.isConfigured ?? true),
+      pythonCapabilityGatewayClient: {
+        isConfigured: vi.fn(() => true),
         scrapeUrl,
-        search: vi.fn(async () => []),
+        search,
       } as never,
       pythonIntelligenceDataClient: {
         getCompanyResearchPack: vi.fn(),
@@ -34,6 +35,7 @@ function createService(overrides?: {
       } as never,
     }),
     scrapeUrl,
+    search,
   };
 }
 
@@ -43,7 +45,7 @@ describe("CompanyResearchAgentService", () => {
 
     const grounded = service.groundSources({
       input: {
-        companyName: "示例公司",
+        companyName: "Example Co",
         officialWebsite: "example.com",
         supplementalUrls: [
           "https://www.example.com/investor",
@@ -52,10 +54,10 @@ describe("CompanyResearchAgentService", () => {
         ],
       },
       brief: {
-        companyName: "示例公司",
+        companyName: "Example Co",
         officialWebsite: "https://example.com",
-        researchGoal: "验证利润兑现",
-        focusConcepts: ["算力"],
+        researchGoal: "Validate earnings conversion",
+        focusConcepts: ["compute"],
         keyQuestions: [],
       },
     });
@@ -82,47 +84,47 @@ describe("CompanyResearchAgentService", () => {
 
     const curated = service.curateEvidence({
       brief: {
-        companyName: "示例公司",
-        researchGoal: "验证利润兑现",
-        focusConcepts: ["算力"],
+        companyName: "Example Co",
+        researchGoal: "Validate earnings conversion",
+        focusConcepts: ["compute"],
         keyQuestions: [],
       },
       questions: [
         {
-          question: "利润有没有兑现？",
-          whyImportant: "判断主题是否转化为利润",
-          targetMetric: "利润占比",
-          dataHint: "看财报附注",
+          question: "Can profits scale?",
+          whyImportant: "This decides whether the theme monetizes.",
+          targetMetric: "profit contribution",
+          dataHint: "read notes",
         },
       ],
       collectedEvidenceByCollector: {
         official_sources: [
           {
             referenceId: "official-ref",
-            title: "官网纪要",
+            title: "Official IR note",
             sourceName: "example.com",
             url: "https://example.com/ir",
             sourceType: "official",
             sourceTier: "first_party",
             collectorKey: "official_sources",
             isFirstParty: true,
-            snippet: "官网披露",
-            extractedFact: "官网披露显示相关业务已经形成稳定订单。",
+            snippet: "official note",
+            extractedFact: "The official site says orders are stable.",
             relevance: "high",
           },
         ],
         news_sources: [
           {
             referenceId: "news-ref",
-            title: "外部新闻",
+            title: "External article",
             sourceName: "media.example",
             url: "https://media.example/story",
             sourceType: "news",
             sourceTier: "third_party",
             collectorKey: "news_sources",
             isFirstParty: false,
-            snippet: "新闻报道",
-            extractedFact: "外部报道提到订单增长。",
+            snippet: "media note",
+            extractedFact: "External coverage mentions order growth.",
             relevance: "medium",
           },
         ],
@@ -156,10 +158,10 @@ describe("CompanyResearchAgentService", () => {
       references: [
         {
           id: "ref-official",
-          title: "官网",
+          title: "Official",
           sourceName: "example.com",
-          snippet: "短摘要",
-          extractedFact: "短事实",
+          snippet: "short",
+          extractedFact: "short",
           url: "https://example.com/ir",
           sourceType: "official",
           sourceTier: "first_party",
@@ -168,10 +170,10 @@ describe("CompanyResearchAgentService", () => {
         },
         {
           id: "ref-financial",
-          title: "财务快照",
+          title: "Financial snapshot",
           sourceName: "akshare",
-          snippet: "短摘要",
-          extractedFact: "短事实",
+          snippet: "short",
+          extractedFact: "short",
           sourceType: "financial",
           sourceTier: "third_party",
           collectorKey: "financial_sources",
@@ -181,27 +183,27 @@ describe("CompanyResearchAgentService", () => {
       evidence: [
         {
           referenceId: "ref-official",
-          title: "官网",
+          title: "Official",
           sourceName: "example.com",
           url: "https://example.com/ir",
           sourceType: "official",
           sourceTier: "first_party",
           collectorKey: "official_sources",
           isFirstParty: true,
-          snippet: "短摘要",
-          extractedFact: "短事实",
+          snippet: "short",
+          extractedFact: "short",
           relevance: "high",
         },
         {
           referenceId: "ref-financial",
-          title: "财务快照",
+          title: "Financial snapshot",
           sourceName: "akshare",
           sourceType: "financial",
           sourceTier: "third_party",
           collectorKey: "financial_sources",
           isFirstParty: false,
-          snippet: "短摘要",
-          extractedFact: "短事实",
+          snippet: "short",
+          extractedFact: "short",
           relevance: "medium",
         },
       ],
@@ -209,7 +211,7 @@ describe("CompanyResearchAgentService", () => {
 
     expect(scrapeUrl).toHaveBeenCalledTimes(1);
     expect(scrapeUrl).toHaveBeenCalledWith("https://example.com/ir");
-    expect(enriched.references[0]?.extractedFact).toContain("更完整");
-    expect(enriched.references[1]?.extractedFact).toBe("短事实");
+    expect(enriched.references[0]?.extractedFact).toContain("supplemental");
+    expect(enriched.references[1]?.extractedFact).toBe("short");
   });
 });

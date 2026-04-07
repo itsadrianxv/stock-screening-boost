@@ -21,7 +21,7 @@ import {
 } from "~/contracts/screening";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { LocalStockSearchService } from "~/server/infrastructure/screening/local-stock-search-service";
-import { PythonScreeningWorkbenchClient } from "~/server/infrastructure/screening/python-screening-workbench-client";
+import { PythonCapabilityGatewayClient } from "~/server/infrastructure/capabilities/python-capability-gateway-client";
 
 type ScreeningFormulaRecord = {
   id: string;
@@ -210,7 +210,7 @@ export const screeningRouter = createTRPCRouter({
     ),
 
   listIndicatorCatalog: protectedProcedure.query(async () => {
-    const client = new PythonScreeningWorkbenchClient();
+    const client = new PythonCapabilityGatewayClient();
     const catalog = await client.listIndicatorCatalog();
 
     return {
@@ -238,7 +238,7 @@ export const screeningRouter = createTRPCRouter({
   validateFormula: protectedProcedure
     .input(validateFormulaInputSchema)
     .mutation(async ({ input }) => {
-      const client = new PythonScreeningWorkbenchClient();
+      const client = new PythonCapabilityGatewayClient();
       return client.validateFormula(input);
     }),
 
@@ -246,7 +246,7 @@ export const screeningRouter = createTRPCRouter({
     .input(createFormulaInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = withScreeningDb(ctx.db);
-      const client = new PythonScreeningWorkbenchClient();
+      const client = new PythonCapabilityGatewayClient();
       const validation = await client.validateFormula({
         expression: input.expression,
         targetIndicators: input.targetIndicators,
@@ -255,7 +255,7 @@ export const screeningRouter = createTRPCRouter({
       if (!validation.valid) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: validation.errors.join("；") || "公式校验失败",
+          message: (validation.errors ?? []).join("；") || "公式校验失败",
         });
       }
 
@@ -292,7 +292,7 @@ export const screeningRouter = createTRPCRouter({
       const nextTargets =
         input.targetIndicators ?? (existing.targetIndicators as string[]);
 
-      const client = new PythonScreeningWorkbenchClient();
+      const client = new PythonCapabilityGatewayClient();
       const validation = await client.validateFormula({
         expression: nextExpression,
         targetIndicators: nextTargets,
@@ -301,7 +301,7 @@ export const screeningRouter = createTRPCRouter({
       if (!validation.valid) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: validation.errors.join("；") || "公式校验失败",
+          message: (validation.errors ?? []).join("；") || "公式校验失败",
         });
       }
 
@@ -345,7 +345,7 @@ export const screeningRouter = createTRPCRouter({
     .input(workspaceQuerySchema)
     .mutation(async ({ ctx, input }) => {
       const db = withScreeningDb(ctx.db);
-      const client = new PythonScreeningWorkbenchClient();
+      const client = new PythonCapabilityGatewayClient();
       const catalog = await client.listIndicatorCatalog();
       const catalogMap = new Map(catalog.items.map((item) => [item.id, item]));
 
@@ -354,7 +354,7 @@ export const screeningRouter = createTRPCRouter({
         if (!indicator) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `未知指标: ${indicatorId}`,
+            message: `鏈煡鎸囨爣: ${indicatorId}`,
           });
         }
         return indicator;
@@ -375,7 +375,7 @@ export const screeningRouter = createTRPCRouter({
       if (formulas.length !== input.formulaIds.length) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "部分公式不存在或无权访问",
+          message: "閮ㄥ垎鍏紡涓嶅瓨鍦ㄦ垨鏃犳潈璁块棶",
         });
       }
 
@@ -424,7 +424,7 @@ export const screeningRouter = createTRPCRouter({
       });
 
       if (!existing) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "工作台不存在" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "宸ヤ綔鍙颁笉瀛樺湪" });
       }
 
       const updated = await db.screeningWorkspace.update({
@@ -477,7 +477,7 @@ export const screeningRouter = createTRPCRouter({
       });
 
       if (!record) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "工作台不存在" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "宸ヤ綔鍙颁笉瀛樺湪" });
       }
 
       return buildWorkspaceDetail(record);
@@ -495,7 +495,7 @@ export const screeningRouter = createTRPCRouter({
       });
 
       if (!record) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "工作台不存在" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "宸ヤ綔鍙颁笉瀛樺湪" });
       }
 
       await db.screeningWorkspace.delete({
@@ -505,3 +505,4 @@ export const screeningRouter = createTRPCRouter({
       return { success: true };
     }),
 });
+
