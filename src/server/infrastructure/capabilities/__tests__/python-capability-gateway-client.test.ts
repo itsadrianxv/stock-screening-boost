@@ -1,12 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowDomainError } from "~/server/domain/workflow/errors";
 
-async function loadClient() {
+const originalPythonServiceTimeoutMs = process.env.PYTHON_SERVICE_TIMEOUT_MS;
+
+async function loadClient(options?: { pythonServiceTimeoutMs?: string }) {
   process.env.SKIP_ENV_VALIDATION = "1";
   process.env.DATABASE_URL ??= "https://example.com/db";
   process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
   process.env.PYTHON_SERVICE_URL ??= "http://127.0.0.1:8000";
-  process.env.PYTHON_SERVICE_TIMEOUT_MS ??= "60000";
+  if (options?.pythonServiceTimeoutMs === undefined) {
+    delete process.env.PYTHON_SERVICE_TIMEOUT_MS;
+  } else {
+    process.env.PYTHON_SERVICE_TIMEOUT_MS = options.pythonServiceTimeoutMs;
+  }
   process.env.PYTHON_INTELLIGENCE_SERVICE_URL ??= "http://127.0.0.1:8000";
   process.env.PYTHON_INTELLIGENCE_SERVICE_TIMEOUT_MS ??= "300000";
 
@@ -17,7 +23,20 @@ async function loadClient() {
   return module.PythonCapabilityGatewayClient;
 }
 
+async function loadFreshClient(options?: { pythonServiceTimeoutMs?: string }) {
+  vi.resetModules();
+  return loadClient(options);
+}
+
 describe("PythonCapabilityGatewayClient", () => {
+  afterEach(() => {
+    if (originalPythonServiceTimeoutMs === undefined) {
+      delete process.env.PYTHON_SERVICE_TIMEOUT_MS;
+    } else {
+      process.env.PYTHON_SERVICE_TIMEOUT_MS = originalPythonServiceTimeoutMs;
+    }
+  });
+
   it("uses the capability screening endpoint for dataset queries", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -42,7 +61,9 @@ describe("PythonCapabilityGatewayClient", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    const PythonCapabilityGatewayClient = await loadClient();
+    const PythonCapabilityGatewayClient = await loadClient({
+      pythonServiceTimeoutMs: "60000",
+    });
     const client = new PythonCapabilityGatewayClient({
       baseUrl: "http://127.0.0.1:8000/api",
       screeningTimeoutMs: 500,
@@ -94,7 +115,9 @@ describe("PythonCapabilityGatewayClient", () => {
       }),
     );
 
-    const PythonCapabilityGatewayClient = await loadClient();
+    const PythonCapabilityGatewayClient = await loadClient({
+      pythonServiceTimeoutMs: "60000",
+    });
     const client = new PythonCapabilityGatewayClient({
       baseUrl: "http://127.0.0.1:8000",
       screeningTimeoutMs: 500,
@@ -114,5 +137,12 @@ describe("PythonCapabilityGatewayClient", () => {
         limit: 5,
       }),
     ).rejects.toThrow("traceId=req-web-1");
+  });
+
+  it("falls back to the default screening timeout when the env var is missing", async () => {
+    const PythonCapabilityGatewayClient = await loadFreshClient();
+    const client = new PythonCapabilityGatewayClient();
+
+    expect(Reflect.get(client, "screeningTimeoutMs")).toBe(60_000);
   });
 });

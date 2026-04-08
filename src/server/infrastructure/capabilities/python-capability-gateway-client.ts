@@ -74,6 +74,9 @@ const capabilityWebDocumentSchema = z.object({
   markdown: z.string().optional(),
 });
 
+const DEFAULT_SCREENING_TIMEOUT_MS = 60_000;
+const DEFAULT_INTELLIGENCE_TIMEOUT_MS = 300_000;
+
 type CapabilityResponse = z.infer<typeof capabilityResponseSchema>;
 type ScreeningQueryRequest = z.infer<typeof screeningQueryRequestSchema>;
 
@@ -97,8 +100,16 @@ export type PythonCapabilityGatewayClientConfig = {
   intelligenceTimeoutMs?: number;
 };
 
-export type CapabilityWebSearchResult = z.infer<typeof capabilityWebSearchResultSchema>;
+export type CapabilityWebSearchResult = z.infer<
+  typeof capabilityWebSearchResultSchema
+>;
 export type CapabilityWebDocument = z.infer<typeof capabilityWebDocumentSchema>;
+
+function resolveTimeoutMs(value: number | undefined, fallback: number) {
+  return Number.isFinite(value) && value !== undefined && value > 0
+    ? value
+    : fallback;
+}
 
 function resolveCapabilityServiceBaseUrl(rawBaseUrl: string) {
   const normalized = rawBaseUrl.replace(/\/$/, "");
@@ -120,10 +131,15 @@ export class PythonCapabilityGatewayClient {
     this.baseUrl = resolveCapabilityServiceBaseUrl(
       config?.baseUrl ?? env.PYTHON_SERVICE_URL,
     );
-    this.screeningTimeoutMs =
-      config?.screeningTimeoutMs ?? env.PYTHON_SERVICE_TIMEOUT_MS;
-    this.intelligenceTimeoutMs =
-      config?.intelligenceTimeoutMs ?? env.PYTHON_INTELLIGENCE_SERVICE_TIMEOUT_MS;
+    this.screeningTimeoutMs = resolveTimeoutMs(
+      config?.screeningTimeoutMs ?? env.PYTHON_SERVICE_TIMEOUT_MS,
+      DEFAULT_SCREENING_TIMEOUT_MS,
+    );
+    this.intelligenceTimeoutMs = resolveTimeoutMs(
+      config?.intelligenceTimeoutMs ??
+        env.PYTHON_INTELLIGENCE_SERVICE_TIMEOUT_MS,
+      DEFAULT_INTELLIGENCE_TIMEOUT_MS,
+    );
   }
 
   isConfigured() {
@@ -182,9 +198,11 @@ export class PythonCapabilityGatewayClient {
   }
 
   async search(params: { query: string; limit?: number }) {
-    return capabilityWebSearchResultSchema.array().parse(
-      await this.searchWeb({ queries: [params.query], limit: params.limit }),
-    );
+    return capabilityWebSearchResultSchema
+      .array()
+      .parse(
+        await this.searchWeb({ queries: [params.query], limit: params.limit }),
+      );
   }
 
   async searchWeb(input: WebSearchRequest) {
@@ -317,4 +335,3 @@ export class PythonCapabilityGatewayClient {
     }
   }
 }
-
