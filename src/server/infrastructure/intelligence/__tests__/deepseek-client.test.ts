@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { WORKFLOW_ERROR_CODES } from "~/server/domain/workflow/errors";
 
 const ORIGINAL_ENV = { ...process.env };
@@ -38,6 +39,90 @@ afterEach(() => {
 });
 
 describe("DeepSeekClient", () => {
+  it("returns the structured fallback when a retry ends with empty content", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ wrong: "shape" }),
+                },
+              },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: "",
+                  reasoning_content: "used all reasoning budget",
+                },
+              },
+            ],
+          }),
+        }),
+    );
+
+    const DeepSeekClient = await loadDeepSeekClient();
+    const client = new DeepSeekClient();
+    const fallback = { query: "工业富联", researchGoal: "fallback goal" };
+    const schema = z.object({
+      query: z.string(),
+      researchGoal: z.string(),
+    });
+
+    await expect(
+      client.completeContract(
+        [{ role: "user", content: "return contract json" }],
+        fallback,
+        schema,
+        {
+          maxStructuredOutputRetries: 1,
+        },
+      ),
+    ).resolves.toEqual(fallback);
+  });
+
+  it("returns the structured fallback when the provider times out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error("timed out"), { name: "AbortError" }),
+        ),
+    );
+
+    const DeepSeekClient = await loadDeepSeekClient();
+    const client = new DeepSeekClient({
+      timeoutMs: 1,
+    });
+    const fallback = { query: "工业富联", researchGoal: "fallback goal" };
+    const schema = z.object({
+      query: z.string(),
+      researchGoal: z.string(),
+    });
+
+    await expect(
+      client.completeContract(
+        [{ role: "user", content: "return contract json" }],
+        fallback,
+        schema,
+        {
+          maxStructuredOutputRetries: 0,
+        },
+      ),
+    ).resolves.toEqual(fallback);
+  });
+
   it("extends timeout budget for deepseek-chat beyond a 15s client timeout", async () => {
     process.env.DEEPSEEK_TIMEOUT_MS = "15000";
     vi.useFakeTimers();

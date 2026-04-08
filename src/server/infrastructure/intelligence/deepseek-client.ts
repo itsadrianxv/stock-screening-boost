@@ -92,6 +92,14 @@ function formatSchemaIssues(error: ZodError) {
     .join("; ");
 }
 
+function isStructuredOutputRecoverableError(error: unknown) {
+  return (
+    error instanceof WorkflowDomainError &&
+    (error.code === WORKFLOW_ERROR_CODES.INTELLIGENCE_LLM_PARSE_FAILED ||
+      error.code === WORKFLOW_ERROR_CODES.INTELLIGENCE_DATA_UNAVAILABLE)
+  );
+}
+
 export class DeepSeekClient {
   private readonly apiKey?: string;
   private readonly baseUrl: string;
@@ -335,11 +343,33 @@ export class DeepSeekClient {
     let currentMessages = [...messages];
 
     while (currentAttempt <= maxStructuredOutputRetries) {
-      const raw = await this.complete(
-        currentMessages,
-        JSON.stringify(fallbackValue),
-        options,
-      );
+      let raw: string;
+      try {
+        raw = await this.complete(
+          currentMessages,
+          JSON.stringify(fallbackValue),
+          options,
+        );
+      } catch (error) {
+        if (!isStructuredOutputRecoverableError(error)) {
+          throw error;
+        }
+
+        if (currentAttempt >= maxStructuredOutputRetries) {
+          return fallbackValue;
+        }
+
+        currentAttempt += 1;
+        currentMessages = [
+          ...messages,
+          {
+            role: "user",
+            content:
+              "Previous output was empty or unusable. Return valid JSON only.",
+          },
+        ];
+        continue;
+      }
 
       try {
         return JSON.parse(extractJsonCandidate(raw)) as T;
@@ -377,11 +407,33 @@ export class DeepSeekClient {
       : fallbackValue;
 
     while (currentAttempt <= maxStructuredOutputRetries) {
-      const raw = await this.complete(
-        currentMessages,
-        JSON.stringify(safeFallback),
-        options,
-      );
+      let raw: string;
+      try {
+        raw = await this.complete(
+          currentMessages,
+          JSON.stringify(safeFallback),
+          options,
+        );
+      } catch (error) {
+        if (!isStructuredOutputRecoverableError(error)) {
+          throw error;
+        }
+
+        if (currentAttempt >= maxStructuredOutputRetries) {
+          return safeFallback;
+        }
+
+        currentAttempt += 1;
+        currentMessages = [
+          ...messages,
+          {
+            role: "user",
+            content:
+              "Previous output was empty or unusable. Return valid JSON only and preserve the requested schema.",
+          },
+        ];
+        continue;
+      }
 
       try {
         const parsedJson = JSON.parse(extractJsonCandidate(raw)) as unknown;
