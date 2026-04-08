@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { statusTone } from "~/app/_components/status-tone";
 import {
   ActionStrip,
   BentoCard,
@@ -10,7 +11,6 @@ import {
   MiniTrendChart,
   ProgressBar,
   StatusPill,
-  statusTone,
   WorkspaceShell,
 } from "~/app/_components/ui";
 import { getTemplateLabel } from "~/app/workflows/research-view-models";

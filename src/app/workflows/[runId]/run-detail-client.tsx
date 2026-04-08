@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { statusTone } from "~/app/_components/status-tone";
 import {
   EmptyState,
   KpiCard,
   Panel,
   ProgressBar,
   StatusPill,
-  statusTone,
   WorkspaceShell,
 } from "~/app/_components/ui";
 import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";

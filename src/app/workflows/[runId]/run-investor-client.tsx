@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { statusTone } from "~/app/_components/status-tone";
 import {
   ActionBanner,
   EmptyState,
@@ -9,7 +10,6 @@ import {
   KpiCard,
   Panel,
   StatusPill,
-  statusTone,
   WorkspaceShell,
 } from "~/app/_components/ui";
 import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";

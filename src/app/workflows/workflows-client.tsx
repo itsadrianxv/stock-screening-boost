@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { statusTone } from "~/app/_components/status-tone";
 import {
   EmptyState,
   InlineNotice,
@@ -12,7 +13,6 @@ import {
   ProgressBar,
   SectionCard,
   StatusPill,
-  statusTone,
   WorkspaceShell,
 } from "~/app/_components/ui";
 import {

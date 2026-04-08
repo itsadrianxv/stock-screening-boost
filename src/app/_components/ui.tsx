@@ -832,20 +832,3 @@ export function DataTable<T>(props: {
     </div>
   );
 }
-
-export function statusTone(status: string | undefined): Tone {
-  switch (status) {
-    case "SUCCEEDED":
-      return "success";
-    case "FAILED":
-      return "danger";
-    case "PAUSED":
-      return "warning";
-    case "RUNNING":
-      return "info";
-    case "PENDING":
-      return "warning";
-    default:
-      return "neutral";
-  }
-}
