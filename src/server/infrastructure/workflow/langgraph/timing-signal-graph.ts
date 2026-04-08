@@ -62,6 +62,7 @@ export class TimingSignalPipelineLangGraph extends BaseWorkflowLangGraph<
   TimingSignalPipelineNodeKey
 > {
   readonly templateCode = TIMING_SIGNAL_PIPELINE_TEMPLATE_CODE;
+  readonly templateVersion = 1;
 
   constructor(deps: {
     timingDataClient: PythonTimingDataClient;

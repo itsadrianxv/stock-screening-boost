@@ -59,6 +59,7 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
   TimingReviewLoopNodeKey
 > {
   readonly templateCode = TIMING_REVIEW_LOOP_TEMPLATE_CODE;
+  readonly templateVersion = 1;
 
   constructor(deps: {
     timingDataClient: PythonTimingDataClient;

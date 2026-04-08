@@ -70,6 +70,7 @@ export class WatchlistTimingCardsPipelineLangGraph extends BaseWorkflowLangGraph
   WatchlistTimingCardsPipelineNodeKey
 > {
   readonly templateCode = WATCHLIST_TIMING_CARDS_PIPELINE_TEMPLATE_CODE;
+  readonly templateVersion = 1;
 
   constructor(deps: {
     watchListRepository: PrismaWatchListRepository;
