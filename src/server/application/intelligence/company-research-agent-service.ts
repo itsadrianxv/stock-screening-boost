@@ -110,6 +110,25 @@ const companyResearchQuestionListSchema = z
   .array(companyResearchQuestionSchema)
   .max(8);
 
+const companyQuestionAnswerSchema = z.object({
+  question: z.string().trim().min(1),
+  answer: z.string().trim().min(1),
+  confidence: z.enum(["high", "medium", "low"]),
+  gaps: z.array(z.string().trim().min(1)).max(8).default([]),
+});
+
+const companyQuestionAnswerListSchema = z
+  .array(companyQuestionAnswerSchema)
+  .max(8);
+
+const companyResearchVerdictSchema = z.object({
+  stance: z.enum([PRIORITIZE_STANCE, TRACK_STANCE, WATCH_STANCE]),
+  summary: z.string().trim().min(1),
+  bullPoints: z.array(z.string().trim().min(1)).max(8).default([]),
+  bearPoints: z.array(z.string().trim().min(1)).max(8).default([]),
+  nextChecks: z.array(z.string().trim().min(1)).max(8).default([]),
+});
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1552,14 +1571,7 @@ export class CompanyResearchAgentService {
       })
       .join("\n\n---\n\n");
 
-    const parsed = await this.deepSeekClient.completeJson<
-      Array<{
-        question: string;
-        answer: string;
-        confidence: "high" | "medium" | "low";
-        gaps: string[];
-      }>
-    >(
+    const parsed = await this.deepSeekClient.completeContract(
       [
         {
           role: "system",
@@ -1585,6 +1597,7 @@ export class CompanyResearchAgentService {
         confidence: item.confidence,
         gaps: item.gaps,
       })),
+      companyQuestionAnswerListSchema,
     );
 
     return parsed.map((item, index) => {
@@ -1601,7 +1614,7 @@ export class CompanyResearchAgentService {
           .map((evidence) => evidence.url)
           .filter((url): url is string => Boolean(url)),
         referenceIds: selectedEvidence.map((evidence) => evidence.referenceId),
-        gaps: item.gaps,
+        gaps: item.gaps ?? [],
       };
     });
   }
@@ -1613,7 +1626,7 @@ export class CompanyResearchAgentService {
   }): Promise<CompanyResearchVerdict> {
     const fallback = buildFallbackVerdict(params);
 
-    return this.deepSeekClient.completeJson<CompanyResearchVerdict>(
+    const verdict = await this.deepSeekClient.completeContract(
       [
         {
           role: "system",
@@ -1626,7 +1639,16 @@ export class CompanyResearchAgentService {
         },
       ],
       fallback,
+      companyResearchVerdictSchema,
     );
+
+    return {
+      ...fallback,
+      ...verdict,
+      bullPoints: verdict.bullPoints ?? fallback.bullPoints,
+      bearPoints: verdict.bearPoints ?? fallback.bearPoints,
+      nextChecks: verdict.nextChecks ?? fallback.nextChecks,
+    };
   }
 
   async analyzeConfidence(params: {

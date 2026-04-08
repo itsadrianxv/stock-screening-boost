@@ -298,4 +298,112 @@ describe("CompanyResearchAgentService", () => {
       },
     ]);
   });
+
+  it("falls back to valid finding arrays when the llm omits finding fields", async () => {
+    const completeJson = vi.fn(async () => [
+      {
+        question: "Can profits scale?",
+        answer: "Evidence says yes",
+        confidence: "medium",
+      },
+    ]);
+    const { service } = createService({
+      deepSeekClient: {
+        completeJson,
+      },
+    });
+
+    await expect(
+      service.answerQuestions({
+        brief: {
+          companyName: "Example Co",
+          officialWebsite: "https://example.com",
+          researchGoal: "Validate earnings conversion",
+          focusConcepts: ["compute"],
+          keyQuestions: ["Can profits scale?"],
+        },
+        questions: [
+          {
+            question: "Can profits scale?",
+            whyImportant: "This decides whether the theme monetizes.",
+            targetMetric: "profit contribution",
+            dataHint: "read notes",
+          },
+        ],
+        evidence: [
+          {
+            referenceId: "ref-1",
+            title: "Official",
+            sourceName: "example.com",
+            url: "https://example.com/ir",
+            sourceType: "official",
+            sourceTier: "first_party",
+            collectorKey: "official_sources",
+            isFirstParty: true,
+            snippet: "Snippet",
+            extractedFact: "Fact",
+            relevance: "high",
+          },
+        ],
+      }),
+    ).resolves.toMatchObject([
+      {
+        referenceIds: expect.any(Array),
+        gaps: expect.any(Array),
+      },
+    ]);
+  });
+
+  it("falls back to a valid verdict when the llm omits verdict arrays", async () => {
+    const completeJson = vi
+      .fn()
+      .mockResolvedValueOnce({
+        stance: "缁х画璺熻釜",
+        summary: "Summary only",
+      })
+      .mockResolvedValueOnce({
+        stance: "缁х画璺熻釜",
+        summary: "Summary only",
+      });
+    const { service } = createService({
+      deepSeekClient: {
+        completeJson,
+      },
+    });
+
+    await expect(
+      service.buildVerdict({
+        brief: {
+          companyName: "Example Co",
+          officialWebsite: "https://example.com",
+          researchGoal: "Validate earnings conversion",
+          focusConcepts: ["compute"],
+          keyQuestions: ["Can profits scale?"],
+        },
+        conceptInsights: [
+          {
+            concept: "compute",
+            whyItMatters: "important",
+            companyFit: "fit",
+            monetizationPath: "path",
+            maturity: "核心成熟",
+          },
+        ],
+        findings: [
+          {
+            question: "Can profits scale?",
+            answer: "Evidence says yes",
+            confidence: "medium",
+            evidenceUrls: ["https://example.com/ir"],
+            referenceIds: ["ref-1"],
+            gaps: [],
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      bullPoints: expect.any(Array),
+      bearPoints: expect.any(Array),
+      nextChecks: expect.any(Array),
+    });
+  });
 });
