@@ -146,3 +146,29 @@ def test_load_indicator_catalog_returns_non_empty_snapshot():
 
     assert catalog["categories"]
     assert catalog["items"]
+
+
+def test_resolve_indicator_mapping_path_supports_container_layout(tmp_path):
+    from app.services.screening_catalog import resolve_indicator_mapping_path
+
+    app_root = tmp_path / "app"
+    source_file = app_root / "app" / "services" / "screening_catalog.py"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_text("# container layout", encoding="utf-8")
+
+    mapping_path = (
+        app_root
+        / "temp"
+        / "-v3"
+        / "backend"
+        / "app"
+        / "utils"
+        / "indicators_mapping.py"
+    )
+    mapping_path.parent.mkdir(parents=True, exist_ok=True)
+    mapping_path.write_text(
+        "FINANCIAL_STATEMENT_CATEGORIES = {}",
+        encoding="utf-8",
+    )
+
+    assert resolve_indicator_mapping_path(source_file) == mapping_path

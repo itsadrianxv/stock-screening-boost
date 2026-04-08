@@ -12,6 +12,7 @@ import {
 } from "~/app/_components/ui";
 import {
   annualPresetOptions,
+  buildCatalogNotice,
   buildMetricNameMap,
   buildResultColumns,
   buildVisibleResultRows,
@@ -153,6 +154,21 @@ export function ScreeningStudioClient() {
         items: catalogQuery.data?.items ?? [],
       }),
     [catalogQuery.data],
+  );
+  const catalogNotice = useMemo(
+    () =>
+      buildCatalogNotice({
+        isLoading: catalogQuery.isLoading,
+        errorMessage: catalogQuery.isError ? catalogQuery.error.message : null,
+        categories: catalogQuery.data?.categories ?? [],
+        items: catalogQuery.data?.items ?? [],
+      }),
+    [
+      catalogQuery.data,
+      catalogQuery.error,
+      catalogQuery.isError,
+      catalogQuery.isLoading,
+    ],
   );
   const formulas = formulasQuery.data ?? [];
   const workspaceOptions = workspacesQuery.data ?? [];
@@ -654,10 +670,21 @@ export function ScreeningStudioClient() {
           description="官方指标与自定义公式都在当前工作台里统一勾选。"
           className="xl:col-span-4"
         >
+          {catalogNotice ? (
+            <InlineNotice
+              tone={catalogNotice.tone}
+              description={catalogNotice.description}
+            />
+          ) : null}
           <div className="max-h-[420px] overflow-auto rounded-[12px] border border-[var(--app-border-soft)]">
             <div className="border-b border-[var(--app-border-soft)] px-4 py-3 text-xs text-[var(--app-text-subtle)]">
               官方指标
             </div>
+            {groupedCatalog.length === 0 ? (
+              <div className="px-4 py-4 text-sm text-[var(--app-text-muted)]">
+                暂无可展示的官方指标。
+              </div>
+            ) : null}
             {groupedCatalog.map((category) => (
               <div
                 key={category.id}

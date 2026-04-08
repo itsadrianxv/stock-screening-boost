@@ -16,6 +16,11 @@ export type ResultColumn = {
   period: string | null;
 };
 
+export type CatalogNotice = {
+  tone: "info" | "danger";
+  description: string;
+};
+
 export function formatDateTime(value?: string | null) {
   if (!value) {
     return "未获取";
@@ -48,6 +53,35 @@ export function groupCatalogItems(params: {
       left.name.localeCompare(right.name, "zh-CN"),
     ),
   }));
+}
+
+export function buildCatalogNotice(params: {
+  isLoading: boolean;
+  errorMessage?: string | null;
+  categories: IndicatorCategory[];
+  items: IndicatorCatalogItem[];
+}): CatalogNotice | null {
+  if (params.isLoading) {
+    return null;
+  }
+
+  const errorMessage = params.errorMessage?.trim();
+  if (errorMessage) {
+    return {
+      tone: "danger",
+      description: `官方指标目录加载失败：${errorMessage}`,
+    };
+  }
+
+  if (params.categories.length === 0 || params.items.length === 0) {
+    return {
+      tone: "info",
+      description:
+        "官方指标目录当前为空，请检查 Python 服务的指标目录接口是否正常。",
+    };
+  }
+
+  return null;
 }
 
 export function buildMetricNameMap(params: {

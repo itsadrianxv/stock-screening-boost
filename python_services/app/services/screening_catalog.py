@@ -7,6 +7,16 @@ import importlib.util
 from pathlib import Path
 
 
+MAPPING_RELATIVE_PATH = (
+    Path("temp")
+    / "-v3"
+    / "backend"
+    / "app"
+    / "utils"
+    / "indicators_mapping.py"
+)
+
+
 LATEST_ONLY_KEYWORDS = ("估值", "资金流向")
 
 
@@ -24,18 +34,25 @@ def _infer_retrieval_mode(category_name: str) -> tuple[str, str]:
     return ("statement_series", "series")
 
 
+def resolve_indicator_mapping_path(current_file: Path | None = None) -> Path:
+    source_file = (current_file or Path(__file__)).resolve()
+    checked_paths: list[Path] = []
+
+    for parent in source_file.parents:
+        candidate = parent / MAPPING_RELATIVE_PATH
+        checked_paths.append(candidate)
+        if candidate.is_file():
+            return candidate
+
+    raise RuntimeError(
+        "Unable to locate temp-v3 indicator mapping. Checked: "
+        + ", ".join(str(path) for path in checked_paths)
+    )
+
+
 @lru_cache(maxsize=1)
 def load_indicator_catalog() -> dict[str, list[dict[str, object]]]:
-    project_root = Path(__file__).resolve().parents[3]
-    mapping_path = (
-        project_root
-        / "temp"
-        / "-v3"
-        / "backend"
-        / "app"
-        / "utils"
-        / "indicators_mapping.py"
-    )
+    mapping_path = resolve_indicator_mapping_path()
 
     spec = importlib.util.spec_from_file_location(
         "temp_v3_indicators_mapping",
