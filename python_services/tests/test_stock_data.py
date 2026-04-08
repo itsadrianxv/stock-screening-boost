@@ -164,6 +164,47 @@ class TestStockDataRoutes:
 
         assert response.status_code == 422
 
+    def test_fallback_provider_uses_secondary_latest_metrics_when_primary_payload_is_invalid(self):
+        class BrokenLatestProvider:
+            provider_name = "tushare"
+
+            def query_latest_metrics(
+                self,
+                stock_codes: list[str],
+                indicator_ids: list[str],
+            ):
+                return None
+
+        class HealthyLatestProvider:
+            provider_name = "akshare"
+
+            def query_latest_metrics(
+                self,
+                stock_codes: list[str],
+                indicator_ids: list[str],
+            ) -> dict[str, dict[str, float | None]]:
+                return {
+                    "601138": {
+                        "pe_ttm": 15.2,
+                        "float_a_shares": 7_800_000_000.0,
+                    }
+                }
+
+        provider = FallbackScreeningProvider(
+            primary=BrokenLatestProvider(),
+            fallback=HealthyLatestProvider(),
+        )
+
+        assert provider.query_latest_metrics(
+            ["601138"],
+            ["pe_ttm", "float_a_shares"],
+        ) == {
+            "601138": {
+                "pe_ttm": 15.2,
+                "float_a_shares": 7_800_000_000.0,
+            }
+        }
+
     def test_get_indicator_history_success(self):
         provider = StaticProvider(
             history=[

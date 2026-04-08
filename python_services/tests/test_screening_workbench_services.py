@@ -223,6 +223,64 @@ def test_screening_query_service_combines_latest_only_and_formula_values():
     assert result["rows"][0]["metrics"]["revenue_over_pe"]["byPeriod"]["2024"] == 5.0
 
 
+def test_screening_query_service_rejects_invalid_latest_payload_shape():
+    class FakeProvider:
+        provider_name = "tushare"
+
+        def resolve_stock_metadata(self, stock_codes: list[str]) -> dict[str, dict[str, str]]:
+            return {
+                stock_code: {"stockName": stock_code, "market": "SH"}
+                for stock_code in stock_codes
+            }
+
+        def query_series_metrics(
+            self,
+            stock_codes: list[str],
+            indicator_ids: list[str],
+            periods: list[str],
+        ) -> dict[str, dict[str, dict[str, float | None]]]:
+            return {}
+
+        def query_latest_metrics(
+            self,
+            stock_codes: list[str],
+            indicator_ids: list[str],
+        ):
+            return None
+
+    service = ScreeningQueryService(provider=FakeProvider(), formula_engine=SafeFormulaEngine())
+
+    try:
+        service.query_dataset(
+            stock_codes=["601138"],
+            indicators=[
+                {
+                    "id": "pe_ttm",
+                    "name": "PE(TTM)",
+                    "retrievalMode": "latest_only",
+                    "periodScope": "latest_only",
+                    "valueType": "NUMBER",
+                },
+                {
+                    "id": "float_a_shares",
+                    "name": "Float A Shares",
+                    "retrievalMode": "latest_only",
+                    "periodScope": "latest_only",
+                    "valueType": "NUMBER",
+                },
+            ],
+            formulas=[],
+            periods=["2024"],
+        )
+    except RuntimeError as exc:
+        assert (
+            str(exc)
+            == "Screening provider tushare returned invalid latest metrics payload: expected dict, got NoneType"
+        )
+    else:
+        raise AssertionError("Expected invalid latest metrics payload to raise RuntimeError")
+
+
 def test_load_indicator_catalog_returns_non_empty_snapshot():
     from app.services.screening_catalog import load_indicator_catalog
 

@@ -49,6 +49,15 @@ class FallbackScreeningProvider(ScreeningDataProvider):
         self._industries_cache: tuple[list[str], float] | None = None
         self.provider_name = primary.provider_name
 
+    def _require_dict_result(self, method_name: str, result: Any) -> dict[str, Any]:
+        if isinstance(result, dict):
+            return result
+
+        raise RuntimeError(
+            f"primary provider returned invalid {method_name} payload: "
+            f"expected dict, got {type(result).__name__}",
+        )
+
     def get_all_stock_codes(self) -> list[str]:
         try:
             return self._primary.get_all_stock_codes()
@@ -128,7 +137,10 @@ class FallbackScreeningProvider(ScreeningDataProvider):
 
     def resolve_stock_metadata(self, stock_codes: list[str]) -> dict[str, dict[str, str]]:
         try:
-            return self._primary.resolve_stock_metadata(stock_codes)
+            return self._require_dict_result(
+                "resolve_stock_metadata",
+                self._primary.resolve_stock_metadata(stock_codes),
+            )
         except Exception as exc:  # noqa: BLE001
             return self._use_fallback("resolve_stock_metadata", exc, stock_codes)
 
@@ -138,7 +150,10 @@ class FallbackScreeningProvider(ScreeningDataProvider):
         indicator_ids: list[str],
     ) -> dict[str, dict[str, float | None]]:
         try:
-            return self._primary.query_latest_metrics(stock_codes, indicator_ids)
+            return self._require_dict_result(
+                "query_latest_metrics",
+                self._primary.query_latest_metrics(stock_codes, indicator_ids),
+            )
         except Exception as exc:  # noqa: BLE001
             return self._use_fallback("query_latest_metrics", exc, stock_codes, indicator_ids)
 
@@ -149,7 +164,10 @@ class FallbackScreeningProvider(ScreeningDataProvider):
         periods: list[str],
     ) -> dict[str, dict[str, dict[str, float | None]]]:
         try:
-            return self._primary.query_series_metrics(stock_codes, indicator_ids, periods)
+            return self._require_dict_result(
+                "query_series_metrics",
+                self._primary.query_series_metrics(stock_codes, indicator_ids, periods),
+            )
         except Exception as exc:  # noqa: BLE001
             return self._use_fallback(
                 "query_series_metrics",

@@ -70,14 +70,17 @@ class ExternalCapabilityGateway:
         request_id: str,
         payload: dict[str, Any],
     ) -> CapabilityResult[dict[str, Any]]:
+        provider_name = os.getenv("SCREENING_PRIMARY_PROVIDER", "tushare")
         diagnostics = {
-            "provider": os.getenv("SCREENING_PRIMARY_PROVIDER", "tushare"),
+            "provider": provider_name,
             "hasToken": bool(os.getenv("TUSHARE_TOKEN", "").strip()),
             "sdkAvailable": find_spec("tushare") is not None,
             "requestFingerprint": _fingerprint(payload),
         }
         try:
             provider = get_screening_provider()
+            provider_name = provider.provider_name
+            diagnostics["provider"] = provider_name
             service = ScreeningQueryService(provider=provider)
             data = service.query_dataset(
                 stock_codes=list(payload.get("stockCodes", [])),
@@ -94,7 +97,7 @@ class ExternalCapabilityGateway:
             )
         except Exception as exc:  # noqa: BLE001
             raise CapabilityError(
-                provider="tushare",
+                provider=provider_name,
                 capability="screening",
                 operation="query_dataset",
                 code="tushare_query_failed",

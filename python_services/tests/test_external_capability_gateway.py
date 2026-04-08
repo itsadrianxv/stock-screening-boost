@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 
@@ -140,4 +141,69 @@ def test_capability_replay_compare_uses_semantic_outcome_only(tmp_path, monkeypa
             "resultSummary": {"rows": 99},
             "diagnostics": {"environment": "docker"},
         },
+    )
+
+
+def test_screening_query_capability_reports_actual_provider_for_invalid_payload(monkeypatch):
+    from app.gateway.external_capability_gateway import (
+        CapabilityError,
+        external_capability_gateway,
+    )
+
+    class BrokenProvider:
+        provider_name = "akshare"
+
+        def resolve_stock_metadata(self, stock_codes: list[str]) -> dict[str, dict[str, str]]:
+            return {
+                stock_code: {"stockName": stock_code, "market": "SH"}
+                for stock_code in stock_codes
+            }
+
+        def query_latest_metrics(
+            self,
+            stock_codes: list[str],
+            indicator_ids: list[str],
+        ):
+            return None
+
+        def query_series_metrics(
+            self,
+            stock_codes: list[str],
+            indicator_ids: list[str],
+            periods: list[str],
+        ) -> dict[str, dict[str, dict[str, float | None]]]:
+            return {}
+
+    monkeypatch.setattr(
+        "app.gateway.external_capability_gateway.get_screening_provider",
+        lambda: BrokenProvider(),
+    )
+
+    with pytest.raises(CapabilityError) as exc_info:
+        external_capability_gateway.query_screening_dataset(
+            "req_provider_name",
+            {
+                "stockCodes": ["601138"],
+                "indicators": [
+                    {
+                        "id": "pe_ttm",
+                        "name": "PE(TTM)",
+                        "retrievalMode": "latest_only",
+                        "periodScope": "latest_only",
+                        "valueType": "NUMBER",
+                    }
+                ],
+                "formulas": [],
+                "timeConfig": {
+                    "periodType": "ANNUAL",
+                    "rangeMode": "PRESET",
+                    "presetKey": "1Y",
+                },
+            },
+        )
+
+    assert exc_info.value.provider == "akshare"
+    assert (
+        exc_info.value.message
+        == "Screening provider akshare returned invalid latest metrics payload: expected dict, got NoneType"
     )

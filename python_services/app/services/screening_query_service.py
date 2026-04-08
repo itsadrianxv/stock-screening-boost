@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.services.screening_formula_engine import SafeFormulaEngine
 from app.providers.screening.base import ScreeningDataProvider
 
@@ -15,6 +17,21 @@ class ScreeningQueryService:
     ) -> None:
         self._provider = provider
         self._formula_engine = formula_engine or SafeFormulaEngine()
+
+    def _require_dict_payload(
+        self,
+        payload: Any,
+        *,
+        payload_name: str,
+    ) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            return payload
+
+        raise RuntimeError(
+            "Screening provider "
+            f"{self._provider.provider_name} returned invalid {payload_name} payload: "
+            f"expected dict, got {type(payload).__name__}",
+        )
 
     def query_dataset(
         self,
@@ -45,22 +62,36 @@ class ScreeningQueryService:
         ]
 
         if series_indicators:
-            series_payload = self._provider.query_series_metrics(
-                stock_codes,
-                [indicator["id"] for indicator in series_indicators],
-                periods,
+            series_payload = self._require_dict_payload(
+                self._provider.query_series_metrics(
+                    stock_codes,
+                    [indicator["id"] for indicator in series_indicators],
+                    periods,
+                ),
+                payload_name="series metrics",
             )
             for stock_code, metric_values in series_payload.items():
                 stock_bucket = series_values.setdefault(stock_code, {})
+                metric_values = self._require_dict_payload(
+                    metric_values,
+                    payload_name=f"series metrics bucket for {stock_code}",
+                )
                 for metric_id, by_period in metric_values.items():
                     stock_bucket[metric_id] = by_period
 
         if latest_indicators:
-            latest_payload = self._provider.query_latest_metrics(
-                stock_codes,
-                [indicator["id"] for indicator in latest_indicators],
+            latest_payload = self._require_dict_payload(
+                self._provider.query_latest_metrics(
+                    stock_codes,
+                    [indicator["id"] for indicator in latest_indicators],
+                ),
+                payload_name="latest metrics",
             )
             for stock_code, metric_values in latest_payload.items():
+                metric_values = self._require_dict_payload(
+                    metric_values,
+                    payload_name=f"latest metrics bucket for {stock_code}",
+                )
                 latest_values.setdefault(stock_code, {}).update(metric_values)
 
         inferred_formula_meta: list[dict[str, str]] = []
