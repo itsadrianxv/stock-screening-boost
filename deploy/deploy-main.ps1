@@ -94,8 +94,8 @@ function Invoke-Compose {
   }
 }
 
-$Services = Split-ListArgument -Values $Services
-$RequiredEnv = Split-ListArgument -Values $RequiredEnv
+$Services = @(Split-ListArgument -Values $Services)
+$RequiredEnv = @(Split-ListArgument -Values $RequiredEnv)
 
 if ($Services.Count -eq 0) {
   throw "At least one service must be provided via -Services."
@@ -126,7 +126,7 @@ Write-Host "Starting target services..."
 $null = Invoke-Compose -ComposeArgs (@("up", "-d", "--build") + $Services)
 
 Write-Host "Checking running services..."
-$runningServices = Invoke-Compose -ComposeArgs (@("ps", "--services", "--status", "running") + $Services)
+$runningServices = @(Invoke-Compose -ComposeArgs (@("ps", "--services", "--status", "running") + $Services))
 $runningLookup = @{}
 foreach ($serviceName in $runningServices) {
   if (-not [string]::IsNullOrWhiteSpace($serviceName)) {
@@ -143,7 +143,7 @@ foreach ($service in $Services) {
 if ($RequiredEnv.Count -gt 0) {
   foreach ($service in $Services) {
     Write-Host "Checking required env vars in $service..."
-    $envOutput = Invoke-Compose -ComposeArgs @("exec", "-T", $service, "sh", "-lc", "env")
+    $envOutput = @(Invoke-Compose -ComposeArgs @("exec", "-T", $service, "sh", "-lc", "env"))
 
     foreach ($envName in $RequiredEnv) {
       $escapedName = [regex]::Escape($envName)

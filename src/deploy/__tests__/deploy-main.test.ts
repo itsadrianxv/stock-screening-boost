@@ -83,7 +83,14 @@ function createSandbox(options?: {
       "  exit 0",
       "}",
       'if ($joined -match "(^| )compose " -and $joined -match " ps --services --status running") {',
-      '  Write-Output "web"',
+      '  $serviceArgs = @()',
+      '  $psIndex = [Array]::IndexOf($args, "ps")',
+      '  if ($psIndex -ge 0 -and ($psIndex + 4) -lt $args.Length) {',
+      '    $serviceArgs = $args[($psIndex + 4)..($args.Length - 1)]',
+      '  }',
+      '  foreach ($service in $serviceArgs) {',
+      '    Write-Output $service',
+      '  }',
       "  exit 0",
       "}",
       'if ($joined -match "(^| )compose " -and $joined -match " exec -T") {',
@@ -191,5 +198,21 @@ describe("deploy-main.ps1", () => {
     );
     expect(log).toContain("up -d --build web");
     expect(log).toContain("exec -T web");
+  });
+
+  it("accepts comma-separated services even when required env validation is omitted", () => {
+    const { root, binDir, dockerLog } = createSandbox();
+    sandboxes.push(root);
+
+    const result = runDeployScript(root, binDir, [
+      "-Services",
+      "postgres,redis",
+    ]);
+
+    expect(result.status).toBe(0);
+
+    const log = readFileSync(dockerLog, "utf8");
+    expect(log).toContain("up -d --build postgres redis");
+    expect(log).toContain("ps --services --status running postgres redis");
   });
 });
