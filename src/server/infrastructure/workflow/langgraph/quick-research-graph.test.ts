@@ -221,14 +221,14 @@ function createODRServiceStub() {
         citationCoverage: 0,
         firstPartyRatio: 0,
         answeredQuestionCoverage: 1,
-        missingRequirements: [],
-        unansweredQuestions: [],
-        qualityFlags: [],
-        suggestedFixes: [],
+        missingRequirements: [] as string[],
+        unansweredQuestions: [] as string[],
+        qualityFlags: [] as string[],
+        suggestedFixes: [] as string[],
       },
       contractScore: 88,
-      qualityFlags: [],
-      missingRequirements: [],
+      qualityFlags: [] as string[],
+      missingRequirements: [] as string[],
     })),
   };
 }
@@ -320,5 +320,365 @@ describe("quick-research-graph", () => {
     expect(finalState.taskContract?.deadlineMinutes).toBe(30);
     expect(finalState.contractScore).toBe(88);
     expect(finalState.reflection?.status).toBe("pass");
+  });
+
+  it("keeps structured nodes on chat by default even when researchGoal exists", async () => {
+    const service = createODRServiceStub();
+    const graph = new QuickResearchContractLangGraph(service as never);
+
+    await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-5",
+        userId: "user-1",
+        query: "AI infra",
+        input: {
+          query: "AI infra",
+          researchPreferences: {
+            researchGoal: "Find the clearest monetization path",
+          },
+        },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    });
+
+    expect(service.buildTaskContract).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        structuredModel: "deepseek-chat",
+      }),
+    );
+    expect(service.buildBrief).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        structuredModel: "deepseek-chat",
+      }),
+    );
+    expect(service.planUnits).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        structuredModel: "deepseek-chat",
+      }),
+    );
+  });
+
+  it("uses reasoner for structured nodes on the first pass when deep is explicit", async () => {
+    const service = createODRServiceStub();
+    const graph = new QuickResearchContractLangGraph(service as never);
+
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-6",
+        userId: "user-1",
+        query: "AI infra",
+        input: {
+          query: "AI infra",
+          taskContract: {
+            requiredSources: ["news", "financial"],
+            requiredSections: [
+              "research_spec",
+              "trend_analysis",
+              "candidate_screening",
+              "competition",
+              "top_picks",
+            ],
+            citationRequired: false,
+            analysisDepth: "deep",
+            deadlineMinutes: 30,
+          },
+        },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as QuickResearchGraphState;
+
+    expect(service.buildTaskContract).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        structuredModel: "deepseek-reasoner",
+      }),
+    );
+    expect(finalState.requestedDepth).toBe("deep");
+    expect(finalState.structuredModelInitial).toBe("deepseek-reasoner");
+    expect(finalState.structuredModelFinal).toBe("deepseek-reasoner");
+  });
+
+  it("auto-escalates to reasoner once when gap follow-up remains", async () => {
+    const service = createODRServiceStub();
+    service.runGapAnalysis = vi
+      .fn()
+      .mockResolvedValueOnce({
+        gapAnalysis: {
+          requiresFollowup: true,
+          summary: "Need a better gap pass",
+          missingAreas: ["competition"],
+          followupUnits: [],
+          iteration: 1,
+        },
+        researchNotes: [],
+        researchUnitRuns: [],
+        researchUnits: [],
+        replanRecords: [],
+        snapshot: {},
+      })
+      .mockResolvedValueOnce({
+        gapAnalysis: {
+          requiresFollowup: false,
+          summary: "Escalated gap pass is enough",
+          missingAreas: [],
+          followupUnits: [],
+          iteration: 1,
+        },
+        researchNotes: [],
+        researchUnitRuns: [],
+        researchUnits: [],
+        replanRecords: [],
+        snapshot: {},
+      });
+    const graph = new QuickResearchContractLangGraph(service as never);
+
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-7",
+        userId: "user-1",
+        query: "AI infra",
+        input: { query: "AI infra" },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as QuickResearchGraphState;
+
+    expect(service.runGapAnalysis).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        state: expect.anything(),
+        runtimeConfig: expect.anything(),
+      }),
+      expect.objectContaining({
+        structuredModel: "deepseek-chat",
+      }),
+    );
+    expect(service.runGapAnalysis).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        state: expect.anything(),
+        runtimeConfig: expect.anything(),
+      }),
+      expect.objectContaining({
+        structuredModel: "deepseek-reasoner",
+      }),
+    );
+    expect(finalState.autoEscalated).toBe(true);
+    expect(finalState.autoEscalationReason).toBe("gap_followup");
+    expect(finalState.structuredModelFinal).toBe("deepseek-reasoner");
+    expect(service.compressFindings).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        structuredModel: "deepseek-reasoner",
+      }),
+    );
+  });
+
+  it("auto-escalates to reasoner once when reflection fails but not on warn", async () => {
+    const service = createODRServiceStub();
+    service.runGapAnalysis = vi
+      .fn()
+      .mockResolvedValueOnce({
+        gapAnalysis: {
+          requiresFollowup: false,
+          summary: "enough",
+          missingAreas: [],
+          followupUnits: [],
+          iteration: 0,
+        },
+        researchNotes: [],
+        researchUnitRuns: [],
+        researchUnits: [],
+        replanRecords: [],
+        snapshot: {},
+      })
+      .mockResolvedValueOnce({
+        gapAnalysis: {
+          requiresFollowup: false,
+          summary: "reasoner pass",
+          missingAreas: [],
+          followupUnits: [],
+          iteration: 0,
+        },
+        researchNotes: [],
+        researchUnitRuns: [],
+        researchUnits: [],
+        replanRecords: [],
+        snapshot: {},
+      });
+    service.finalizeReport = vi
+      .fn()
+      .mockResolvedValueOnce({
+        overview: "overview",
+        heatScore: 72,
+        heatConclusion: "heat",
+        candidates: [],
+        credibility: [],
+        topPicks: [],
+        competitionSummary: "competition",
+        generatedAt: new Date().toISOString(),
+        reflection: {
+          status: "fail",
+          summary: "fail",
+          contractScore: 58,
+          citationCoverage: 0,
+          firstPartyRatio: 0,
+          answeredQuestionCoverage: 0.4,
+          missingRequirements: ["missing_section:top_picks"],
+          unansweredQuestions: ["Q1"],
+          qualityFlags: ["missing_required_sections"],
+          suggestedFixes: [],
+        },
+        contractScore: 58,
+        qualityFlags: ["missing_required_sections"],
+        missingRequirements: ["missing_section:top_picks"],
+      })
+      .mockResolvedValueOnce({
+        overview: "overview",
+        heatScore: 72,
+        heatConclusion: "heat",
+        candidates: [],
+        credibility: [],
+        topPicks: [],
+        competitionSummary: "competition",
+        generatedAt: new Date().toISOString(),
+        reflection: {
+          status: "pass",
+          summary: "pass",
+          contractScore: 88,
+          citationCoverage: 0,
+          firstPartyRatio: 0,
+          answeredQuestionCoverage: 1,
+          missingRequirements: [],
+          unansweredQuestions: [],
+          qualityFlags: [],
+          suggestedFixes: [],
+        },
+        contractScore: 88,
+        qualityFlags: [],
+        missingRequirements: [],
+      });
+    const graph = new QuickResearchContractLangGraph(service as never);
+
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-8",
+        userId: "user-1",
+        query: "AI infra",
+        input: { query: "AI infra" },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as QuickResearchGraphState;
+
+    expect(service.runGapAnalysis).toHaveBeenCalledTimes(2);
+    expect(service.runGapAnalysis).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        state: expect.anything(),
+        runtimeConfig: expect.anything(),
+      }),
+      expect.objectContaining({
+        structuredModel: "deepseek-reasoner",
+      }),
+    );
+    expect(finalState.autoEscalated).toBe(true);
+    expect(finalState.autoEscalationReason).toBe("reflection_fail");
+    expect(finalState.reflection?.status).toBe("pass");
+  });
+
+  it("does not auto-escalate when reflection only warns", async () => {
+    const service = createODRServiceStub();
+    service.finalizeReport = vi.fn(async () => ({
+      overview: "overview",
+      heatScore: 72,
+      heatConclusion: "heat",
+      candidates: [],
+      credibility: [],
+      topPicks: [],
+      competitionSummary: "competition",
+      generatedAt: new Date().toISOString(),
+      brief: {
+        query: "AI infra",
+        researchGoal: "goal",
+        focusConcepts: ["AI infra"],
+        keyQuestions: ["Q1"],
+        mustAnswerQuestions: ["Q1"],
+        forbiddenEvidenceTypes: [],
+        preferredSources: [],
+        freshnessWindowDays: 180,
+        scopeAssumptions: [],
+      },
+      researchPlan: [],
+      researchNotes: [],
+      compressedFindings: {
+        summary: "compressed",
+        highlights: ["fact"],
+        openQuestions: [],
+        noteIds: [],
+      },
+      gapAnalysis: {
+        requiresFollowup: false,
+        summary: "enough",
+        missingAreas: [],
+        followupUnits: [],
+        iteration: 0,
+      },
+      reflection: {
+        status: "warn",
+        summary: "warn",
+        contractScore: 72,
+        citationCoverage: 0,
+        firstPartyRatio: 0,
+        answeredQuestionCoverage: 0.8,
+        missingRequirements: ["missing_section:top_picks"],
+        unansweredQuestions: [],
+        qualityFlags: ["missing_required_sections"],
+        suggestedFixes: [],
+      },
+      contractScore: 72,
+      qualityFlags: ["missing_required_sections"],
+      missingRequirements: ["missing_section:top_picks"],
+    }));
+    const graph = new QuickResearchContractLangGraph(service as never);
+
+    const finalState = (await graph.execute({
+      initialState: graph.buildInitialState({
+        runId: "run-9",
+        userId: "user-1",
+        query: "AI infra",
+        input: { query: "AI infra" },
+        progressPercent: 0,
+        templateGraphConfig: {
+          nodes: graph.getNodeOrder(),
+        },
+      }),
+    })) as QuickResearchGraphState;
+
+    expect(service.runGapAnalysis).toHaveBeenCalledTimes(1);
+    expect(service.finalizeReport).toHaveBeenCalledTimes(1);
+    expect(finalState.autoEscalated).toBe(false);
+    expect(finalState.autoEscalationReason).toBeNull();
+    expect(finalState.reflection?.status).toBe("warn");
   });
 });

@@ -230,6 +230,15 @@ export type WorkflowTemplateGraphConfig = {
   };
 };
 
+const QUICK_RESEARCH_REQUIRED_SOURCES = ["news", "financial"] as const;
+const QUICK_RESEARCH_REQUIRED_SECTIONS = [
+  "research_spec",
+  "trend_analysis",
+  "candidate_screening",
+  "competition",
+  "top_picks",
+] as const;
+
 export const DEFAULT_RESEARCH_RUNTIME_CONFIG: ResearchRuntimeConfig = {
   allowClarification: true,
   maxConcurrentResearchUnits: 3,
@@ -254,6 +263,18 @@ export const DEFAULT_RESEARCH_RUNTIME_CONFIG: ResearchRuntimeConfig = {
     credibilityLookup: "python",
   },
 };
+
+export function buildQuickResearchTaskContract(
+  analysisDepth: ResearchAnalysisDepth = "standard",
+): ResearchTaskContract {
+  return {
+    requiredSources: [...QUICK_RESEARCH_REQUIRED_SOURCES],
+    requiredSections: [...QUICK_RESEARCH_REQUIRED_SECTIONS],
+    citationRequired: false,
+    analysisDepth,
+    deadlineMinutes: 30,
+  };
+}
 
 const researchTaskContractSchema = z.object({
   requiredSources: z.array(z.string().trim().min(1)).max(8),

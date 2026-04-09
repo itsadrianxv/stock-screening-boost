@@ -145,6 +145,34 @@ export function isQuickResearchResult(
   );
 }
 
+export function getQuickResearchModePills(
+  result: unknown,
+  input?: unknown,
+): string[] {
+  let requestedDepth: "standard" | "deep" | undefined;
+  let autoEscalated = false;
+
+  if (isQuickResearchResult(result)) {
+    requestedDepth = result.requestedDepth ?? "standard";
+    autoEscalated = Boolean(result.autoEscalated);
+  } else if (isRecord(input) && isRecord(input.taskContract)) {
+    requestedDepth =
+      input.taskContract.analysisDepth === "deep" ? "deep" : "standard";
+  }
+
+  if (!requestedDepth) {
+    return [];
+  }
+
+  const pills = [requestedDepth === "deep" ? "深度模式" : "标准模式"];
+
+  if (autoEscalated) {
+    pills.push("已自动升级");
+  }
+
+  return pills;
+}
+
 export function isCompanyResearchResult(
   value: unknown,
 ): value is CompanyResearchResultDto {

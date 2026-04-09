@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildResearchDigest,
   extractConfidenceAnalysis,
+  getQuickResearchModePills,
 } from "~/app/workflows/research-view-models";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
@@ -64,6 +65,43 @@ describe("research-view-models", () => {
 
     expect(digest.templateLabel).toBe("行业判断");
     expect(digest.metrics.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("builds quick research mode pills for standard, deep, and escalated runs", () => {
+    expect(
+      getQuickResearchModePills({
+        overview: "Overview",
+        heatScore: 80,
+        heatConclusion: "Conclusion",
+        candidates: [],
+        credibility: [],
+        topPicks: [],
+        competitionSummary: "Competition",
+        requestedDepth: "standard",
+        autoEscalated: true,
+        autoEscalationReason: "gap_followup",
+        structuredModelInitial: "deepseek-chat",
+        structuredModelFinal: "deepseek-reasoner",
+        generatedAt: "2026-03-12T00:00:00.000Z",
+      }),
+    ).toEqual(["标准模式", "已自动升级"]);
+    expect(
+      getQuickResearchModePills({
+        overview: "Overview",
+        heatScore: 80,
+        heatConclusion: "Conclusion",
+        candidates: [],
+        credibility: [],
+        topPicks: [],
+        competitionSummary: "Competition",
+        requestedDepth: "deep",
+        autoEscalated: false,
+        autoEscalationReason: null,
+        structuredModelInitial: "deepseek-reasoner",
+        structuredModelFinal: "deepseek-reasoner",
+        generatedAt: "2026-03-12T00:00:00.000Z",
+      }),
+    ).toEqual(["深度模式"]);
   });
 
   it("builds company digest from v2 result fields", () => {

@@ -16,6 +16,7 @@ import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";
 import {
   buildResearchDigest,
   extractConfidenceAnalysis,
+  getQuickResearchModePills,
   isCompanyResearchResult,
 } from "~/app/workflows/research-view-models";
 import {
@@ -190,6 +191,10 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
   const companyResult = isCompanyResearchResult(run?.result)
     ? run.result
     : null;
+  const quickResearchModePills =
+    run?.template.code === QUICK_RESEARCH_TEMPLATE_CODE
+      ? getQuickResearchModePills(run?.result, run?.input)
+      : [];
   const nextSectionItems =
     digest.gaps.length > 0 ? digest.gaps : digest.nextActions;
 
@@ -277,10 +282,19 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
             description={digest.summary}
             tone={digest.verdictTone}
             actions={
-              <StatusPill
-                label={digest.verdictLabel}
-                tone={digest.verdictTone}
-              />
+              <>
+                <StatusPill
+                  label={digest.verdictLabel}
+                  tone={digest.verdictTone}
+                />
+                {quickResearchModePills.map((label) => (
+                  <StatusPill
+                    key={label}
+                    label={label}
+                    tone={label === "已自动升级" ? "warning" : "info"}
+                  />
+                ))}
+              </>
             }
           />
 

@@ -15,6 +15,7 @@ import {
   StatusPill,
   WorkspaceShell,
 } from "~/app/_components/ui";
+import { buildQuickResearchStartInput } from "~/app/workflows/quick-research-form";
 import {
   buildResearchDigest,
   type InvestorTone,
@@ -196,6 +197,7 @@ export function WorkflowsClient() {
   const [forbiddenEvidenceTypes, setForbiddenEvidenceTypes] = useState("");
   const [preferredSources, setPreferredSources] = useState("");
   const [freshnessWindowDays, setFreshnessWindowDays] = useState("180");
+  const [deepMode, setDeepMode] = useState(false);
 
   useEffect(() => {
     const nextQuery = searchParams.get("query");
@@ -264,34 +266,18 @@ export function WorkflowsClient() {
       return;
     }
 
-    await startMutation.mutateAsync({
-      query: query.trim(),
-      researchPreferences:
-        researchGoal.trim() ||
-        mustAnswerQuestions.trim() ||
-        forbiddenEvidenceTypes.trim() ||
-        preferredSources.trim() ||
-        freshnessWindowDays.trim()
-          ? {
-              researchGoal: researchGoal.trim() || undefined,
-              mustAnswerQuestions: mustAnswerQuestions
-                .split(/\n+/)
-                .map((item) => item.trim())
-                .filter(Boolean),
-              forbiddenEvidenceTypes: forbiddenEvidenceTypes
-                .split(/\n+/)
-                .map((item) => item.trim())
-                .filter(Boolean),
-              preferredSources: preferredSources
-                .split(/\n+/)
-                .map((item) => item.trim())
-                .filter(Boolean),
-              freshnessWindowDays:
-                Number.parseInt(freshnessWindowDays.trim(), 10) || undefined,
-            }
-          : undefined,
-      idempotencyKey: idempotencyKey.trim() || undefined,
-    });
+    await startMutation.mutateAsync(
+      buildQuickResearchStartInput({
+        query,
+        idempotencyKey,
+        researchGoal,
+        mustAnswerQuestions,
+        forbiddenEvidenceTypes,
+        preferredSources,
+        freshnessWindowDays,
+        deepMode,
+      }),
+    );
   };
 
   return (
@@ -343,6 +329,24 @@ export function WorkflowsClient() {
             </label>
 
             <div className="grid gap-4 lg:grid-cols-2">
+              <label className="flex items-start gap-3 rounded-[10px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] px-4 py-3 text-sm text-[var(--app-text-muted)] lg:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={deepMode}
+                  onChange={(event) => setDeepMode(event.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-medium text-[var(--app-text-strong)]">
+                    深度模式
+                  </span>
+                  <span className="mt-1 block leading-6 text-[var(--app-text-muted)]">
+                    首轮结构化节点直接使用 DeepSeek Reasoner。关闭时默认先走
+                    chat，仅在严重问题时自动升级。
+                  </span>
+                </span>
+              </label>
+
               <label className="grid gap-2 text-sm text-[var(--app-text-muted)]">
                 研究目标
                 <textarea

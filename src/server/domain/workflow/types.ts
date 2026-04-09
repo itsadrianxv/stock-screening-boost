@@ -26,6 +26,7 @@ import type {
 } from "~/server/domain/timing/types";
 import type {
   CompressedFindings,
+  ResearchAnalysisDepth,
   ResearchBriefV2,
   ResearchClarificationRequest,
   ResearchGapAnalysis,
@@ -224,6 +225,49 @@ export type WorkflowNodeKey =
   | TimingReviewLoopNodeKey
   | string;
 
+export type QuickResearchStructuredModel =
+  | "deepseek-chat"
+  | "deepseek-reasoner";
+
+export type QuickResearchAutoEscalationReason =
+  | "gap_followup"
+  | "reflection_fail";
+
+export type QuickResearchExecutionMetadata = {
+  requestedDepth: ResearchAnalysisDepth;
+  autoEscalated: boolean;
+  autoEscalationReason: QuickResearchAutoEscalationReason | null;
+  structuredModelInitial: QuickResearchStructuredModel;
+  structuredModelFinal: QuickResearchStructuredModel;
+};
+
+export function resolveQuickResearchRequestedDepth(
+  taskContract?: ResearchTaskContract,
+): ResearchAnalysisDepth {
+  return taskContract?.analysisDepth === "deep" ? "deep" : "standard";
+}
+
+export function resolveQuickResearchStructuredModel(
+  requestedDepth: ResearchAnalysisDepth,
+): QuickResearchStructuredModel {
+  return requestedDepth === "deep" ? "deepseek-reasoner" : "deepseek-chat";
+}
+
+export function buildQuickResearchExecutionMetadata(
+  taskContract?: ResearchTaskContract,
+): QuickResearchExecutionMetadata {
+  const requestedDepth = resolveQuickResearchRequestedDepth(taskContract);
+  const model = resolveQuickResearchStructuredModel(requestedDepth);
+
+  return {
+    requestedDepth,
+    autoEscalated: false,
+    autoEscalationReason: null,
+    structuredModelInitial: model,
+    structuredModelFinal: model,
+  };
+}
+
 export type WorkflowTemplateCode =
   | typeof QUICK_RESEARCH_TEMPLATE_CODE
   | typeof COMPANY_RESEARCH_TEMPLATE_CODE
@@ -319,7 +363,7 @@ export type QuickResearchResultDto = {
   qualityFlags?: string[];
   missingRequirements?: string[];
   generatedAt: string;
-};
+} & Partial<QuickResearchExecutionMetadata>;
 
 export type WorkflowStreamEvent = {
   runId: string;
@@ -349,7 +393,7 @@ export type QuickResearchGraphState = WorkflowGraphState & {
   evidenceList?: CompanyEvidence[];
   competition?: string;
   finalReport?: QuickResearchResultDto;
-};
+} & Partial<QuickResearchExecutionMetadata>;
 
 export type CompanyResearchInput = {
   companyName: string;

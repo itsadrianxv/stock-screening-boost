@@ -28,6 +28,7 @@ import type {
   QuickResearchGraphState,
   QuickResearchInput,
   QuickResearchResultDto,
+  QuickResearchStructuredModel,
 } from "~/server/domain/workflow/types";
 import type { DeepSeekClient } from "~/server/infrastructure/intelligence/deepseek-client";
 
@@ -44,6 +45,10 @@ type QuickExecutionSnapshot = {
   credibility?: QuickResearchCredibility[];
   evidenceList?: CompanyEvidence[];
   competition?: string;
+};
+
+type QuickStructuredRequestOptions = {
+  structuredModel?: QuickResearchStructuredModel;
 };
 
 const QUICK_ALLOWED_CAPABILITIES: ResearchUnitCapability[] = [
@@ -116,6 +121,7 @@ export class QuickResearchWorkflowService {
   async buildTaskContract(
     input: QuickResearchInput,
     runtimeConfig: ResearchRuntimeConfig,
+    options?: QuickStructuredRequestOptions,
   ) {
     return writeTaskContract({
       client: this.client,
@@ -123,6 +129,7 @@ export class QuickResearchWorkflowService {
       preferences: input.researchPreferences,
       taskContract: input.taskContract,
       runtimeConfig,
+      structuredModel: options?.structuredModel,
     });
   }
 
@@ -143,6 +150,7 @@ export class QuickResearchWorkflowService {
     input: QuickResearchInput,
     runtimeConfig: ResearchRuntimeConfig,
     clarificationSummary?: string,
+    options?: QuickStructuredRequestOptions,
   ) {
     return writeResearchBrief({
       client: this.client,
@@ -152,12 +160,14 @@ export class QuickResearchWorkflowService {
       taskContract: input.taskContract,
       runtimeConfig,
       clarificationSummary,
+      structuredModel: options?.structuredModel,
     });
   }
 
   async planUnits(
     state: QuickResearchGraphState,
     runtimeConfig: ResearchRuntimeConfig,
+    options?: QuickStructuredRequestOptions,
   ) {
     return planResearchUnits({
       client: this.client,
@@ -182,6 +192,7 @@ export class QuickResearchWorkflowService {
         }),
       allowedCapabilities: QUICK_ALLOWED_CAPABILITIES,
       runtimeConfig,
+      structuredModel: options?.structuredModel,
     });
   }
 
@@ -477,10 +488,13 @@ export class QuickResearchWorkflowService {
     };
   }
 
-  async runGapAnalysis(params: {
-    state: QuickResearchGraphState;
-    runtimeConfig: ResearchRuntimeConfig;
-  }): Promise<{
+  async runGapAnalysis(
+    params: {
+      state: QuickResearchGraphState;
+      runtimeConfig: ResearchRuntimeConfig;
+    },
+    options?: QuickStructuredRequestOptions,
+  ): Promise<{
     gapAnalysis: ResearchGapAnalysis;
     researchNotes: ResearchNote[];
     researchUnitRuns: ResearchUnitRun[];
@@ -521,6 +535,7 @@ export class QuickResearchWorkflowService {
         noteSummaries: notes.map((note) => note.summary),
         gapAnalysis,
         runtimeConfig: params.runtimeConfig,
+        structuredModel: options?.structuredModel,
       });
 
       gapAnalysis = await analyzeResearchGaps({
@@ -531,6 +546,7 @@ export class QuickResearchWorkflowService {
         gapIteration,
         runtimeConfig: params.runtimeConfig,
         allowedCapabilities: QUICK_ALLOWED_CAPABILITIES,
+        structuredModel: options?.structuredModel,
       });
 
       if (!gapAnalysis.requiresFollowup) {
@@ -597,6 +613,7 @@ export class QuickResearchWorkflowService {
     state: QuickResearchGraphState,
     runtimeConfig: ResearchRuntimeConfig,
     gapAnalysis?: ResearchGapAnalysis,
+    options?: QuickStructuredRequestOptions,
   ): Promise<CompressedFindings> {
     return compressResearchFindings({
       client: this.client,
@@ -605,6 +622,7 @@ export class QuickResearchWorkflowService {
       noteSummaries: (state.researchNotes ?? []).map((note) => note.summary),
       gapAnalysis,
       runtimeConfig,
+      structuredModel: options?.structuredModel,
     });
   }
 
@@ -688,6 +706,11 @@ export class QuickResearchWorkflowService {
       contractScore: reflection.contractScore,
       qualityFlags: reflection.qualityFlags,
       missingRequirements: reflection.missingRequirements,
+      requestedDepth: params.state.requestedDepth,
+      autoEscalated: params.state.autoEscalated,
+      autoEscalationReason: params.state.autoEscalationReason ?? null,
+      structuredModelInitial: params.state.structuredModelInitial,
+      structuredModelFinal: params.state.structuredModelFinal,
     };
   }
 }

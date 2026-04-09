@@ -9,6 +9,7 @@ import type {
   ResearchUnitCapability,
   ResearchUnitPlan,
 } from "~/server/domain/workflow/research";
+import { buildQuickResearchTaskContract } from "~/server/domain/workflow/research";
 import {
   compressedFindingsSchema,
   researchBriefSchema,
@@ -65,6 +66,18 @@ function resolveReasoningModel(
   }
 
   return baseModel;
+}
+
+function resolveStructuredModel(
+  baseModel: string,
+  taskContract?: ResearchTaskContract,
+  structuredModel?: string,
+) {
+  if (structuredModel) {
+    return structuredModel;
+  }
+
+  return resolveReasoningModel(baseModel, taskContract);
 }
 
 function resolveOutputTokens(
@@ -403,19 +416,7 @@ function buildTaskContractFallback(params: {
     } satisfies ResearchTaskContract;
   }
 
-  return {
-    requiredSources: ["news", "financial"],
-    requiredSections: [
-      "research_spec",
-      "trend_analysis",
-      "candidate_screening",
-      "competition",
-      "top_picks",
-    ],
-    citationRequired: false,
-    analysisDepth: params.preferences?.researchGoal ? "deep" : "standard",
-    deadlineMinutes: 30,
-  } satisfies ResearchTaskContract;
+  return buildQuickResearchTaskContract();
 }
 
 function buildUnitPlanFallback(params: {
@@ -696,6 +697,7 @@ export async function writeTaskContract(params: {
   preferences?: ResearchPreferenceInput;
   taskContract?: ResearchTaskContract;
   runtimeConfig: ResearchRuntimeConfig;
+  structuredModel?: string;
 }) {
   const fallback = buildTaskContractFallback(params);
 
@@ -711,9 +713,10 @@ export async function writeTaskContract(params: {
     fallback,
     researchTaskContractSchema,
     {
-      model: resolveReasoningModel(
+      model: resolveStructuredModel(
         params.runtimeConfig.models.planning,
         fallback,
+        params.structuredModel,
       ),
       maxOutputTokens: resolveOutputTokens(900, fallback, 1.3),
       budgetPolicy: {
@@ -739,6 +742,7 @@ export async function writeResearchBrief(params: {
   taskContract?: ResearchTaskContract;
   clarificationSummary?: string;
   runtimeConfig: ResearchRuntimeConfig;
+  structuredModel?: string;
 }) {
   const fallback = buildBriefFallback(params);
   const effectiveContract = buildTaskContractFallback({
@@ -766,9 +770,10 @@ export async function writeResearchBrief(params: {
     fallback,
     researchBriefSchema,
     {
-      model: resolveReasoningModel(
+      model: resolveStructuredModel(
         params.runtimeConfig.models.planning,
         effectiveContract,
+        params.structuredModel,
       ),
       maxOutputTokens: resolveOutputTokens(2000, effectiveContract),
       budgetPolicy: {
@@ -793,6 +798,7 @@ export async function planResearchUnits(params: {
   taskContract?: ResearchTaskContract;
   allowedCapabilities: ResearchUnitCapability[];
   runtimeConfig: ResearchRuntimeConfig;
+  structuredModel?: string;
 }) {
   const effectiveContract = buildTaskContractFallback({
     subject: params.subject,
@@ -819,9 +825,10 @@ export async function planResearchUnits(params: {
     fallback,
     researchUnitPlanListSchema,
     {
-      model: resolveReasoningModel(
+      model: resolveStructuredModel(
         params.runtimeConfig.models.planning,
         effectiveContract,
+        params.structuredModel,
       ),
       maxOutputTokens: resolveOutputTokens(2400, effectiveContract),
       budgetPolicy: {
@@ -847,6 +854,7 @@ export async function analyzeResearchGaps(params: {
   gapIteration: number;
   runtimeConfig: ResearchRuntimeConfig;
   allowedCapabilities: ResearchUnitCapability[];
+  structuredModel?: string;
 }) {
   const effectiveContract = buildTaskContractFallback({
     subject: params.brief.companyName ? "company" : "quick",
@@ -874,9 +882,10 @@ export async function analyzeResearchGaps(params: {
     fallback,
     researchGapAnalysisSchema,
     {
-      model: resolveReasoningModel(
+      model: resolveStructuredModel(
         params.runtimeConfig.models.planning,
         effectiveContract,
+        params.structuredModel,
       ),
       maxOutputTokens: resolveOutputTokens(1800, effectiveContract, 1.35),
       budgetPolicy: {
@@ -928,6 +937,7 @@ export async function compressResearchFindings(params: {
   noteSummaries: string[];
   gapAnalysis?: ResearchGapAnalysis;
   runtimeConfig: ResearchRuntimeConfig;
+  structuredModel?: string;
 }) {
   const effectiveContract = buildTaskContractFallback({
     subject: params.brief.companyName ? "company" : "quick",
@@ -948,9 +958,10 @@ export async function compressResearchFindings(params: {
     fallback,
     compressedFindingsSchema,
     {
-      model: resolveReasoningModel(
+      model: resolveStructuredModel(
         params.runtimeConfig.models.compression,
         effectiveContract,
+        params.structuredModel,
       ),
       maxOutputTokens: resolveOutputTokens(1800, effectiveContract, 1.35),
       budgetPolicy: {

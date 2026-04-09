@@ -8,19 +8,23 @@ import { WorkflowPauseError } from "~/server/domain/workflow/errors";
 import type { ResearchPreferenceInput } from "~/server/domain/workflow/research";
 import { parseResearchTaskContract } from "~/server/domain/workflow/research";
 import type {
+  QuickResearchAutoEscalationReason,
   QuickResearchGraphState,
   QuickResearchInput,
   QuickResearchNodeKey,
+  QuickResearchStructuredModel,
   QuickResearchV2NodeKey,
   QuickResearchV3NodeKey,
   WorkflowGraphState,
   WorkflowNodeKey,
 } from "~/server/domain/workflow/types";
 import {
+  buildQuickResearchExecutionMetadata,
   QUICK_RESEARCH_NODE_KEYS,
   QUICK_RESEARCH_TEMPLATE_CODE,
   QUICK_RESEARCH_V2_NODE_KEYS,
   QUICK_RESEARCH_V3_NODE_KEYS,
+  resolveQuickResearchStructuredModel,
   resolveResearchRuntimeConfig,
 } from "~/server/domain/workflow/types";
 import type { WorkflowGraphBuildInitialStateParams } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
@@ -59,6 +63,17 @@ const WorkflowState = Annotation.Root({
   qualityFlags: Annotation<QuickResearchGraphState["qualityFlags"]>,
   missingRequirements: Annotation<
     QuickResearchGraphState["missingRequirements"]
+  >,
+  requestedDepth: Annotation<QuickResearchGraphState["requestedDepth"]>,
+  autoEscalated: Annotation<QuickResearchGraphState["autoEscalated"]>,
+  autoEscalationReason: Annotation<
+    QuickResearchGraphState["autoEscalationReason"]
+  >,
+  structuredModelInitial: Annotation<
+    QuickResearchGraphState["structuredModelInitial"]
+  >,
+  structuredModelFinal: Annotation<
+    QuickResearchGraphState["structuredModelFinal"]
   >,
   industryOverview: Annotation<string | undefined>,
   news: Annotation<QuickResearchGraphState["news"]>,
@@ -130,6 +145,37 @@ function selectUnitsByCapabilities(
   return (units ?? []).filter((unit) => capabilities.includes(unit.capability));
 }
 
+function resolveCurrentStructuredModel(
+  state: QuickResearchGraphState,
+): QuickResearchStructuredModel {
+  if (state.structuredModelFinal) {
+    return state.structuredModelFinal;
+  }
+
+  if (state.structuredModelInitial) {
+    return state.structuredModelInitial;
+  }
+
+  return resolveQuickResearchStructuredModel(
+    state.requestedDepth ?? "standard",
+  );
+}
+
+function buildEscalationMetadata(
+  state: QuickResearchGraphState,
+  reason: QuickResearchAutoEscalationReason,
+) {
+  return {
+    requestedDepth: state.requestedDepth ?? "standard",
+    autoEscalated: true,
+    autoEscalationReason: reason,
+    structuredModelInitial:
+      state.structuredModelInitial ??
+      resolveQuickResearchStructuredModel(state.requestedDepth ?? "standard"),
+    structuredModelFinal: "deepseek-reasoner" as const,
+  };
+}
+
 abstract class QuickResearchLangGraphBase<
   NodeKey extends
     | QuickResearchNodeKey
@@ -142,6 +188,9 @@ abstract class QuickResearchLangGraphBase<
     params: WorkflowGraphBuildInitialStateParams,
   ): QuickResearchGraphState {
     const researchInput = toResearchInput(params.input, params.query);
+    const executionMetadata = buildQuickResearchExecutionMetadata(
+      researchInput.taskContract,
+    );
     return {
       runId: params.runId,
       userId: params.userId,
@@ -154,6 +203,7 @@ abstract class QuickResearchLangGraphBase<
       researchRuntimeConfig: resolveResearchRuntimeConfig(
         params.templateGraphConfig,
       ),
+      ...executionMetadata,
       errors: [],
     };
   }
@@ -606,14 +656,21 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           return {};
         }
 
+        const structuredModel = resolveCurrentStructuredModel(state);
         const taskContract = await workflowService.buildTaskContract(
           state.researchInput,
           state.researchRuntimeConfig,
+          {
+            structuredModel,
+          },
         );
         const researchBrief = await workflowService.buildBrief(
           state.researchInput,
           state.researchRuntimeConfig,
           state.clarificationRequest?.verification,
+          {
+            structuredModel,
+          },
         );
         const planningState = {
           ...state,
@@ -623,6 +680,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
         const researchUnits = await workflowService.planUnits(
           planningState,
           state.researchRuntimeConfig,
+          {
+            structuredModel,
+          },
         );
 
         return {
@@ -630,6 +690,11 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           researchBrief,
           researchUnits,
           intent: researchBrief.researchGoal,
+          requestedDepth: state.requestedDepth,
+          autoEscalated: state.autoEscalated,
+          autoEscalationReason: state.autoEscalationReason,
+          structuredModelInitial: state.structuredModelInitial,
+          structuredModelFinal: state.structuredModelFinal,
         };
       },
       agent2_trend_analysis: async (state) => {
@@ -674,6 +739,7 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           return {};
         }
 
+        const structuredModel = resolveCurrentStructuredModel(state);
         const execution = await workflowService.executeUnits({
           state,
           runtimeConfig: state.researchRuntimeConfig,
@@ -682,14 +748,51 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
             "competition_synthesis",
           ]),
         });
-        const gapAnalysis = await workflowService.runGapAnalysis({
-          state: {
-            ...state,
+        const gapState = {
+          ...state,
+          ...execution,
+          researchUnits: state.researchUnits,
+        } as QuickResearchGraphState;
+        let gapAnalysis = await workflowService.runGapAnalysis(
+          {
+            state: gapState,
+            runtimeConfig: state.researchRuntimeConfig,
+          },
+          {
+            structuredModel,
+          },
+        );
+
+        if (!state.autoEscalated && gapAnalysis.gapAnalysis.requiresFollowup) {
+          gapAnalysis = await workflowService.runGapAnalysis(
+            {
+              state: {
+                ...gapState,
+                ...gapAnalysis.snapshot,
+                gapAnalysis: gapAnalysis.gapAnalysis,
+                researchNotes: gapAnalysis.researchNotes,
+                researchUnitRuns: gapAnalysis.researchUnitRuns,
+                researchUnits: gapAnalysis.researchUnits,
+                replanRecords: gapAnalysis.replanRecords,
+              } as QuickResearchGraphState,
+              runtimeConfig: state.researchRuntimeConfig,
+            },
+            {
+              structuredModel: "deepseek-reasoner",
+            },
+          );
+
+          return {
             ...execution,
-            researchUnits: state.researchUnits,
-          } as QuickResearchGraphState,
-          runtimeConfig: state.researchRuntimeConfig,
-        });
+            ...gapAnalysis.snapshot,
+            gapAnalysis: gapAnalysis.gapAnalysis,
+            researchNotes: gapAnalysis.researchNotes,
+            researchUnitRuns: gapAnalysis.researchUnitRuns,
+            researchUnits: gapAnalysis.researchUnits,
+            replanRecords: gapAnalysis.replanRecords,
+            ...buildEscalationMetadata(state, "gap_followup"),
+          };
+        }
 
         return {
           ...execution,
@@ -699,6 +802,11 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           researchUnitRuns: gapAnalysis.researchUnitRuns,
           researchUnits: gapAnalysis.researchUnits,
           replanRecords: gapAnalysis.replanRecords,
+          requestedDepth: state.requestedDepth,
+          autoEscalated: state.autoEscalated,
+          autoEscalationReason: state.autoEscalationReason,
+          structuredModelInitial: state.structuredModelInitial,
+          structuredModelFinal: state.structuredModelFinal ?? structuredModel,
         };
       },
       agent5_report_synthesis: async (state) => {
@@ -706,12 +814,16 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           return {};
         }
 
-        const compressedFindings = await workflowService.compressFindings(
+        const structuredModel = resolveCurrentStructuredModel(state);
+        let compressedFindings = await workflowService.compressFindings(
           state,
           state.researchRuntimeConfig,
           state.gapAnalysis,
+          {
+            structuredModel,
+          },
         );
-        const finalReport = await workflowService.finalizeReport({
+        let finalReport = await workflowService.finalizeReport({
           state: {
             ...state,
             compressedFindings,
@@ -719,9 +831,68 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           runtimeConfig: state.researchRuntimeConfig,
         });
 
+        if (!state.autoEscalated && finalReport.reflection?.status === "fail") {
+          const escalatedGapAnalysis = await workflowService.runGapAnalysis(
+            {
+              state: {
+                ...state,
+                compressedFindings,
+                finalReport,
+              } as QuickResearchGraphState,
+              runtimeConfig: state.researchRuntimeConfig,
+            },
+            {
+              structuredModel: "deepseek-reasoner",
+            },
+          );
+          const escalatedState = {
+            ...state,
+            ...escalatedGapAnalysis.snapshot,
+            gapAnalysis: escalatedGapAnalysis.gapAnalysis,
+            researchNotes: escalatedGapAnalysis.researchNotes,
+            researchUnitRuns: escalatedGapAnalysis.researchUnitRuns,
+            researchUnits: escalatedGapAnalysis.researchUnits,
+            replanRecords: escalatedGapAnalysis.replanRecords,
+            ...buildEscalationMetadata(state, "reflection_fail"),
+          } as QuickResearchGraphState;
+
+          compressedFindings = await workflowService.compressFindings(
+            escalatedState,
+            state.researchRuntimeConfig,
+            escalatedState.gapAnalysis,
+            {
+              structuredModel: "deepseek-reasoner",
+            },
+          );
+          finalReport = await workflowService.finalizeReport({
+            state: {
+              ...escalatedState,
+              compressedFindings,
+            },
+            runtimeConfig: state.researchRuntimeConfig,
+          });
+
+          return {
+            ...escalatedGapAnalysis.snapshot,
+            gapAnalysis: escalatedGapAnalysis.gapAnalysis,
+            researchNotes: escalatedGapAnalysis.researchNotes,
+            researchUnitRuns: escalatedGapAnalysis.researchUnitRuns,
+            researchUnits: escalatedGapAnalysis.researchUnits,
+            replanRecords: escalatedGapAnalysis.replanRecords,
+            compressedFindings,
+            finalReport,
+            ...buildEscalationMetadata(state, "reflection_fail"),
+          };
+        }
+
         return {
           compressedFindings,
           finalReport,
+          requestedDepth: state.requestedDepth,
+          autoEscalated: state.autoEscalated,
+          autoEscalationReason: state.autoEscalationReason,
+          structuredModelInitial: state.structuredModelInitial,
+          structuredModelFinal: state.structuredModelFinal ?? structuredModel,
         };
       },
       agent6_reflection: async (state) => {
@@ -730,6 +901,19 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
           contractScore: state.finalReport?.contractScore,
           qualityFlags: state.finalReport?.qualityFlags,
           missingRequirements: state.finalReport?.missingRequirements,
+          requestedDepth:
+            state.finalReport?.requestedDepth ?? state.requestedDepth,
+          autoEscalated:
+            state.finalReport?.autoEscalated ?? state.autoEscalated,
+          autoEscalationReason:
+            state.finalReport?.autoEscalationReason ??
+            state.autoEscalationReason,
+          structuredModelInitial:
+            state.finalReport?.structuredModelInitial ??
+            state.structuredModelInitial,
+          structuredModelFinal:
+            state.finalReport?.structuredModelFinal ??
+            state.structuredModelFinal,
         };
       },
     };
@@ -758,6 +942,8 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
         taskContract: quickState.taskContract,
         researchBrief: quickState.researchBrief,
         plannedUnitCount: quickState.researchUnits?.length ?? 0,
+        requestedDepth: quickState.requestedDepth,
+        structuredModelInitial: quickState.structuredModelInitial,
       };
     }
 
@@ -779,6 +965,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
         credibilityCount: quickState.credibility?.length ?? 0,
         gapAnalysis: quickState.gapAnalysis,
         replanCount: quickState.replanRecords?.length ?? 0,
+        autoEscalated: quickState.autoEscalated,
+        autoEscalationReason: quickState.autoEscalationReason,
+        structuredModelFinal: quickState.structuredModelFinal,
       };
     }
 
@@ -786,6 +975,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
       return {
         compressedFindings: quickState.compressedFindings,
         finalReport: quickState.finalReport,
+        autoEscalated: quickState.autoEscalated,
+        autoEscalationReason: quickState.autoEscalationReason,
+        structuredModelFinal: quickState.structuredModelFinal,
       };
     }
 
@@ -794,6 +986,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
       contractScore: quickState.contractScore,
       qualityFlags: quickState.qualityFlags,
       missingRequirements: quickState.missingRequirements,
+      autoEscalated: quickState.autoEscalated,
+      autoEscalationReason: quickState.autoEscalationReason,
+      structuredModelFinal: quickState.structuredModelFinal,
     };
   }
 
@@ -804,6 +999,7 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
       return {
         plannedUnitCount: quickState.researchUnits?.length ?? 0,
         analysisDepth: quickState.taskContract?.analysisDepth ?? "standard",
+        structuredModelInitial: quickState.structuredModelInitial,
       };
     }
 
@@ -824,6 +1020,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
         credibilityCount: quickState.credibility?.length ?? 0,
         requiresFollowup: quickState.gapAnalysis?.requiresFollowup ?? false,
         replanCount: quickState.replanRecords?.length ?? 0,
+        autoEscalated: quickState.autoEscalated ?? false,
+        autoEscalationReason: quickState.autoEscalationReason ?? null,
+        structuredModelFinal: quickState.structuredModelFinal,
       };
     }
 
@@ -831,6 +1030,9 @@ export class QuickResearchContractLangGraph extends QuickResearchLangGraphBase<Q
       return {
         contractScore: quickState.contractScore ?? null,
         qualityFlags: quickState.qualityFlags ?? [],
+        autoEscalated: quickState.autoEscalated ?? false,
+        autoEscalationReason: quickState.autoEscalationReason ?? null,
+        structuredModelFinal: quickState.structuredModelFinal,
       };
     }
 
