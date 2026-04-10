@@ -8,6 +8,8 @@ import {
   type WorkflowStageTab,
 } from "~/app/_components/workflow-stage-config";
 
+export { WorkspaceShell } from "~/app/_components/workspace-shell";
+
 export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -179,7 +181,7 @@ export function PageHeader(props: {
   );
 }
 
-export function WorkspaceShell(props: {
+export function LegacyWorkspaceShell(props: {
   section: WorkspaceSection;
   sectionView?: WorkspaceSectionView;
   eyebrow?: string;
