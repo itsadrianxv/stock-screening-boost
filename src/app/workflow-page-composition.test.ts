@@ -61,10 +61,11 @@ describe("workflow page composition", () => {
     expect(workflowHistorySource).toContain('sectionView="history"');
   });
 
-  it("feeds direct history items through the workflow pages instead of header history buttons", () => {
+  it("feeds direct history items through the workflow pages", () => {
     const screeningSource = readSource(
       "./screening/screening-studio-client.tsx",
     );
+    const workflowsSource = readSource("./workflows/workflows-client.tsx");
     const companyResearchSource = readSource(
       "./company-research/company-research-client.tsx",
     );
@@ -77,6 +78,7 @@ describe("workflow page composition", () => {
     );
 
     expect(screeningSource).toContain("historyItems={");
+    expect(workflowsSource).toContain("historyItems={");
     expect(companyResearchSource).toContain("historyItems={");
     expect(timingSource).toContain("historyItems={");
     expect(runInvestorSource).toContain("historyItems={");

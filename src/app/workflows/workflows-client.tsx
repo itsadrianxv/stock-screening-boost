@@ -16,6 +16,7 @@ import {
   WorkspaceShell,
 } from "~/app/_components/ui";
 import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher";
+import { buildWorkflowRunHistoryItems } from "~/app/_components/workspace-history";
 import { buildQuickResearchStartInput } from "~/app/workflows/quick-research-form";
 import {
   buildResearchDigest,
@@ -265,6 +266,10 @@ export function WorkflowsClient() {
         (left.createdAt?.getTime?.() ?? 0),
     );
   }, [runsQuery.data?.items]);
+  const historyItems = useMemo(
+    () => buildWorkflowRunHistoryItems(sortedRuns),
+    [sortedRuns],
+  );
 
   const handleStart = async () => {
     if (!query.trim()) {
@@ -527,6 +532,10 @@ export function WorkflowsClient() {
   return (
     <WorkspaceShell
       section="workflows"
+      historyItems={historyItems}
+      historyHref="/workflows/history"
+      historyLoading={runsQuery.isLoading}
+      historyEmptyText="还没有行业研究记录"
       title="行业研究"
       description="把研究问题、约束和最近结论收进一条连续流程里，减少在多个页面之间切换。"
       actions={
