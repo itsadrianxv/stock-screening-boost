@@ -44,6 +44,18 @@ function sampleSignalPayload() {
     stockName: "贵州茅台",
     asOfDate: "2026-03-06",
     barsCount: 240,
+    bars: [
+      {
+        tradeDate: "2026-03-05",
+        open: 1490,
+        high: 1510,
+        low: 1482,
+        close: 1500,
+        volume: 1200000,
+        amount: 1800000000,
+        turnoverRate: 2.1,
+      },
+    ],
     indicators: {
       close: 1500,
       macd: { dif: 1, dea: 0.8, histogram: 0.4 },
@@ -286,5 +298,72 @@ describe("PythonTimingDataClient", () => {
     expect(payload.asOfDate).toBe("2026-03-06");
     expect(payload.indexes).toHaveLength(1);
     expect(payload.features.benchmarkStrength).toBe(72);
+  });
+
+  it("passes includeBars to single-signal requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: sampleSignalPayload(),
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const PythonTimingDataClient = await loadClient();
+    const client = new PythonTimingDataClient({
+      baseUrl: "http://127.0.0.1:8000",
+      timeoutMs: 500,
+    });
+
+    const payload = await client.getSignal({
+      stockCode: "600519",
+      asOfDate: "2026-03-06",
+      includeBars: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/timing/stocks/600519/signals?asOfDate=2026-03-06&includeBars=true",
+      expect.anything(),
+    );
+    expect(payload.bars).toHaveLength(1);
+  });
+
+  it("passes includeBars to batch-signal requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          items: [sampleSignalPayload()],
+          errors: [],
+        },
+      }),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const PythonTimingDataClient = await loadClient();
+    const client = new PythonTimingDataClient({
+      baseUrl: "http://127.0.0.1:8000",
+      timeoutMs: 500,
+    });
+
+    await client.getSignalsBatch({
+      stockCodes: ["600519"],
+      asOfDate: "2026-03-06",
+      includeBars: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/timing/stocks/signals/batch",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          stockCodes: ["600519"],
+          asOfDate: "2026-03-06",
+          includeBars: true,
+        }),
+      }),
+    );
   });
 });

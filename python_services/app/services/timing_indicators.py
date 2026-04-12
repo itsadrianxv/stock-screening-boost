@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from app.contracts.timing import (
+    TimingBar,
     TimingBollinger,
     TimingIndicators,
     TimingMacd,
@@ -43,6 +44,7 @@ class TimingIndicatorsService:
         history: pd.DataFrame,
         benchmark_histories: dict[str, pd.DataFrame] | None = None,
         as_of_date: str | None = None,
+        include_bars: bool = False,
     ) -> TimingSignalData:
         normalized = self.normalize_history(history)
         effective = self.slice_as_of(normalized, as_of_date)
@@ -103,9 +105,27 @@ class TimingIndicatorsService:
             stockName=stock_name,
             asOfDate=latest["trade_date"].strftime("%Y-%m-%d"),
             barsCount=len(effective.index),
+            bars=self.build_bars(effective) if include_bars else None,
             indicators=indicators,
             signalContext=signal_context,
         )
+
+    def build_bars(self, history: pd.DataFrame) -> list[TimingBar]:
+        return [
+            TimingBar(
+                tradeDate=row.trade_date.strftime("%Y-%m-%d"),
+                open=self._round_float(row.open),
+                high=self._round_float(row.high),
+                low=self._round_float(row.low),
+                close=self._round_float(row.close),
+                volume=self._round_float(row.volume),
+                amount=None if pd.isna(row.amount) else self._round_float(row.amount),
+                turnoverRate=None
+                if pd.isna(row.turnover_rate)
+                else self._round_float(row.turnover_rate),
+            )
+            for row in history.itertuples(index=False)
+        ]
 
     def normalize_history(self, history: pd.DataFrame) -> pd.DataFrame:
         if history.empty:

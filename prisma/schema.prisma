@@ -253,6 +253,7 @@ model TimingSignalSnapshot {
     sourceId     String
     timeframe    String    @default("DAILY")
     barsCount    Int
+    bars         Json?
     indicators   Json
     signalContext Json
     createdAt    DateTime  @default(now())

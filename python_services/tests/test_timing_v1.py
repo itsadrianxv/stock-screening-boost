@@ -90,6 +90,32 @@ def test_get_timing_signal_success() -> None:
     assert len(payload["data"]["signalContext"]["engines"]) == 6
 
 
+def test_get_timing_signal_includes_bars_when_requested() -> None:
+    with (
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_stock_snapshot",
+            return_value={"code": "600519", "name": "Moutai"},
+        ),
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_stock_bars",
+            return_value=_sample_history(),
+        ),
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_benchmark_bars",
+            return_value=_sample_history("000300"),
+            create=True,
+        ),
+    ):
+        response = client.get(
+            "/api/v1/timing/stocks/600519/signals",
+            params={"includeBars": "true"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["data"]["bars"]) == 280
+
+
 def test_get_timing_signal_batch_reports_partial_errors() -> None:
     def mock_stock_bars(
         stock_code: str,
@@ -142,6 +168,35 @@ def test_get_timing_signal_batch_reports_partial_errors() -> None:
         warning["code"] == "partial_results"
         for warning in payload["meta"]["warnings"]
     )
+
+
+def test_get_timing_signal_batch_includes_bars_when_requested() -> None:
+    with (
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_stock_snapshots",
+            return_value={
+                "600519": {"code": "600519", "name": "Moutai"},
+            },
+            create=True,
+        ),
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_stock_bars",
+            return_value=_sample_history("600519"),
+        ),
+        patch(
+            "app.providers.timing.tushare_provider.TushareTimingProvider.get_benchmark_bars",
+            return_value=_sample_history("000300"),
+            create=True,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/timing/stocks/signals/batch",
+            json={"stockCodes": ["600519"], "includeBars": True},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["data"]["items"][0]["bars"]) == 280
 
 
 def test_get_timing_bars_rejects_invalid_timeframe() -> None:

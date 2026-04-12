@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   TimingAnalysisCardRecord,
+  TimingBar,
   TimingCardDraft,
   TimingCardReasoning,
   TimingRiskFlag,
@@ -22,6 +23,7 @@ function mapSignalSnapshot(record: {
   sourceId: string;
   timeframe: string;
   barsCount: number;
+  bars: unknown;
   indicators: unknown;
   signalContext: unknown;
   createdAt: Date;
@@ -37,6 +39,7 @@ function mapSignalSnapshot(record: {
     sourceId: record.sourceId,
     timeframe: record.timeframe as "DAILY",
     barsCount: record.barsCount,
+    bars: (record.bars as TimingBar[] | null | undefined) ?? undefined,
     indicators: record.indicators as TimingSignalSnapshotRecord["indicators"],
     signalContext:
       record.signalContext as TimingSignalSnapshotRecord["signalContext"],
@@ -77,6 +80,7 @@ function mapCard(record: {
     sourceId: string;
     timeframe: string;
     barsCount: number;
+    bars: unknown;
     indicators: unknown;
     signalContext: unknown;
     createdAt: Date;

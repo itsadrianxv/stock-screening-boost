@@ -117,6 +117,7 @@ class TimingSignalData(BaseModel):
     stockName: str
     asOfDate: str
     barsCount: int = Field(..., ge=1)
+    bars: list[TimingBar] | None = None
     indicators: TimingIndicators
     signalContext: TimingSignalContext
 
@@ -130,6 +131,7 @@ class TimingSignalBatchRequest(BaseModel):
     stockCodes: list[str] = Field(..., min_length=1, max_length=100)
     asOfDate: str | None = None
     lookbackDays: int | None = Field(default=None, ge=120, le=365)
+    includeBars: bool = False
 
 
 class MarketIndexSnapshot(BaseModel):

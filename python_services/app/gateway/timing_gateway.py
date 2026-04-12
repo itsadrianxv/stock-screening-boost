@@ -25,7 +25,7 @@ from app.contracts.timing import (
     TimingSignalData,
     TimingSignalResponse,
 )
-from app.gateway.common import build_meta, execute_cached, gateway_cache
+from app.gateway.common import GatewayError, build_meta, execute_cached, gateway_cache
 from app.policies.cache_policy import get_cache_policy
 from app.policies.retry_policy import RetryPolicy
 from app.providers.akshare.client import AkShareProviderClient
@@ -108,6 +108,7 @@ class TimingGateway:
         stock_code: str,
         as_of_date: str | None,
         lookback_days: int | None,
+        include_bars: bool = False,
         force_refresh: bool = False,
     ) -> TimingSignalResponse:
         started_at = time.perf_counter()
@@ -115,6 +116,7 @@ class TimingGateway:
             stock_code=stock_code,
             as_of_date=as_of_date,
             lookback_days=lookback_days,
+            include_bars=include_bars,
             force_refresh=force_refresh,
         )
 
@@ -138,6 +140,7 @@ class TimingGateway:
         stock_codes: list[str],
         as_of_date: str | None,
         lookback_days: int | None,
+        include_bars: bool = False,
         force_refresh: bool = False,
     ) -> TimingSignalBatchResponse:
         started_at = time.perf_counter()
@@ -159,6 +162,7 @@ class TimingGateway:
                     stock_code=stock_code,
                     as_of_date=as_of_date,
                     lookback_days=lookback_days,
+                    include_bars=include_bars,
                     force_refresh=force_refresh,
                     stock=stock_snapshots.get(stock_code),
                     benchmark_histories=benchmark_histories,
@@ -242,12 +246,31 @@ class TimingGateway:
         adjust: str,
     ) -> TimingBarsData:
         stock = self._signal_data_provider.get_stock_snapshot(stock_code)
-        history = self._signal_data_provider.get_stock_bars(
-            stock_code=stock_code,
-            start_date=self._resolve_start_date(start=start, end=end, lookback_days=360),
-            end_date=end,
-            adjust=adjust,
+        resolved_start = (
+            self._resolve_start_date(
+                start=start,
+                end=end,
+                lookback_days=timing_indicators_service.minimum_lookback_days * 2,
+            )
+            if start is None
+            else self._resolve_start_date(start=start, end=end, lookback_days=0)
         )
+        try:
+            history = self._signal_data_provider.get_stock_bars(
+                stock_code=stock_code,
+                start_date=resolved_start,
+                end_date=end,
+                adjust=adjust,
+            )
+        except GatewayError as error:
+            if error.code != "bars_not_found" or start is not None:
+                raise
+            history = self._signal_data_provider.get_stock_bars(
+                stock_code=stock_code,
+                start_date=None,
+                end_date=end,
+                adjust=adjust,
+            )
 
         normalized = timing_indicators_service.normalize_history(history)
         bars = [
@@ -280,6 +303,7 @@ class TimingGateway:
         stock_code: str,
         as_of_date: str | None,
         lookback_days: int | None,
+        include_bars: bool,
         force_refresh: bool,
         stock: dict[str, str] | None = None,
         benchmark_histories: dict[str, pd.DataFrame] | None = None,
@@ -296,11 +320,13 @@ class TimingGateway:
                 "stockCode": stock_code,
                 "asOfDate": as_of_date,
                 "lookbackDays": effective_lookback,
+                "includeBars": include_bars,
             },
             fetcher=lambda: self._build_signal_data(
                 stock_code=stock_code,
                 as_of_date=as_of_date,
                 lookback_days=effective_lookback,
+                include_bars=include_bars,
                 stock=stock,
                 benchmark_histories=benchmark_histories,
             ),
@@ -316,6 +342,7 @@ class TimingGateway:
         stock_code: str,
         as_of_date: str | None,
         lookback_days: int,
+        include_bars: bool,
         stock: dict[str, str] | None = None,
         benchmark_histories: dict[str, pd.DataFrame] | None = None,
     ) -> TimingSignalData:
@@ -350,6 +377,7 @@ class TimingGateway:
             history=history,
             benchmark_histories=effective_benchmark_histories,
             as_of_date=as_of_date,
+            include_bars=include_bars,
         )
 
     def _build_market_context(

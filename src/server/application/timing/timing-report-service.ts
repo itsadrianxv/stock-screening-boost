@@ -11,6 +11,7 @@ import type {
 import type { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
 import type { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-market-context-snapshot-repository";
 import type { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
+import type { PrismaTimingSignalSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-signal-snapshot-repository";
 import type { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
 
 const TIMING_REPORT_EVIDENCE_KEYS: TimingSignalEngineKey[] = [
@@ -28,6 +29,10 @@ function average(values: number[]) {
   }
 
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function hasFrozenBars(bars?: TimingBar[]) {
+  return Array.isArray(bars) && bars.length > 0;
 }
 
 function calculateEmaSeries(
@@ -119,6 +124,10 @@ export class TimingReportService {
         PrismaTimingAnalysisCardRepository,
         "getByIdForUser"
       >;
+      signalSnapshotRepository: Pick<
+        PrismaTimingSignalSnapshotRepository,
+        "updateFrozenBars"
+      >;
       reviewRecordRepository: Pick<
         PrismaTimingReviewRecordRepository,
         "listForUser"
@@ -153,11 +162,24 @@ export class TimingReportService {
       return null;
     }
 
-    const [barsResponse, reviewTimeline, marketSnapshot] = await Promise.all([
-      this.deps.timingDataClient.getBars({
-        stockCode: card.stockCode,
-        end: asOfDate,
-      }),
+    const [bars, reviewTimeline, marketSnapshot] = await Promise.all([
+      hasFrozenBars(card.signalSnapshot?.bars)
+        ? Promise.resolve(card.signalSnapshot?.bars ?? [])
+        : this.deps.timingDataClient
+            .getBars({
+              stockCode: card.stockCode,
+              end: asOfDate,
+            })
+            .then(async (barsResponse) => {
+              if (card.signalSnapshotId) {
+                await this.deps.signalSnapshotRepository.updateFrozenBars({
+                  signalSnapshotId: card.signalSnapshotId,
+                  bars: barsResponse.bars,
+                });
+              }
+
+              return barsResponse.bars;
+            }),
       this.deps.reviewRecordRepository.listForUser({
         userId: params.userId,
         stockCode: card.stockCode,
@@ -189,8 +211,8 @@ export class TimingReportService {
 
     return {
       card,
-      bars: barsResponse.bars,
-      chartLevels: computeChartLevels(barsResponse.bars),
+      bars,
+      chartLevels: computeChartLevels(bars),
       evidence: buildEvidence(card.signalSnapshot?.signalContext.engines ?? []),
       marketContext,
       reviewTimeline,

@@ -276,6 +276,7 @@ export type TimingSignalData = {
   stockName: string;
   asOfDate: string;
   barsCount: number;
+  bars?: TimingBar[];
   indicators: TimingIndicators;
   signalContext: TimingSignalContext;
 };
@@ -349,6 +350,7 @@ export type TimingSignalSnapshotRecord = {
   sourceId: string;
   timeframe: TimingTimeframe;
   barsCount: number;
+  bars?: TimingBar[];
   indicators: TimingIndicators;
   signalContext: TimingSignalContext;
   createdAt: Date;

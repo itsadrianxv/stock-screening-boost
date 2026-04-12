@@ -94,6 +94,7 @@ export class TimingSignalPipelineLangGraph extends BaseWorkflowLangGraph<
         const snapshot = await deps.timingDataClient.getSignal({
           stockCode: state.timingInput.stockCode,
           asOfDate: state.timingInput.asOfDate,
+          includeBars: true,
         });
 
         return {

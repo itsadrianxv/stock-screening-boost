@@ -101,6 +101,7 @@ export class PythonTimingDataClient {
     stockCode: string;
     asOfDate?: string;
     lookbackDays?: number;
+    includeBars?: boolean;
   }) {
     const search = new URLSearchParams();
     if (params.asOfDate) {
@@ -108,6 +109,9 @@ export class PythonTimingDataClient {
     }
     if (params.lookbackDays) {
       search.set("lookbackDays", String(params.lookbackDays));
+    }
+    if (params.includeBars) {
+      search.set("includeBars", "true");
     }
 
     const query = search.toString();
@@ -122,6 +126,7 @@ export class PythonTimingDataClient {
     stockCodes: string[];
     asOfDate?: string;
     lookbackDays?: number;
+    includeBars?: boolean;
   }) {
     return this.request<TimingSignalBatchData>(
       this.timingPath("/stocks/signals/batch"),

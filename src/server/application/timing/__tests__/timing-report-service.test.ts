@@ -175,6 +175,7 @@ function buildCard(): TimingAnalysisCardRecord {
       sourceId: "600519",
       timeframe: "DAILY",
       barsCount: 260,
+      bars: undefined,
       indicators: {
         close: 1680,
         macd: { dif: 12, dea: 8, histogram: 8 },
@@ -327,12 +328,74 @@ function buildReviewRecord(index: number): TimingReviewRecord {
 }
 
 describe("TimingReportService", () => {
+  it("prefers persisted snapshot bars and skips live timing bars requests", async () => {
+    const persistedBars = buildBars(60);
+    const analysis = buildAnalysis();
+    const card = buildCard();
+    const signalSnapshot = card.signalSnapshot;
+    if (!signalSnapshot) {
+      throw new Error("signal snapshot is required for this test");
+    }
+    card.signalSnapshot = {
+      ...signalSnapshot,
+      bars: persistedBars,
+    };
+
+    const getBars = vi.fn();
+    const updateFrozenBars = vi.fn();
+    const service = new TimingReportService({
+      analysisCardRepository: {
+        getByIdForUser: vi.fn().mockResolvedValue(card),
+      },
+      signalSnapshotRepository: {
+        updateFrozenBars,
+      },
+      reviewRecordRepository: {
+        listForUser: vi.fn().mockResolvedValue([]),
+      },
+      marketContextSnapshotRepository: {
+        getByAsOfDate: vi.fn().mockResolvedValue({
+          id: "market_1",
+          asOfDate: "2026-03-06",
+          state: analysis.state,
+          transition: analysis.transition,
+          persistenceDays: analysis.persistenceDays,
+          snapshot: analysis.snapshot,
+          analysis,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+        listRecent: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn(),
+      },
+      timingDataClient: {
+        getBars,
+        getMarketContext: vi.fn(),
+      },
+      marketRegimeService: {
+        analyze: vi.fn(),
+      },
+    });
+
+    const report = await service.getTimingReport({
+      userId: "user_1",
+      cardId: "card_1",
+    });
+
+    expect(report?.bars).toEqual(persistedBars);
+    expect(getBars).not.toHaveBeenCalled();
+    expect(updateFrozenBars).not.toHaveBeenCalled();
+  });
+
   it("aggregates a timing report with aligned bars, evidence, and completed review timeline", async () => {
     const bars = buildBars(80);
     const analysis = buildAnalysis();
     const service = new TimingReportService({
       analysisCardRepository: {
         getByIdForUser: vi.fn().mockResolvedValue(buildCard()),
+      },
+      signalSnapshotRepository: {
+        updateFrozenBars: vi.fn(),
       },
       reviewRecordRepository: {
         listForUser: vi
@@ -404,6 +467,9 @@ describe("TimingReportService", () => {
       analysisCardRepository: {
         getByIdForUser: vi.fn().mockResolvedValue(buildCard()),
       },
+      signalSnapshotRepository: {
+        updateFrozenBars: vi.fn(),
+      },
       reviewRecordRepository: {
         listForUser: vi.fn().mockResolvedValue([]),
       },
@@ -440,5 +506,61 @@ describe("TimingReportService", () => {
       analysis,
     });
     expect(report?.marketContext.transition).toBe("IMPROVING");
+  });
+
+  it("backfills frozen bars when falling back to live timing data", async () => {
+    const bars = buildBars(80);
+    const analysis = buildAnalysis();
+    const updateFrozenBars = vi.fn().mockResolvedValue(undefined);
+    const service = new TimingReportService({
+      analysisCardRepository: {
+        getByIdForUser: vi.fn().mockResolvedValue(buildCard()),
+      },
+      signalSnapshotRepository: {
+        updateFrozenBars,
+      },
+      reviewRecordRepository: {
+        listForUser: vi.fn().mockResolvedValue([]),
+      },
+      marketContextSnapshotRepository: {
+        getByAsOfDate: vi.fn().mockResolvedValue({
+          id: "market_1",
+          asOfDate: "2026-03-06",
+          state: analysis.state,
+          transition: analysis.transition,
+          persistenceDays: analysis.persistenceDays,
+          snapshot: analysis.snapshot,
+          analysis,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+        listRecent: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn(),
+      },
+      timingDataClient: {
+        getBars: vi.fn().mockResolvedValue({
+          stockCode: "600519",
+          stockName: "璐靛窞鑼呭彴",
+          timeframe: "DAILY",
+          adjust: "qfq",
+          bars,
+        }),
+        getMarketContext: vi.fn(),
+      },
+      marketRegimeService: {
+        analyze: vi.fn(),
+      },
+    });
+
+    const report = await service.getTimingReport({
+      userId: "user_1",
+      cardId: "card_1",
+    });
+
+    expect(report?.bars).toEqual(bars);
+    expect(updateFrozenBars).toHaveBeenCalledWith({
+      signalSnapshotId: "snapshot_1",
+      bars,
+    });
   });
 });

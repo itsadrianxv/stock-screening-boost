@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
+from app.gateway.common import GatewayError
 from app.gateway.timing_gateway import SIGNAL_BENCHMARK_CODES, TimingGateway
 
 
@@ -34,7 +36,7 @@ class FakeSignalProvider:
     def __init__(self) -> None:
         self.snapshot_batch_calls: list[list[str]] = []
         self.snapshot_calls: list[str] = []
-        self.stock_bar_calls: list[str] = []
+        self.stock_bar_calls: list[dict[str, str | None]] = []
         self.benchmark_bar_calls: list[str] = []
 
     def get_stock_snapshots(self, stock_codes: list[str]):
@@ -55,8 +57,14 @@ class FakeSignalProvider:
         end_date: str | None,
         adjust: str,
     ):
-        del start_date, end_date, adjust
-        self.stock_bar_calls.append(stock_code)
+        self.stock_bar_calls.append(
+            {
+                "stock_code": stock_code,
+                "start_date": start_date,
+                "end_date": end_date,
+                "adjust": adjust,
+            }
+        )
         return _sample_history(stock_code)
 
     def get_benchmark_bars(
@@ -107,5 +115,146 @@ def test_get_signal_batch_reuses_batch_metadata_and_benchmark_histories() -> Non
     assert [item.stockCode for item in response.data.items] == ["600519", "000001"]
     assert signal_provider.snapshot_batch_calls == [["600519", "000001"]]
     assert signal_provider.snapshot_calls == []
-    assert signal_provider.stock_bar_calls == ["600519", "000001"]
+    assert signal_provider.stock_bar_calls == [
+        {
+            "stock_code": "600519",
+            "start_date": "20240907",
+            "end_date": "2025-12-31",
+            "adjust": "qfq",
+        },
+        {
+            "stock_code": "000001",
+            "start_date": "20240907",
+            "end_date": "2025-12-31",
+            "adjust": "qfq",
+        },
+    ]
     assert signal_provider.benchmark_bar_calls == list(SIGNAL_BENCHMARK_CODES)
+
+
+def test_get_signal_returns_bars_when_requested() -> None:
+    signal_provider = FakeSignalProvider()
+    gateway = TimingGateway(
+        signal_data_provider=signal_provider,
+        market_context_provider=FakeMarketContextProvider(),
+    )
+
+    response = gateway.get_signal(
+        request_id="req-1",
+        stock_code="600519",
+        as_of_date="2025-12-31",
+        lookback_days=None,
+        include_bars=True,
+    )
+
+    assert response.data.bars is not None
+    assert len(response.data.bars) == 260
+    assert response.data.bars[0].tradeDate == "2025-01-02"
+
+
+def test_get_bars_without_explicit_start_retries_with_unbounded_start() -> None:
+    class FlakySignalProvider(FakeSignalProvider):
+        def get_stock_bars(
+            self,
+            stock_code: str,
+            start_date: str | None,
+            end_date: str | None,
+            adjust: str,
+        ):
+            self.stock_bar_calls.append(
+                {
+                    "stock_code": stock_code,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "adjust": adjust,
+                }
+            )
+            if start_date is not None:
+                raise GatewayError(
+                    code="bars_not_found",
+                    message=f"Daily bars not found for {stock_code}",
+                    status_code=404,
+                    provider="tushare",
+                )
+            return _sample_history(stock_code)
+
+    signal_provider = FlakySignalProvider()
+    gateway = TimingGateway(
+        signal_data_provider=signal_provider,
+        market_context_provider=FakeMarketContextProvider(),
+    )
+
+    response = gateway.get_bars(
+        request_id="req-1",
+        stock_code="600519",
+        start=None,
+        end="2025-12-31",
+        timeframe="DAILY",
+        adjust="qfq",
+    )
+
+    assert len(response.data.bars) == 280
+    assert signal_provider.stock_bar_calls == [
+        {
+            "stock_code": "600519",
+            "start_date": "20240907",
+            "end_date": "2025-12-31",
+            "adjust": "qfq",
+        },
+        {
+            "stock_code": "600519",
+            "start_date": None,
+            "end_date": "2025-12-31",
+            "adjust": "qfq",
+        },
+    ]
+
+
+def test_get_bars_with_explicit_start_does_not_retry() -> None:
+    class MissingBarsSignalProvider(FakeSignalProvider):
+        def get_stock_bars(
+            self,
+            stock_code: str,
+            start_date: str | None,
+            end_date: str | None,
+            adjust: str,
+        ):
+            self.stock_bar_calls.append(
+                {
+                    "stock_code": stock_code,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "adjust": adjust,
+                }
+            )
+            raise GatewayError(
+                code="bars_not_found",
+                message=f"Daily bars not found for {stock_code}",
+                status_code=404,
+                provider="tushare",
+            )
+
+    signal_provider = MissingBarsSignalProvider()
+    gateway = TimingGateway(
+        signal_data_provider=signal_provider,
+        market_context_provider=FakeMarketContextProvider(),
+    )
+
+    with pytest.raises(GatewayError, match="Daily bars not found"):
+        gateway.get_bars(
+            request_id="req-1",
+            stock_code="600519",
+            start="2025-01-01",
+            end="2025-12-31",
+            timeframe="DAILY",
+            adjust="qfq",
+        )
+
+    assert signal_provider.stock_bar_calls == [
+        {
+            "stock_code": "600519",
+            "start_date": "20250101",
+            "end_date": "2025-12-31",
+            "adjust": "qfq",
+        }
+    ]

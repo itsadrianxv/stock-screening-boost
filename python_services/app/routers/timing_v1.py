@@ -79,6 +79,7 @@ async def get_stock_signal(
         ge=120,
         le=365,
     ),
+    include_bars: bool = Query(default=False, alias="includeBars"),
 ):
     if not is_valid_stock_code(stock_code):
         raise GatewayError(
@@ -93,6 +94,7 @@ async def get_stock_signal(
         stock_code=stock_code,
         as_of_date=as_of_date,
         lookback_days=lookback_days,
+        include_bars=include_bars,
     )
 
 
@@ -115,6 +117,7 @@ async def get_stock_signal_batch(
         stock_codes=body.stockCodes,
         as_of_date=body.asOfDate,
         lookback_days=body.lookbackDays,
+        include_bars=body.includeBars,
     )
 
 

@@ -11,6 +11,7 @@ import { PrismaTimingPresetAdjustmentSuggestionRepository } from "~/server/infra
 import { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
 import { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
 import { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
+import { PrismaTimingSignalSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-signal-snapshot-repository";
 import { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
 
 const portfolioPositionInput = z.object({
@@ -225,6 +226,9 @@ export const timingRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const service = new TimingReportService({
         analysisCardRepository: new PrismaTimingAnalysisCardRepository(ctx.db),
+        signalSnapshotRepository: new PrismaTimingSignalSnapshotRepository(
+          ctx.db,
+        ),
         reviewRecordRepository: new PrismaTimingReviewRecordRepository(ctx.db),
         marketContextSnapshotRepository:
           new PrismaTimingMarketContextSnapshotRepository(ctx.db),
