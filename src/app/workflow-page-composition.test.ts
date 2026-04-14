@@ -90,4 +90,18 @@ describe("workflow page composition", () => {
     );
     expect(timingSource).not.toContain('href="/timing/history"');
   });
+
+  it("uses a dedicated document-style quick research detail component", () => {
+    const investorDetailSource = readSource(
+      "./workflows/[runId]/run-investor-client.tsx",
+    );
+    const industryDetailSource = readSource(
+      "./workflows/[runId]/industry-conclusion-detail.tsx",
+    );
+
+    expect(investorDetailSource).toContain("IndustryConclusionDetail");
+    expect(investorDetailSource).toContain("buildIndustryConclusionViewModel");
+    expect(industryDetailSource).not.toContain("KeyPointList");
+    expect(industryDetailSource).not.toContain("ResearchOpsPanels");
+  });
 });

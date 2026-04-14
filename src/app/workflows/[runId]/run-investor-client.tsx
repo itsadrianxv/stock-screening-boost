@@ -16,6 +16,8 @@ import {
   buildScreeningWorkspaceHistoryItems,
   buildWorkflowRunHistoryItems,
 } from "~/app/_components/workspace-history";
+import { IndustryConclusionDetail } from "~/app/workflows/[runId]/industry-conclusion-detail";
+import { buildIndustryConclusionViewModel } from "~/app/workflows/[runId]/industry-conclusion-view-model";
 import {
   buildCompanyResearchDetailModel,
   CompanyResearchDetailContent,
@@ -232,6 +234,18 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
   const timingReportCardIds = extractTimingReportCardIds(run?.result);
   const nextSectionItems =
     digest.gaps.length > 0 ? digest.gaps : digest.nextActions;
+  const industryConclusionModel = buildIndustryConclusionViewModel({
+    runId,
+    query: run?.query,
+    status: run?.status,
+    input: run?.input,
+    result: run?.result,
+    timingReportCardIds,
+  });
+  const showIndustryConclusion =
+    run?.template.code === QUICK_RESEARCH_TEMPLATE_CODE &&
+    run?.status === "SUCCEEDED" &&
+    industryConclusionModel !== null;
 
   return (
     <WorkspaceShell
@@ -242,7 +256,12 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
       historyLoading={historyLoading}
       eyebrow="投资结论"
       title={getTitle(run?.template.code)}
-      description="把核心投资结论、证据摘要、风险、下一步动作和可信度分析放在同一页查看。"
+      description={
+        showIndustryConclusion
+          ? "把行业研究结论按总览、核心逻辑、证据与可信度、风险与下一步分段阅读。"
+          : "把核心投资结论、证据摘要、风险、下一步动作和可信度分析放在同一页查看。"
+      }
+      contentWidth={showIndustryConclusion ? "wide" : "standard"}
       actions={
         <>
           <Link href={shellContext.backHref} className="app-button">
@@ -287,32 +306,34 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
         </>
       }
       summary={
-        <>
-          <KpiCard
-            label="状态"
-            value={run ? (statusLabels[run.status] ?? run.status) : "-"}
-            hint={run?.currentNodeKey ?? "暂无活动节点"}
-            tone={statusTone(run?.status)}
-          />
-          <KpiCard
-            label="发起时间"
-            value={formatDate(run?.createdAt)}
-            hint="任务创建时间"
-            tone="neutral"
-          />
-          <KpiCard
-            label="完成时间"
-            value={formatDate(run?.completedAt)}
-            hint="任务运行中会自动刷新"
-            tone="info"
-          />
-          <KpiCard
-            label="核心指标"
-            value={digest.metrics[0]?.value ?? "-"}
-            hint={digest.metrics[0]?.label ?? "暂无指标"}
-            tone={digest.verdictTone}
-          />
-        </>
+        showIndustryConclusion ? undefined : (
+          <>
+            <KpiCard
+              label="状态"
+              value={run ? (statusLabels[run.status] ?? run.status) : "-"}
+              hint={run?.currentNodeKey ?? "暂无活动节点"}
+              tone={statusTone(run?.status)}
+            />
+            <KpiCard
+              label="发起时间"
+              value={formatDate(run?.createdAt)}
+              hint="任务创建时间"
+              tone="neutral"
+            />
+            <KpiCard
+              label="完成时间"
+              value={formatDate(run?.completedAt)}
+              hint="任务运行中会自动刷新"
+              tone="info"
+            />
+            <KpiCard
+              label="核心指标"
+              value={digest.metrics[0]?.value ?? "-"}
+              hint={digest.metrics[0]?.label ?? "暂无指标"}
+              tone={digest.verdictTone}
+            />
+          </>
+        )
       }
     >
       {runQuery.isLoading ? (
@@ -325,6 +346,8 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
           title="未找到该任务"
           description="该任务可能已被删除，或当前账号没有访问权限。"
         />
+      ) : showIndustryConclusion && industryConclusionModel ? (
+        <IndustryConclusionDetail model={industryConclusionModel} />
       ) : (
         <>
           <ActionBanner
