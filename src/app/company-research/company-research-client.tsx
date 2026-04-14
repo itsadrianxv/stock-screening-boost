@@ -18,6 +18,7 @@ import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher
 import { buildWorkflowRunHistoryItems } from "~/app/_components/workspace-history";
 import { companyResearchStageTabs } from "~/app/company-research/company-research-stage-tabs";
 import { buildResearchDigest } from "~/app/workflows/research-view-models";
+import { buildRunDetailHref } from "~/app/workflows/run-detail-href";
 import { COMPANY_RESEARCH_TEMPLATE_CODE } from "~/server/domain/workflow/types";
 import { api, type RouterOutputs } from "~/trpc/react";
 
@@ -201,7 +202,10 @@ function CompanyRunCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={`/workflows/${run.id}`}
+            href={buildRunDetailHref({
+              runId: run.id,
+              templateCode: run.templateCode,
+            })}
             className="app-button app-button-primary"
           >
             查看结论

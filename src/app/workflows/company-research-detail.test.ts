@@ -156,6 +156,37 @@ describe("company-research-detail", () => {
     ).toBe(true);
   });
 
+  it("normalizes legacy conceptInsights payloads without crashing", () => {
+    const result = {
+      ...createCompanyResearchResult(),
+      conceptInsights: {
+        concept_insights: [
+          {
+            concept: "core_business",
+            insight: "旧版结果把概念洞察收在 concept_insights 里。",
+            relevance_score: 0.9,
+            research_priority: "高",
+          },
+        ],
+      },
+    };
+
+    const model = buildCompanyResearchDetailModel({
+      status: "SUCCEEDED",
+      result,
+    });
+
+    expect(model?.kind).toBe("detail");
+    if (!model || model.kind !== "detail") {
+      throw new Error("expected detail model");
+    }
+
+    expect(model.conceptCards[0]?.concept).toBe("core_business");
+    expect(model.conceptCards[0]?.whyItMatters).toContain(
+      "旧版结果把概念洞察收在 concept_insights 里。",
+    );
+  });
+
   it("renders the summary tab with the new four-tab navigation", () => {
     const model = buildCompanyResearchDetailModel({
       status: "SUCCEEDED",

@@ -358,6 +358,54 @@ function filterReferences(
   return references.filter((item) => item.sourceType === filterId);
 }
 
+function readFirstString(
+  value: Record<string, unknown>,
+  keys: string[],
+  fallback: string,
+) {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeConceptCards(value: unknown): CompanyResearchConceptCard[] {
+  const sourceItems = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.concept_insights)
+      ? value.concept_insights
+      : [];
+
+  return sourceItems.filter(isRecord).map((item, index) => ({
+    id: `concept-${index + 1}`,
+    concept: readFirstString(item, ["concept"], `概念 ${index + 1}`),
+    whyItMatters: readFirstString(
+      item,
+      ["whyItMatters", "why_it_matters", "insight"],
+      "旧版结果未提供概念洞察说明。",
+    ),
+    companyFit: readFirstString(
+      item,
+      ["companyFit", "company_fit"],
+      "旧版结果未单独提供公司契合点。",
+    ),
+    monetizationPath: readFirstString(
+      item,
+      ["monetizationPath", "monetization_path"],
+      "旧版结果未单独提供变现路径。",
+    ),
+    maturity: readFirstString(
+      item,
+      ["maturity", "research_priority"],
+      "待补充",
+    ),
+  }));
+}
+
 function extractInputSnapshot(input: unknown) {
   if (!isRecord(input)) {
     return {
@@ -414,14 +462,7 @@ export function buildCompanyResearchDetailModel(params: {
       confidenceSummary: findConfidenceSummary(
         extractConfidenceAnalysis(result),
       ),
-      conceptCards: result.conceptInsights.map((item, index) => ({
-        id: `concept-${index + 1}`,
-        concept: item.concept,
-        whyItMatters: item.whyItMatters,
-        companyFit: item.companyFit,
-        monetizationPath: item.monetizationPath,
-        maturity: item.maturity,
-      })),
+      conceptCards: normalizeConceptCards(result.conceptInsights),
       questionCards: buildQuestionCards(result),
       referenceFilters: buildReferenceFilters(result.references),
       collectors: result.collectionSummary.collectors,

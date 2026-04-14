@@ -19,6 +19,7 @@ import {
 } from "~/app/_components/ui";
 import { buildWorkflowRunHistoryItems } from "~/app/_components/workspace-history";
 import { buildResearchDigest } from "~/app/workflows/research-view-models";
+import { buildRunDetailHref } from "~/app/workflows/run-detail-href";
 import { api } from "~/trpc/react";
 
 type WorkspaceSection = ComponentProps<typeof WorkspaceShell>["section"];
@@ -366,7 +367,12 @@ export function WorkflowHistoryClient(props: {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Link
-                    href={`/workflows/${runDetailQuery.data.id}`}
+                    href={buildRunDetailHref({
+                      runId: runDetailQuery.data.id,
+                      templateCode:
+                        runDetailQuery.data.template.code ??
+                        selectedRunSummary?.templateCode,
+                    })}
                     className="app-button app-button-primary"
                   >
                     查看详情

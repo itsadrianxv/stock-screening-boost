@@ -10,6 +10,7 @@ import {
 } from "~/app/_components/ui";
 import { primaryWorkflowStages } from "~/app/_components/workflow-stage-config";
 import { getTemplateLabel } from "~/app/workflows/research-view-models";
+import { buildRunDetailHref } from "~/app/workflows/run-detail-href";
 import { auth } from "~/server/auth";
 import { api, HydrateClient } from "~/trpc/server";
 
@@ -319,7 +320,10 @@ export default async function Home() {
                     />
                     <div className="mt-4">
                       <Link
-                        href={`/workflows/${run.id}`}
+                        href={buildRunDetailHref({
+                          runId: run.id,
+                          templateCode: run.templateCode,
+                        })}
                         className="app-button app-button-primary"
                       >
                         继续处理
