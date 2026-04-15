@@ -680,9 +680,16 @@ export function SectionCard(props: {
               </h2>
             ) : null}
             {description ? (
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
-                {description}
-              </p>
+              typeof description === "string" ||
+              typeof description === "number" ? (
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
+                  {description}
+                </p>
+              ) : (
+                <div className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
+                  {description}
+                </div>
+              )
             ) : null}
           </div>
           {actions ? (
