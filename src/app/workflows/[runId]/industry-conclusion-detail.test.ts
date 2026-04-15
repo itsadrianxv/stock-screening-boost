@@ -11,7 +11,7 @@ const model: IndustryConclusionViewModel = {
   query: "AI infra",
   generatedAtLabel: "2026/04/14 09:10",
   headline: "AI 基建进入兑现窗口，优先跟进龙头链条。",
-  summary: "先看结论，再按板块展开证据和风险。",
+  summary: "先看**结论**，再按板块展开证据和风险。",
   verdictLabel: "高热度赛道",
   verdictTone: "success",
   activeSectionId: "overview",
@@ -33,7 +33,7 @@ const model: IndustryConclusionViewModel = {
       href: "/company-research?companyName=%E4%B8%AD%E9%99%85%E6%97%AD%E5%88%9B",
       variant: "primary",
     },
-    { label: "加入 Space", href: "/spaces?addRunId=run_quick_1" },
+    { label: "加入研究空间", href: "/spaces?addRunId=run_quick_1" },
   ],
   notices: [
     {
@@ -90,7 +90,7 @@ const model: IndustryConclusionViewModel = {
         claimId: "claim_1",
         claimText: "龙头订单兑现更快。",
         label: "supported",
-        explanation: "公告和新闻交叉验证了订单节奏。",
+        explanation: "公告和新闻交叉验证了**订单节奏**。",
       },
     ],
     researchPlan: [
@@ -120,7 +120,9 @@ describe("IndustryConclusionDetail", () => {
     expect(markup).toContain('data-industry-conclusion-detail="true"');
     expect(markup).toContain('data-active-section="overview"');
     expect(markup).toContain("AI 基建进入兑现窗口，优先跟进龙头链条。");
+    expect(markup).toMatch(/<strong[^>]*>结论<\/strong>/);
     expect(markup).toContain("查看单股报告");
+    expect(markup).toContain("加入研究空间");
     expect(markup).toContain("行业景气和产业事件正在形成共振。");
     expect(markup).not.toContain("公告和新闻交叉验证了订单节奏。");
     expect(markup).not.toContain("财报披露滞后");
@@ -135,8 +137,10 @@ describe("IndustryConclusionDetail", () => {
     );
 
     expect(markup).toContain('data-active-section="evidence"');
-    expect(markup).toContain("公告和新闻交叉验证了订单节奏。");
-    expect(markup).toContain("citation_coverage_below_target");
+    expect(markup).toMatch(/<strong[^>]*>订单节奏<\/strong>/);
+    expect(markup).toContain("已支持");
+    expect(markup).toContain("引用覆盖未达到目标");
+    expect(markup).toContain("一手信源覆盖不足");
     expect(markup).not.toContain("行业景气和产业事件正在形成共振。");
     expect(markup).not.toContain("财报披露滞后");
   });

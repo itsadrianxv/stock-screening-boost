@@ -1,6 +1,21 @@
 "use client";
 
+/* biome-ignore lint/correctness/noUnusedImports: React is required for server-side JSX rendering in tests. */
+import React from "react";
+
+import { MarkdownContent } from "~/app/_components/markdown-content";
 import { Panel, StatusPill } from "~/app/_components/ui";
+import {
+  formatReflectionStatusLabel,
+  formatReplanActionLabel,
+  formatResearchArtifactLabel,
+  formatResearchCapabilityLabel,
+  formatResearchPriorityLabel,
+  formatResearchRoleLabel,
+  formatResearchStatusLabel,
+  formatRuntimeIssueLabel,
+  formatWorkflowNodeLabel,
+} from "~/app/workflows/detail-labels";
 
 type PlanUnit = {
   id: string;
@@ -82,7 +97,7 @@ function parsePlan(result: unknown): PlanUnit[] {
 
   return result.researchPlan.filter(isRecord).map((item) => ({
     id: typeof item.id === "string" ? item.id : "unit",
-    title: typeof item.title === "string" ? item.title : "Research unit",
+    title: typeof item.title === "string" ? item.title : "研究单元",
     capability:
       typeof item.capability === "string" ? item.capability : "unknown",
     role: typeof item.role === "string" ? item.role : "research_analyst",
@@ -104,7 +119,7 @@ function parseUnitRuns(result: unknown): UnitRun[] {
 
   return result.researchUnitRuns.filter(isRecord).map((item) => ({
     unitId: typeof item.unitId === "string" ? item.unitId : "unit",
-    status: typeof item.status === "string" ? item.status : "unknown",
+    status: typeof item.status === "string" ? item.status : "planned",
     attempt: toNumber(item.attempt),
     repairCount: toNumber(item.repairCount),
     qualityFlags: toStringList(item.qualityFlags, 8),
@@ -230,18 +245,7 @@ function statusTone(status: string) {
 }
 
 function statusLabel(status: string) {
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "running":
-      return "running";
-    case "skipped":
-      return "skipped";
-    default:
-      return "planned";
-  }
+  return formatResearchStatusLabel(status);
 }
 
 function formatPercent(value?: number) {
@@ -268,7 +272,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
     <div className={props.className}>
       {plan.length > 0 ? (
         <Panel
-          title="研究计划 DAG"
+          title="研究计划图谱"
           description="按依赖深度展示研究单元、角色分工、交付物和回退能力。"
         >
           <div className="grid gap-4">
@@ -279,10 +283,10 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
               >
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="text-sm font-medium text-[var(--app-text)]">
-                    Depth {level.depth + 1}
+                    第 {level.depth + 1} 层
                   </div>
                   <StatusPill
-                    label={`${level.units.length} units`}
+                    label={`${level.units.length} 个单元`}
                     tone="neutral"
                   />
                 </div>
@@ -301,11 +305,15 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
                               {unit.title}
                             </div>
                             <div className="mt-1 text-xs text-[var(--app-text-soft)]">
-                              {unit.capability} · {unit.role}
+                              {formatResearchCapabilityLabel(unit.capability)} ·{" "}
+                              {formatResearchRoleLabel(unit.role)}
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <StatusPill label={unit.priority} tone="info" />
+                            <StatusPill
+                              label={formatResearchPriorityLabel(unit.priority)}
+                              tone="info"
+                            />
                             <StatusPill
                               label={statusLabel(run?.status ?? "planned")}
                               tone={statusTone(run?.status ?? "planned")}
@@ -314,25 +322,34 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
                         </div>
 
                         <div className="mt-3 grid gap-2 text-xs text-[var(--app-text-muted)]">
-                          <div>artifact: {unit.expectedArtifact}</div>
                           <div>
-                            depends on:{" "}
-                            {unit.dependsOn.length > 0
-                              ? unit.dependsOn.join(", ")
-                              : "none"}
+                            交付物：
+                            {formatResearchArtifactLabel(unit.expectedArtifact)}
                           </div>
                           <div>
-                            fallback:{" "}
+                            依赖：
+                            {unit.dependsOn.length > 0
+                              ? unit.dependsOn
+                                  .map((item) => formatWorkflowNodeLabel(item))
+                                  .join("，")
+                              : "无"}
+                          </div>
+                          <div>
+                            回退能力：
                             {unit.fallbackCapabilities.length > 0
-                              ? unit.fallbackCapabilities.join(", ")
-                              : "none"}
+                              ? unit.fallbackCapabilities
+                                  .map((item) =>
+                                    formatResearchCapabilityLabel(item),
+                                  )
+                                  .join("，")
+                              : "无"}
                           </div>
                           {run ? (
                             <div>
-                              attempts: {run.attempt ?? 1} · repairs:{" "}
-                              {run.repairCount ?? 0}
+                              尝试 {run.attempt ?? 1} 次 · 修复{" "}
+                              {run.repairCount ?? 0} 次
                               {run.fallbackUsed
-                                ? ` · fallback ${run.fallbackUsed}`
+                                ? ` · 回退至 ${formatResearchCapabilityLabel(run.fallbackUsed)}`
                                 : ""}
                             </div>
                           ) : null}
@@ -353,7 +370,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
                             {run.qualityFlags.map((flag) => (
                               <StatusPill
                                 key={flag}
-                                label={flag}
+                                label={formatRuntimeIssueLabel(flag)}
                                 tone="warning"
                               />
                             ))}
@@ -382,28 +399,36 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill
-                    label={`iteration ${record.iteration}`}
+                    label={`第 ${record.iteration} 次重规划`}
                     tone="info"
                   />
-                  <StatusPill label={record.reason} tone="warning" />
-                  <StatusPill label={record.action} tone="neutral" />
+                  <StatusPill
+                    label={formatRuntimeIssueLabel(record.reason)}
+                    tone="warning"
+                  />
+                  <StatusPill
+                    label={formatReplanActionLabel(record.action)}
+                    tone="neutral"
+                  />
                   {record.fallbackCapability ? (
                     <StatusPill
-                      label={`fallback ${record.fallbackCapability}`}
+                      label={`回退 ${formatResearchCapabilityLabel(record.fallbackCapability)}`}
                       tone="warning"
                     />
                   ) : null}
                 </div>
-                <p className="mt-3 text-sm leading-6 text-[var(--app-text)]">
-                  {record.resultSummary}
-                </p>
+                <MarkdownContent
+                  content={record.resultSummary}
+                  compact
+                  className="mt-3"
+                />
                 <p className="mt-2 text-xs text-[var(--app-text-soft)]">
-                  trigger node: {record.triggerNodeKey}
+                  触发节点：{formatWorkflowNodeLabel(record.triggerNodeKey)}
                 </p>
                 {record.missingAreas.length > 0 ? (
                   <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
                     {record.missingAreas.map((item) => (
-                      <p key={item}>- {item}</p>
+                      <p key={item}>- {formatRuntimeIssueLabel(item)}</p>
                     ))}
                   </div>
                 ) : null}
@@ -420,10 +445,10 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
-              <div className="text-xs text-[var(--app-text-soft)]">status</div>
+              <div className="text-xs text-[var(--app-text-soft)]">状态</div>
               <div className="mt-2">
                 <StatusPill
-                  label={reflection.status}
+                  label={formatReflectionStatusLabel(reflection.status)}
                   tone={statusTone(
                     reflection.status === "pass"
                       ? "completed"
@@ -436,7 +461,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
             </div>
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
               <div className="text-xs text-[var(--app-text-soft)]">
-                contract
+                合同得分
               </div>
               <div className="app-data mt-2 text-lg text-[var(--app-text)]">
                 {reflection.contractScore ?? "-"}
@@ -444,7 +469,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
             </div>
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
               <div className="text-xs text-[var(--app-text-soft)]">
-                citations
+                引用覆盖
               </div>
               <div className="app-data mt-2 text-lg text-[var(--app-text)]">
                 {formatPercent(reflection.citationCoverage)}
@@ -452,7 +477,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
             </div>
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
               <div className="text-xs text-[var(--app-text-soft)]">
-                first-party
+                一手占比
               </div>
               <div className="app-data mt-2 text-lg text-[var(--app-text)]">
                 {formatPercent(reflection.firstPartyRatio)}
@@ -461,43 +486,51 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
           </div>
 
           <div className="mt-4 rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] p-4 text-sm leading-6 text-[var(--app-text)]">
-            {reflection.summary || "No reflection summary available."}
+            {reflection.summary ? (
+              <MarkdownContent content={reflection.summary} compact />
+            ) : (
+              "暂无反思摘要。"
+            )}
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-3">
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] p-4">
               <div className="text-sm font-medium text-[var(--app-text)]">
-                quality flags
+                质量标记
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {reflection.qualityFlags.length > 0 ? (
                   reflection.qualityFlags.map((flag) => (
-                    <StatusPill key={flag} label={flag} tone="warning" />
+                    <StatusPill
+                      key={flag}
+                      label={formatRuntimeIssueLabel(flag)}
+                      tone="warning"
+                    />
                   ))
                 ) : (
-                  <StatusPill label="none" tone="success" />
+                  <StatusPill label="无" tone="success" />
                 )}
               </div>
             </div>
 
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] p-4">
               <div className="text-sm font-medium text-[var(--app-text)]">
-                missing requirements
+                待补要求
               </div>
               <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
                 {reflection.missingRequirements.length > 0 ? (
                   reflection.missingRequirements.map((item) => (
-                    <p key={item}>- {item}</p>
+                    <p key={item}>- {formatRuntimeIssueLabel(item)}</p>
                   ))
                 ) : (
-                  <p>- none</p>
+                  <p>- 无</p>
                 )}
               </div>
             </div>
 
             <div className="rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] p-4">
               <div className="text-sm font-medium text-[var(--app-text)]">
-                suggested fixes
+                修复建议
               </div>
               <div className="mt-3 space-y-1 text-xs text-[var(--app-text-muted)]">
                 {reflection.suggestedFixes.length > 0 ? (
@@ -505,7 +538,7 @@ export function ResearchOpsPanels(props: ResearchOpsPanelsProps) {
                     <p key={item}>- {item}</p>
                   ))
                 ) : (
-                  <p>- none</p>
+                  <p>- 无</p>
                 )}
               </div>
             </div>

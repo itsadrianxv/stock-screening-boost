@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { MarkdownContent } from "~/app/_components/markdown-content";
 import { statusTone } from "~/app/_components/status-tone";
 import {
   ActionBanner,
@@ -24,6 +25,11 @@ import {
   CompanyResearchDetailContent,
   CompanyResearchPausedFallbackPanel,
 } from "~/app/workflows/company-research-detail";
+import {
+  formatClaimLabel,
+  formatSourceTypeLabel,
+  formatWorkflowNodeLabel,
+} from "~/app/workflows/detail-labels";
 import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";
 import {
   buildResearchDigest,
@@ -280,7 +286,7 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
             </Link>
           ) : null}
           <Link href={`/spaces?addRunId=${runId}`} className="app-button">
-            加入 Space
+            加入研究空间
           </Link>
           {canApprove ? (
             <button
@@ -312,7 +318,11 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
             <KpiCard
               label="状态"
               value={run ? (statusLabels[run.status] ?? run.status) : "-"}
-              hint={run?.currentNodeKey ?? "暂无活动节点"}
+              hint={
+                run?.currentNodeKey
+                  ? formatWorkflowNodeLabel(run.currentNodeKey)
+                  : "暂无活动节点"
+              }
               tone={statusTone(run?.status)}
             />
             <KpiCard
@@ -353,7 +363,7 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
         <>
           <ActionBanner
             title={digest.headline}
-            description={digest.summary}
+            description={<MarkdownContent content={digest.summary} compact />}
             tone={digest.verdictTone}
             actions={
               <>
@@ -375,7 +385,7 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
           {timingReportCardIds.length > 0 ? (
             <Panel
               title="择时报告入口"
-              description="这次 workflow 已经产出择时卡片。若要查看完整的价格结构图、证据引擎和复盘时间线，请进入对应报告页。"
+              description="这次工作流已经产出择时卡片。若要查看完整的价格结构图、证据引擎和复盘时间线，请进入对应报告页。"
             >
               <div className="flex flex-wrap gap-2">
                 {timingReportCardIds.map((cardId, index) => (
@@ -499,8 +509,11 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
                           {claim.claimText}
                         </summary>
                         <div className="mt-3 space-y-2 text-sm text-[var(--app-text-muted)]">
-                          <p>标签：{claim.label}</p>
-                          <p>{claim.explanation}</p>
+                          <p>标签：{formatClaimLabel(claim.label)}</p>
+                          <MarkdownContent
+                            content={claim.explanation}
+                            compact
+                          />
                           {claim.matchedReferenceIds.length > 0 ? (
                             <p>
                               命中引用： {claim.matchedReferenceIds.join(", ")}
@@ -543,25 +556,33 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
               <div className="grid gap-4 xl:grid-cols-2">
                 <KeyPointList
                   title="看多逻辑"
-                  items={digest.bullPoints}
+                  items={digest.bullPoints.map((item) => (
+                    <MarkdownContent key={item} content={item} compact />
+                  ))}
                   emptyText="暂未提取出看多逻辑。"
                   tone="success"
                 />
                 <KeyPointList
                   title="风险点"
-                  items={digest.bearPoints}
+                  items={digest.bearPoints.map((item) => (
+                    <MarkdownContent key={item} content={item} compact />
+                  ))}
                   emptyText="暂未提取出明确风险。"
                   tone="warning"
                 />
                 <KeyPointList
                   title="证据摘要"
-                  items={digest.evidence}
+                  items={digest.evidence.map((item) => (
+                    <MarkdownContent key={item} content={item} compact />
+                  ))}
                   emptyText="暂无结构化证据摘要。"
                   tone="info"
                 />
                 <KeyPointList
                   title={digest.gaps.length > 0 ? "待补缺口" : "下一步动作"}
-                  items={nextSectionItems}
+                  items={nextSectionItems.map((item) => (
+                    <MarkdownContent key={item} content={item} compact />
+                  ))}
                   emptyText="暂无后续动作。"
                   tone="neutral"
                 />
@@ -655,7 +676,9 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
                           >
                             <div className="flex flex-wrap items-center gap-2">
                               <StatusPill
-                                label={reference.sourceType}
+                                label={formatSourceTypeLabel(
+                                  reference.sourceType,
+                                )}
                                 tone="neutral"
                               />
                               <StatusPill

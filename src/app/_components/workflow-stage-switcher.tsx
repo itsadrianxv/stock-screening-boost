@@ -45,7 +45,7 @@ export function WorkflowStageSwitcher(props: {
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-[family-name:var(--font-heading)] text-[11px] tracking-[0.14em] text-[var(--app-text-subtle)]">
-                  Step {index + 1}
+                  步骤 {index + 1}
                 </span>
                 <span className="app-workflow-index">
                   {String(index + 1).padStart(2, "0")}

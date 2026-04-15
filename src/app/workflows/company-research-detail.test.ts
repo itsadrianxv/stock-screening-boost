@@ -21,9 +21,10 @@ function createCompanyResearchResult(): CompanyResearchResultDto {
     conceptInsights: [
       {
         concept: "算力",
-        whyItMatters: "需求增长驱动资本开支",
-        companyFit: "公司已有机柜与客户资源",
-        monetizationPath: "通过高毛利机柜与运维服务变现",
+        whyItMatters: "需求增长驱动**资本开支**",
+        companyFit: "公司已有`机柜`与客户资源",
+        monetizationPath:
+          "通过高毛利机柜与运维服务变现\n\n- 提升单柜价值\n- 拉长服务周期",
         maturity: "成长加速",
       },
     ],
@@ -31,14 +32,15 @@ function createCompanyResearchResult(): CompanyResearchResultDto {
       {
         question: "增长是否兑现",
         whyImportant: "决定估值扩张是否可持续",
-        targetMetric: "订单与利润率",
-        dataHint: "看订单增速与季度利润率变化",
+        targetMetric: "**订单**与利润率",
+        dataHint: "看订单增速与季度利润率变化\n\n> 重点跟踪 2026Q2",
       },
     ],
     findings: [
       {
         question: "增长是否兑现",
-        answer: "订单增长已经开始传导到利润率。",
+        answer:
+          "订单增长已经开始传导到利润率。\n\n- 毛利率已改善\n- 现金回款稳定",
         confidence: "high",
         evidenceUrls: ["https://example.com/report"],
         referenceIds: ["ref-1"],
@@ -79,7 +81,7 @@ function createCompanyResearchResult(): CompanyResearchResultDto {
     ],
     verdict: {
       stance: "优先研究",
-      summary: "订单与利润率已经出现正向验证。",
+      summary: "订单与利润率已经出现**正向验证**。\n\n- 一手信源覆盖较高",
       bullPoints: ["利润率改善已被管理层确认"],
       bearPoints: ["验证周期仍然较短"],
       nextChecks: ["跟踪下一个季度利润率"],
@@ -208,6 +210,8 @@ describe("company-research-detail", () => {
     expect(markup).toContain("业务与概念");
     expect(markup).toContain("关键问题");
     expect(markup).toContain("引用与来源");
+    expect(markup).toMatch(/<strong[^>]*>正向验证<\/strong>/);
+    expect(markup).toContain("<ul");
     expect(markup).toContain("利润率改善已被管理层确认");
     expect(markup).toContain("一手信源占比较高");
   });
@@ -229,8 +233,9 @@ describe("company-research-detail", () => {
       }),
     );
 
-    expect(markup).toContain("需求增长驱动资本开支");
-    expect(markup).toContain("公司已有机柜与客户资源");
+    expect(markup).toMatch(/<strong[^>]*>资本开支<\/strong>/);
+    expect(markup).toMatch(/<code[^>]*>机柜<\/code>/);
+    expect(markup).toContain("提升单柜价值");
     expect(markup).toContain("成长加速");
   });
 
@@ -252,7 +257,9 @@ describe("company-research-detail", () => {
     );
 
     expect(markup).toContain("增长是否兑现");
+    expect(markup).toMatch(/<strong[^>]*>订单<\/strong>/);
     expect(markup).toContain("订单增长已经开始传导到利润率。");
+    expect(markup).toContain("重点跟踪 2026Q2");
     expect(markup).toContain("2026Q1 投资者交流纪要");
     expect(markup).toContain("还需要跟踪后续季度持续性");
   });
@@ -293,7 +300,7 @@ describe("company-research-detail", () => {
       },
       result: {
         qualityFlags: ["source_coverage_low"],
-        missingRequirements: ["补充官网信源"],
+        missingRequirements: ["**补充官网信源**"],
       },
       currentNodeKey: "collect_company_evidence",
     });
@@ -310,8 +317,10 @@ describe("company-research-detail", () => {
     );
 
     expect(markup).toContain("已暂停");
-    expect(markup).toContain("补充官网信源");
-    expect(markup).toContain("source_coverage_low");
+    expect(markup).toMatch(/<strong[^>]*>补充官网信源<\/strong>/);
+    expect(markup).toContain("信源覆盖不足");
+    expect(markup).toContain("采集公司证据");
+    expect(markup).not.toContain("source_coverage_low");
     expect(markup).toContain("示例公司");
   });
 });
