@@ -1,5 +1,7 @@
 import type { MarketRegimeService } from "~/server/application/timing/market-regime-service";
 import type {
+  MarketContextAnalysis,
+  TimingAnalysisCardRecord,
   TimingBar,
   TimingChartLevels,
   TimingChartLinePoint,
@@ -117,6 +119,87 @@ function buildEvidence(
   }, {} as TimingReportEvidence);
 }
 
+function buildFallbackMarketContext(params: {
+  card: TimingAnalysisCardRecord;
+  asOfDate: string;
+}): MarketContextAnalysis {
+  const state = params.card.marketState ?? "NEUTRAL";
+  const transition = params.card.marketTransition ?? "STABLE";
+
+  return {
+    state,
+    transition,
+    regimeConfidence: params.card.confidence,
+    persistenceDays: 0,
+    summary:
+      "市场环境快照暂不可用，当前报告先使用降级市场上下文占位展示，不阻塞择时报告详情加载。",
+    constraints: [
+      `未找到 ${params.asOfDate} 的市场环境快照，详情页未再同步请求实时 market context。`,
+      "市场广度、波动与领涨代理数据恢复后，可由后续任务重新生成完整市场环境快照。",
+    ],
+    breadthTrend:
+      state === "RISK_ON"
+        ? "EXPANDING"
+        : state === "RISK_OFF"
+          ? "CONTRACTING"
+          : "STALLING",
+    volatilityTrend:
+      state === "RISK_ON"
+        ? "FALLING"
+        : state === "RISK_OFF"
+          ? "RISING"
+          : "STABLE",
+    leadership: {
+      leaderCode: "",
+      leaderName: "N/A",
+      switched: false,
+      previousLeaderCode: null,
+    },
+    snapshot: {
+      asOfDate: params.asOfDate,
+      indexes: [],
+      latestBreadth: {
+        asOfDate: params.asOfDate,
+        totalCount: 0,
+        advancingCount: 0,
+        decliningCount: 0,
+        flatCount: 0,
+        positiveRatio: 0,
+        aboveThreePctRatio: 0,
+        belowThreePctRatio: 0,
+        medianChangePct: 0,
+        averageTurnoverRate: null,
+      },
+      latestVolatility: {
+        asOfDate: params.asOfDate,
+        highVolatilityCount: 0,
+        highVolatilityRatio: 0,
+        limitDownLikeCount: 0,
+        indexAtrRatio: 0,
+      },
+      latestLeadership: {
+        asOfDate: params.asOfDate,
+        leaderCode: "",
+        leaderName: "N/A",
+        ranking5d: [],
+        ranking10d: [],
+        switched: false,
+        previousLeaderCode: null,
+      },
+      breadthSeries: [],
+      volatilitySeries: [],
+      leadershipSeries: [],
+      features: {
+        benchmarkStrength: 0,
+        breadthScore: 0,
+        riskScore: 0,
+        stateScore: 0,
+      },
+    },
+    stateScore: 0,
+  };
+}
+
 export class TimingReportService {
   constructor(
     private readonly deps: {
@@ -189,25 +272,12 @@ export class TimingReportService {
       this.deps.marketContextSnapshotRepository.getByAsOfDate(asOfDate),
     ]);
 
-    let marketContext = marketSnapshot?.analysis;
-    if (!marketContext) {
-      const snapshot = await this.deps.timingDataClient.getMarketContext({
+    const marketContext =
+      marketSnapshot?.analysis ??
+      buildFallbackMarketContext({
+        card,
         asOfDate,
       });
-      const recent =
-        await this.deps.marketContextSnapshotRepository.listRecent(20);
-      marketContext = this.deps.marketRegimeService.analyze(
-        snapshot,
-        recent.filter(
-          (item: { asOfDate: string }) => item.asOfDate !== asOfDate,
-        ),
-      );
-      await this.deps.marketContextSnapshotRepository.upsert({
-        asOfDate,
-        snapshot,
-        analysis: marketContext,
-      });
-    }
 
     return {
       card,

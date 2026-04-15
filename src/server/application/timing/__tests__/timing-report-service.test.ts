@@ -457,12 +457,11 @@ describe("TimingReportService", () => {
     expect(report?.reviewTimeline[0]?.completedAt).not.toBeNull();
   });
 
-  it("fetches and persists market context when no aligned snapshot exists", async () => {
+  it("builds a fallback market context when no aligned snapshot exists", async () => {
     const bars = buildBars(80);
-    const analysis = buildAnalysis();
-    const upsert = vi.fn().mockResolvedValue(undefined);
-    const getMarketContext = vi.fn().mockResolvedValue(analysis.snapshot);
-    const analyze = vi.fn().mockReturnValue(analysis);
+    const upsert = vi.fn();
+    const getMarketContext = vi.fn();
+    const analyze = vi.fn();
     const service = new TimingReportService({
       analysisCardRepository: {
         getByIdForUser: vi.fn().mockResolvedValue(buildCard()),
@@ -498,14 +497,12 @@ describe("TimingReportService", () => {
       cardId: "card_1",
     });
 
-    expect(getMarketContext).toHaveBeenCalledWith({ asOfDate: "2026-03-06" });
-    expect(analyze).toHaveBeenCalledWith(analysis.snapshot, []);
-    expect(upsert).toHaveBeenCalledWith({
-      asOfDate: "2026-03-06",
-      snapshot: analysis.snapshot,
-      analysis,
-    });
+    expect(getMarketContext).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+    expect(report?.marketContext.state).toBe("RISK_ON");
     expect(report?.marketContext.transition).toBe("IMPROVING");
+    expect(report?.marketContext.summary).toContain("市场环境快照");
   });
 
   it("backfills frozen bars when falling back to live timing data", async () => {
@@ -562,5 +559,54 @@ describe("TimingReportService", () => {
       signalSnapshotId: "snapshot_1",
       bars,
     });
+  });
+
+  it("uses a neutral fallback market posture when the card itself has no market posture", async () => {
+    const card = buildCard();
+    card.marketState = null;
+    card.marketTransition = null;
+    const signalSnapshot = card.signalSnapshot;
+    if (!signalSnapshot) {
+      throw new Error("signal snapshot is required for this test");
+    }
+    card.signalSnapshot = {
+      ...signalSnapshot,
+      bars: buildBars(60),
+    };
+
+    const service = new TimingReportService({
+      analysisCardRepository: {
+        getByIdForUser: vi.fn().mockResolvedValue(card),
+      },
+      signalSnapshotRepository: {
+        updateFrozenBars: vi.fn(),
+      },
+      reviewRecordRepository: {
+        listForUser: vi.fn().mockResolvedValue([]),
+      },
+      marketContextSnapshotRepository: {
+        getByAsOfDate: vi.fn().mockResolvedValue(null),
+        listRecent: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn(),
+      },
+      timingDataClient: {
+        getBars: vi.fn(),
+        getMarketContext: vi.fn(),
+      },
+      marketRegimeService: {
+        analyze: vi.fn(),
+      },
+    });
+
+    const report = await service.getTimingReport({
+      userId: "user_1",
+      cardId: "card_1",
+    });
+
+    expect(report).not.toBeNull();
+    expect(report?.marketContext.state).toBe("NEUTRAL");
+    expect(report?.marketContext.transition).toBe("STABLE");
+    expect(report?.marketContext.summary).toContain("市场环境快照");
+    expect(report?.marketContext.constraints).not.toHaveLength(0);
   });
 });
