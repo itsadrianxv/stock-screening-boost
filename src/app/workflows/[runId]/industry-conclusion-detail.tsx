@@ -2,13 +2,20 @@
 
 import Link from "next/link";
 /* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
-import React, { useState } from "react";
+import React, { type ReactNode, useState } from "react";
 
+import { MarkdownContent } from "~/app/_components/markdown-content";
 import { StatusPill } from "~/app/_components/ui";
 import type {
   IndustryConclusionSectionId,
   IndustryConclusionViewModel,
 } from "~/app/workflows/[runId]/industry-conclusion-view-model";
+import {
+  formatClaimLabel,
+  formatResearchCapabilityLabel,
+  formatResearchStatusLabel,
+  formatRuntimeIssueLabel,
+} from "~/app/workflows/detail-labels";
 
 export type { IndustryConclusionViewModel } from "~/app/workflows/[runId]/industry-conclusion-view-model";
 
@@ -25,16 +32,23 @@ function toneClasses(tone: string) {
   return "border-[var(--app-info-border)] bg-[var(--app-info-surface)] text-[var(--app-text-strong)]";
 }
 
-function SectionHeading(props: { title: string; description?: string }) {
+function SectionHeading(props: { title: string; description?: ReactNode }) {
   return (
     <div className="border-b border-[var(--app-border-soft)] pb-4">
       <h3 className="font-[family-name:var(--font-heading)] text-[22px] leading-none text-[var(--app-text-strong)]">
         {props.title}
       </h3>
       {props.description ? (
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--app-text-muted)]">
-          {props.description}
-        </p>
+        typeof props.description === "string" ||
+        typeof props.description === "number" ? (
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--app-text-muted)]">
+            {props.description}
+          </p>
+        ) : (
+          <div className="mt-3 max-w-3xl text-sm leading-7 text-[var(--app-text-muted)]">
+            {props.description}
+          </div>
+        )
       ) : null}
     </div>
   );
@@ -56,7 +70,7 @@ function DetailList(props: { items: string[]; emptyText: string }) {
           key={`${item}-${index + 1}`}
           className="border-b border-[var(--app-border-soft)] py-3 text-sm leading-7 text-[var(--app-text-muted)] last:border-b-0"
         >
-          {item}
+          <MarkdownContent content={item} compact />
         </li>
       ))}
     </ul>
@@ -76,7 +90,7 @@ function ActionLinks(props: { model: IndustryConclusionViewModel }) {
               : "app-button"
           }
         >
-          {action.label}
+          {action.label.replace("Space", "研究空间")}
         </Link>
       ))}
     </div>
@@ -87,7 +101,12 @@ function OverviewSection(props: { model: IndustryConclusionViewModel }) {
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)]">
       <section className="grid gap-5">
-        <SectionHeading title="本轮结论" description={props.model.summary} />
+        <SectionHeading
+          title="本轮结论"
+          description={
+            <MarkdownContent content={props.model.summary} compact />
+          }
+        />
         <DetailList
           items={props.model.overviewPoints}
           emptyText="暂无额外摘要。"
@@ -117,9 +136,10 @@ function LogicSection(props: { model: IndustryConclusionViewModel }) {
 
       <section className="grid gap-4 border-t border-[var(--app-border-soft)] pt-6">
         <SectionHeading title="竞争格局" />
-        <p className="text-sm leading-7 text-[var(--app-text-muted)]">
-          {props.model.logic.competitionSummary}
-        </p>
+        <MarkdownContent
+          content={props.model.logic.competitionSummary}
+          compact
+        />
       </section>
 
       <section className="grid gap-4 border-t border-[var(--app-border-soft)] pt-6">
@@ -142,9 +162,11 @@ function LogicSection(props: { model: IndustryConclusionViewModel }) {
                   <div className="mt-2 text-xs tracking-[0.1em] text-[var(--app-text-subtle)]">
                     {item.stockCode}
                   </div>
-                  <p className="mt-3 text-sm leading-7 text-[var(--app-text-muted)]">
-                    {item.reason}
-                  </p>
+                  <MarkdownContent
+                    content={item.reason}
+                    compact
+                    className="mt-3"
+                  />
                 </div>
                 <div className="md:self-start">
                   <Link href={item.href} className="app-button">
@@ -166,7 +188,7 @@ function EvidenceSection(props: { model: IndustryConclusionViewModel }) {
       <section className="grid gap-5">
         <SectionHeading
           title="证据校验"
-          description="先看支持/不足/冲突和覆盖率，再按需下看 claims 与研究单元。"
+          description="先看支持/不足/冲突和覆盖率，再按需下看断言与研究单元。"
         />
         <dl className="grid border border-[var(--app-border-soft)] sm:grid-cols-2 xl:grid-cols-4">
           <div className="border-b border-[var(--app-border-soft)] px-4 py-4 xl:border-r xl:border-b-0">
@@ -218,14 +240,18 @@ function EvidenceSection(props: { model: IndustryConclusionViewModel }) {
           <div className="grid gap-4">
             <SectionHeading title="质量标记" />
             <DetailList
-              items={props.model.evidence.qualityFlags}
+              items={props.model.evidence.qualityFlags.map((item) =>
+                formatRuntimeIssueLabel(item),
+              )}
               emptyText="暂无质量标记。"
             />
           </div>
           <div className="grid gap-4">
             <SectionHeading title="待补要求" />
             <DetailList
-              items={props.model.evidence.missingRequirements}
+              items={props.model.evidence.missingRequirements.map((item) =>
+                formatRuntimeIssueLabel(item),
+              )}
               emptyText="暂无待补要求。"
             />
           </div>
@@ -233,10 +259,10 @@ function EvidenceSection(props: { model: IndustryConclusionViewModel }) {
       ) : null}
 
       <section className="grid gap-4 border-t border-[var(--app-border-soft)] pt-6">
-        <SectionHeading title="Claims" />
+        <SectionHeading title="结论断言" />
         {props.model.evidence.claims.length === 0 ? (
           <p className="text-sm leading-7 text-[var(--app-text-subtle)]">
-            暂无结构化 claims。
+            暂无结构化断言。
           </p>
         ) : (
           <div className="grid gap-0">
@@ -246,14 +272,19 @@ function EvidenceSection(props: { model: IndustryConclusionViewModel }) {
                 className="border-b border-[var(--app-border-soft)] py-4 last:border-b-0"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill label={item.label} tone="info" />
+                  <StatusPill
+                    label={formatClaimLabel(item.label)}
+                    tone="info"
+                  />
                 </div>
                 <p className="mt-3 text-sm leading-7 text-[var(--app-text-strong)]">
                   {item.claimText}
                 </p>
-                <p className="mt-2 text-sm leading-7 text-[var(--app-text-muted)]">
-                  {item.explanation}
-                </p>
+                <MarkdownContent
+                  content={item.explanation}
+                  compact
+                  className="mt-2"
+                />
               </div>
             ))}
           </div>
@@ -278,10 +309,13 @@ function EvidenceSection(props: { model: IndustryConclusionViewModel }) {
                     {item.title}
                   </div>
                   <div className="mt-1 text-xs tracking-[0.1em] text-[var(--app-text-subtle)]">
-                    {item.capability}
+                    {formatResearchCapabilityLabel(item.capability)}
                   </div>
                 </div>
-                <StatusPill label={item.status} tone="info" />
+                <StatusPill
+                  label={formatResearchStatusLabel(item.status)}
+                  tone="info"
+                />
               </div>
             ))}
           </div>
@@ -297,7 +331,9 @@ function RisksSection(props: { model: IndustryConclusionViewModel }) {
       <section className="grid gap-5">
         <SectionHeading
           title="风险判断"
-          description={props.model.risks.summary}
+          description={
+            <MarkdownContent content={props.model.risks.summary} compact />
+          }
         />
         <div className="grid gap-6 xl:grid-cols-2">
           <div className="grid gap-4">
@@ -374,9 +410,10 @@ export function IndustryConclusionDetail(props: {
             <h2 className="mt-3 font-[family-name:var(--font-heading)] text-[34px] leading-[0.96] text-[var(--app-text-strong)] sm:text-[42px]">
               {model.headline}
             </h2>
-            <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--app-text-muted)] sm:text-base">
-              {model.summary}
-            </p>
+            <MarkdownContent
+              content={model.summary}
+              className="mt-4 max-w-4xl sm:text-base"
+            />
           </div>
           <div className="xl:justify-self-end">
             <ActionLinks model={model} />
@@ -394,7 +431,11 @@ export function IndustryConclusionDetail(props: {
               <div className="text-sm font-medium text-[var(--app-text-strong)]">
                 {notice.title}
               </div>
-              <p className="mt-2 text-sm leading-7">{notice.description}</p>
+              <MarkdownContent
+                content={notice.description}
+                compact
+                className="mt-2"
+              />
               {notice.actions.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {notice.actions.map((action) => (
@@ -445,7 +486,7 @@ export function IndustryConclusionDetail(props: {
               }`}
             >
               <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--app-text-subtle)]">
-                Step {String(index + 1).padStart(2, "0")}
+                步骤 {String(index + 1).padStart(2, "0")}
               </span>
               <span className="mt-3 block font-[family-name:var(--font-heading)] text-[24px] leading-none">
                 {section.label}

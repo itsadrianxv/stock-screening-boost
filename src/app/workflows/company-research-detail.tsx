@@ -4,6 +4,7 @@ import Link from "next/link";
 /* biome-ignore lint/correctness/noUnusedImports: React is required for server-side JSX rendering in tests. */
 import React, { useMemo, useState } from "react";
 
+import { MarkdownContent } from "~/app/_components/markdown-content";
 import {
   EmptyState,
   KeyPointList,
@@ -13,6 +14,12 @@ import {
 } from "~/app/_components/ui";
 import type { WorkflowStageTab } from "~/app/_components/workflow-stage-config";
 import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher";
+import {
+  formatRuntimeIssueLabel,
+  formatSourceTierLabel,
+  formatSourceTypeLabel,
+  formatWorkflowNodeLabel,
+} from "~/app/workflows/detail-labels";
 import {
   buildResearchDigest,
   extractConfidenceAnalysis,
@@ -184,32 +191,6 @@ function formatConfidenceLevel(level?: string) {
   }
 }
 
-function formatSourceType(type: string) {
-  switch (type) {
-    case "official":
-      return "官网";
-    case "financial":
-      return "财务";
-    case "news":
-      return "新闻";
-    case "industry":
-      return "行业";
-    default:
-      return type;
-  }
-}
-
-function formatSourceTier(value: string) {
-  switch (value) {
-    case "first_party":
-      return "一手";
-    case "third_party":
-      return "三方";
-    default:
-      return value;
-  }
-}
-
 function confidenceTone(level?: string): Tone {
   switch (level) {
     case "high":
@@ -323,7 +304,7 @@ function buildReferenceFilters(references: CompanyResearchReferenceItem[]) {
     { id: "all", label: "全部", count: references.length },
     ...sourceTypes.map((type) => ({
       id: type,
-      label: formatSourceType(type),
+      label: formatSourceTypeLabel(type),
       count: references.filter((item) => item.sourceType === type).length,
     })),
     {
@@ -495,8 +476,12 @@ export function buildCompanyResearchDetailModel(params: {
   const inputSnapshot = extractInputSnapshot(params.input);
   const resultRecord = isRecord(params.result) ? params.result : {};
   const blockers = uniqueList([
-    ...toStringList(resultRecord.missingRequirements),
-    ...toStringList(resultRecord.qualityFlags),
+    ...toStringList(resultRecord.missingRequirements).map((item) =>
+      formatRuntimeIssueLabel(item),
+    ),
+    ...toStringList(resultRecord.qualityFlags).map((item) =>
+      formatRuntimeIssueLabel(item),
+    ),
   ]);
 
   return {
@@ -513,7 +498,7 @@ export function buildCompanyResearchDetailModel(params: {
       blockers.length > 0 ? blockers : ["当前任务已暂停，等待补充信息后继续。"],
     nextActions: uniqueList([
       params.currentNodeKey
-        ? `当前暂停节点：${params.currentNodeKey}`
+        ? `当前暂停节点：${formatWorkflowNodeLabel(params.currentNodeKey)}`
         : undefined,
       "补齐缺失信息后继续研究",
       "回到公司研究页调整输入范围",
@@ -577,7 +562,9 @@ function SummaryTab(props: { model: CompanyResearchDetailModel }) {
     <div className="grid gap-6">
       <Panel
         title="结论摘要"
-        description={props.model.digest.summary}
+        description={
+          <MarkdownContent content={props.model.digest.summary} compact />
+        }
         actions={
           <StatusPill
             label={props.model.digest.verdictLabel}
@@ -590,7 +577,7 @@ function SummaryTab(props: { model: CompanyResearchDetailModel }) {
 
       <Panel
         title="可信度摘要"
-        description="保留摘要层，不在主详情页展开逐条 claim 审核。"
+        description="保留摘要层，不在主详情页展开逐条断言审核。"
       >
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-[12px] border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3">
@@ -640,13 +627,17 @@ function SummaryTab(props: { model: CompanyResearchDetailModel }) {
       <div className="grid gap-4 xl:grid-cols-3">
         <KeyPointList
           title="看多逻辑"
-          items={props.model.digest.bullPoints}
+          items={props.model.digest.bullPoints.map((item) => (
+            <MarkdownContent key={item} content={item} compact />
+          ))}
           emptyText="暂无结构化看多逻辑。"
           tone="success"
         />
         <KeyPointList
           title="风险点"
-          items={props.model.digest.bearPoints}
+          items={props.model.digest.bearPoints.map((item) => (
+            <MarkdownContent key={item} content={item} compact />
+          ))}
           emptyText="暂无结构化风险提示。"
           tone="warning"
         />
@@ -654,8 +645,12 @@ function SummaryTab(props: { model: CompanyResearchDetailModel }) {
           title="下一步动作"
           items={
             props.model.digest.nextActions.length > 0
-              ? props.model.digest.nextActions
-              : props.model.digest.gaps
+              ? props.model.digest.nextActions.map((item) => (
+                  <MarkdownContent key={item} content={item} compact />
+                ))
+              : props.model.digest.gaps.map((item) => (
+                  <MarkdownContent key={item} content={item} compact />
+                ))
           }
           emptyText="暂无后续动作。"
           tone="info"
@@ -681,7 +676,7 @@ function ConceptsTab(props: { model: CompanyResearchDetailModel }) {
         <Panel
           key={item.id}
           title={item.concept}
-          description={item.whyItMatters}
+          description={<MarkdownContent content={item.whyItMatters} compact />}
           actions={<StatusPill label={item.maturity} tone="info" />}
         >
           <div className="grid gap-4">
@@ -689,17 +684,21 @@ function ConceptsTab(props: { model: CompanyResearchDetailModel }) {
               <div className="text-xs text-[var(--app-text-soft)]">
                 公司契合点
               </div>
-              <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                {item.companyFit}
-              </p>
+              <MarkdownContent
+                content={item.companyFit}
+                compact
+                className="mt-2"
+              />
             </div>
             <div className="rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3">
               <div className="text-xs text-[var(--app-text-soft)]">
                 变现路径
               </div>
-              <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                {item.monetizationPath}
-              </p>
+              <MarkdownContent
+                content={item.monetizationPath}
+                compact
+                className="mt-2"
+              />
             </div>
           </div>
         </Panel>
@@ -764,25 +763,31 @@ function QuestionsTab(props: {
                     <div className="text-xs text-[var(--app-text-soft)]">
                       为什么重要
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {item.whyImportant}
-                    </p>
+                    <MarkdownContent
+                      content={item.whyImportant}
+                      compact
+                      className="mt-2"
+                    />
                   </div>
                   <div className="rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3">
                     <div className="text-xs text-[var(--app-text-soft)]">
                       目标指标
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {item.targetMetric}
-                    </p>
+                    <MarkdownContent
+                      content={item.targetMetric}
+                      compact
+                      className="mt-2"
+                    />
                   </div>
                   <div className="rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3">
                     <div className="text-xs text-[var(--app-text-soft)]">
                       数据提示
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                      {item.dataHint}
-                    </p>
+                    <MarkdownContent
+                      content={item.dataHint}
+                      compact
+                      className="mt-2"
+                    />
                   </div>
                 </div>
 
@@ -790,9 +795,7 @@ function QuestionsTab(props: {
                   <div className="text-xs text-[var(--app-text-soft)]">
                     当前答案
                   </div>
-                  <p className="mt-2 text-sm leading-7 text-[var(--app-text)]">
-                    {item.answer}
-                  </p>
+                  <MarkdownContent content={item.answer} className="mt-2" />
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-2">
@@ -810,11 +813,15 @@ function QuestionsTab(props: {
                           >
                             <div className="flex flex-wrap items-center gap-2">
                               <StatusPill
-                                label={formatSourceType(reference.sourceType)}
+                                label={formatSourceTypeLabel(
+                                  reference.sourceType,
+                                )}
                                 tone="neutral"
                               />
                               <StatusPill
-                                label={formatSourceTier(reference.sourceTier)}
+                                label={formatSourceTierLabel(
+                                  reference.sourceTier,
+                                )}
                                 tone={
                                   reference.sourceTier === "first_party"
                                     ? "success"
@@ -847,7 +854,9 @@ function QuestionsTab(props: {
 
                   <KeyPointList
                     title="待补缺口"
-                    items={item.gaps}
+                    items={item.gaps.map((gap) => (
+                      <MarkdownContent key={gap} content={gap} compact />
+                    ))}
                     emptyText="当前问题没有待补缺口。"
                     tone="warning"
                   />
@@ -947,11 +956,11 @@ function ReferencesTab(props: {
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill
-                      label={formatSourceType(reference.sourceType)}
+                      label={formatSourceTypeLabel(reference.sourceType)}
                       tone="neutral"
                     />
                     <StatusPill
-                      label={formatSourceTier(reference.sourceTier)}
+                      label={formatSourceTierLabel(reference.sourceTier)}
                       tone={
                         reference.sourceTier === "first_party"
                           ? "success"
@@ -1090,13 +1099,17 @@ export function CompanyResearchPausedFallbackPanel(props: {
         <div className="grid gap-4 xl:grid-cols-2">
           <KeyPointList
             title="当前阻塞项"
-            items={props.model.blockers}
+            items={props.model.blockers.map((item) => (
+              <MarkdownContent key={item} content={item} compact />
+            ))}
             emptyText="暂无阻塞项。"
             tone="warning"
           />
           <KeyPointList
             title="建议动作"
-            items={props.model.nextActions}
+            items={props.model.nextActions.map((item) => (
+              <MarkdownContent key={item} content={item} compact />
+            ))}
             emptyText="暂无建议动作。"
             tone="info"
           />

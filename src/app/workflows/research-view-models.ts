@@ -1,3 +1,4 @@
+import { formatWorkflowNodeLabel } from "~/app/workflows/detail-labels";
 import type { ConfidenceAnalysis } from "~/server/domain/intelligence/confidence";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
@@ -315,7 +316,7 @@ function buildGenericDigest(params: {
       headline: firstSentence(params.query),
       summary:
         params.currentNodeKey && params.currentNodeKey.length > 0
-          ? `当前正在处理：${params.currentNodeKey}`
+          ? `当前正在处理：${formatWorkflowNodeLabel(params.currentNodeKey)}`
           : "研究正在生成中，稍后可查看正式结论。",
       bullPoints: [],
       bearPoints: [],
@@ -336,7 +337,7 @@ function buildGenericDigest(params: {
       headline: firstSentence(params.query),
       summary:
         params.currentNodeKey && params.currentNodeKey.length > 0
-          ? `任务暂停于 ${params.currentNodeKey}，需要补充信息或人工审批后继续。`
+          ? `任务暂停于 ${formatWorkflowNodeLabel(params.currentNodeKey)}，需要补充信息或人工审批后继续。`
           : "任务已暂停，等待补充信息或人工审批。",
       bullPoints: [],
       bearPoints: [],
