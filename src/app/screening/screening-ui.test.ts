@@ -2,8 +2,85 @@ import { describe, expect, it } from "vitest";
 import {
   buildCatalogNotice,
   buildFormulaMetricOptions,
+  buildVisibleResultRows,
   groupCatalogItems,
 } from "~/app/screening/screening-ui";
+import type { WorkspaceResult } from "~/contracts/screening";
+
+const sampleResult: WorkspaceResult = {
+  periods: ["2024", "2023"],
+  indicatorMeta: [
+    {
+      id: "roe",
+      name: "ROE",
+      valueType: "NUMBER",
+      periodScope: "series",
+      retrievalMode: "statement_series",
+    },
+    {
+      id: "industry",
+      name: "Industry",
+      valueType: "TEXT",
+      periodScope: "latest_only",
+      retrievalMode: "latest_only",
+    },
+  ],
+  rows: [
+    {
+      stockCode: "600001",
+      stockName: "Alpha Tech",
+      metrics: {
+        roe: { byPeriod: { "2024": 18, "2023": 12 } },
+        industry: { byPeriod: { "2024": "Tech" } },
+      },
+    },
+    {
+      stockCode: "600002",
+      stockName: "Beta Retail",
+      metrics: {
+        roe: { byPeriod: { "2024": 9, "2023": 8 } },
+        industry: { byPeriod: { "2024": "Retail" } },
+      },
+    },
+    {
+      stockCode: "600003",
+      stockName: "Alpine Labs",
+      metrics: {
+        roe: { byPeriod: { "2024": null, "2023": 11 } },
+        industry: { byPeriod: { "2024": "Tech" } },
+      },
+    },
+  ],
+  latestSnapshotRows: [
+    {
+      stockCode: "600001",
+      stockName: "Alpha Tech",
+      metrics: {
+        roe: { value: 18, period: "2024" },
+        industry: { value: "Tech", period: "2024" },
+      },
+    },
+    {
+      stockCode: "600002",
+      stockName: "Beta Retail",
+      metrics: {
+        roe: { value: 9, period: "2024" },
+        industry: { value: "Retail", period: "2024" },
+      },
+    },
+    {
+      stockCode: "600003",
+      stockName: "Alpine Labs",
+      metrics: {
+        roe: { value: null, period: "2024" },
+        industry: { value: "Tech", period: "2024" },
+      },
+    },
+  ],
+  warnings: [],
+  dataStatus: "READY",
+  provider: "demo",
+};
 
 describe("buildCatalogNotice", () => {
   it("returns a danger notice when the catalog query fails", () => {
@@ -159,5 +236,60 @@ describe("buildCatalogNotice", () => {
         query: "自由",
       }),
     ).toEqual([expect.objectContaining({ id: "metric_35" })]);
+  });
+
+  it("filters visible rows by stock query before applying metric rules and sort", () => {
+    expect(
+      buildVisibleResultRows({
+        result: sampleResult,
+        stockQuery: "alp",
+        missingValueMode: "keep",
+        filterRules: [
+          {
+            metricId: "roe",
+            operator: ">=",
+            value: 10,
+            valueType: "NUMBER",
+            applyScope: "LATEST_DEFAULT",
+          },
+        ],
+        sortState: {
+          metricId: "roe",
+          direction: "desc",
+        },
+      }).map((row) => row.stockCode),
+    ).toEqual(["600001"]);
+  });
+
+  it("supports text-based metric filters on the latest snapshot", () => {
+    expect(
+      buildVisibleResultRows({
+        result: sampleResult,
+        stockQuery: "",
+        missingValueMode: "keep",
+        filterRules: [
+          {
+            metricId: "industry",
+            operator: "=",
+            value: "Tech",
+            valueType: "TEXT",
+            applyScope: "LATEST_DEFAULT",
+          },
+        ],
+        sortState: null,
+      }).map((row) => row.stockCode),
+    ).toEqual(["600001", "600003"]);
+  });
+
+  it("can hide rows with missing latest values from the result workspace", () => {
+    expect(
+      buildVisibleResultRows({
+        result: sampleResult,
+        stockQuery: "",
+        missingValueMode: "hide",
+        filterRules: [],
+        sortState: null,
+      }).map((row) => row.stockCode),
+    ).toEqual(["600001", "600002"]);
   });
 });

@@ -78,6 +78,9 @@ describe("workflow page composition", () => {
     );
 
     expect(screeningSource).toContain("historyItems={");
+    expect(screeningSource).toContain("stockFilterQuery");
+    expect(screeningSource).toContain("missingValueMode");
+    expect(screeningSource).toContain("toggleSortForMetric");
     expect(workflowsSource).toContain("historyItems={");
     expect(companyResearchSource).toContain("historyItems={");
     expect(timingSource).toContain("historyItems={");
@@ -85,6 +88,7 @@ describe("workflow page composition", () => {
     expect(runDetailSource).toContain("historyItems={");
 
     expect(screeningSource).not.toContain('href="/screening/history"');
+    expect(screeningSource).not.toContain('activeTabId === "filters"');
     expect(companyResearchSource).not.toContain(
       'href="/company-research/history"',
     );

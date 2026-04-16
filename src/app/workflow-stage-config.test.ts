@@ -26,7 +26,6 @@ describe("workflow stage config", () => {
       "stocks",
       "indicators",
       "period",
-      "filters",
       "results",
     ]);
     expect(workflowsStageTabs.map((tab) => tab.id)).toEqual([

@@ -21,6 +21,10 @@ export type CatalogNotice = {
   description: string;
 };
 
+export type ResultMissingValueMode = "keep" | "hide";
+
+type LatestSnapshotRow = WorkspaceResult["latestSnapshotRows"][number];
+
 function compareBySortOrder(
   left: { sortOrder?: number; name: string },
   right: { sortOrder?: number; name: string },
@@ -46,6 +50,27 @@ function matchesCatalogQuery(item: IndicatorCatalogItem, query: string) {
   return haystacks.some((value) =>
     value.toLocaleLowerCase("zh-CN").includes(query),
   );
+}
+
+function matchesStockQuery(row: LatestSnapshotRow, stockQuery: string) {
+  if (!stockQuery) {
+    return true;
+  }
+
+  const haystacks = [row.stockCode, row.stockName];
+  return haystacks.some((value) =>
+    value.toLocaleLowerCase("zh-CN").includes(stockQuery),
+  );
+}
+
+function hasCompleteLatestValues(
+  row: LatestSnapshotRow,
+  result: WorkspaceResult,
+) {
+  return result.indicatorMeta.every((meta) => {
+    const value = row.metrics[meta.id]?.value;
+    return value !== null && value !== undefined;
+  });
 }
 
 export function formatDateTime(value?: string | null) {
@@ -230,6 +255,8 @@ function matchesFilter(
 export function buildVisibleResultRows(params: {
   result: WorkspaceResult | null;
   filterRules: WorkspaceFilterRule[];
+  stockQuery?: string;
+  missingValueMode?: ResultMissingValueMode;
   sortState:
     | {
         metricId: string;
@@ -242,11 +269,20 @@ export function buildVisibleResultRows(params: {
     return [];
   }
 
-  const filtered = params.result.latestSnapshotRows.filter((row) =>
-    params.filterRules.every((filter) =>
-      matchesFilter(row.metrics[filter.metricId]?.value, filter),
-    ),
-  );
+  const result = params.result;
+  const normalizedStockQuery = normalizeCatalogQuery(params.stockQuery ?? "");
+  const missingValueMode = params.missingValueMode ?? "keep";
+
+  const filtered = result.latestSnapshotRows
+    .filter((row) => matchesStockQuery(row, normalizedStockQuery))
+    .filter((row) =>
+      missingValueMode === "hide" ? hasCompleteLatestValues(row, result) : true,
+    )
+    .filter((row) =>
+      params.filterRules.every((filter) =>
+        matchesFilter(row.metrics[filter.metricId]?.value, filter),
+      ),
+    );
 
   if (!params.sortState) {
     return filtered;

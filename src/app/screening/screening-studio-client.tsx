@@ -24,6 +24,7 @@ import {
   getLatestMetricValue,
   groupCatalogItems,
   quarterlyPresetOptions,
+  type ResultMissingValueMode,
 } from "~/app/screening/screening-ui";
 import type {
   WorkspaceFilterRule,
@@ -41,6 +42,12 @@ type SelectedStock = {
   market: string;
 };
 type FilterRuleDraft = WorkspaceFilterRule & { clientId: string };
+type ColumnQuickFilterDraft = {
+  metricId: string;
+  operator: WorkspaceFilterRule["operator"];
+  value: string;
+  valueType: WorkspaceFilterRule["valueType"];
+};
 
 type NoticeState = {
   tone: "info" | "success" | "error";
@@ -129,6 +136,11 @@ export function ScreeningStudioClient() {
   );
   const [lastFetchedAt, setLastFetchedAt] = useState<string | undefined>();
   const [stockSearchKeyword, setStockSearchKeyword] = useState("");
+  const [stockFilterQuery, setStockFilterQuery] = useState("");
+  const [missingValueMode, setMissingValueMode] =
+    useState<ResultMissingValueMode>("keep");
+  const [columnQuickFilterDraft, setColumnQuickFilterDraft] =
+    useState<ColumnQuickFilterDraft | null>(null);
   const deferredStockKeyword = useDeferredValue(stockSearchKeyword.trim());
   const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
   const [editingFormulaId, setEditingFormulaId] = useState<string | null>(null);
@@ -253,14 +265,26 @@ export function ScreeningStudioClient() {
     () => buildResultColumns(resultSnapshot),
     [resultSnapshot],
   );
+  const appliedFilterRules = useMemo(
+    () => filterRules.filter((rule) => rule.metricId),
+    [filterRules],
+  );
   const visibleLatestRows = useMemo(
     () =>
       buildVisibleResultRows({
         result: resultSnapshot,
-        filterRules: filterRules.filter((rule) => rule.metricId),
+        stockQuery: stockFilterQuery,
+        missingValueMode,
+        filterRules: appliedFilterRules,
         sortState,
       }),
-    [filterRules, resultSnapshot, sortState],
+    [
+      appliedFilterRules,
+      missingValueMode,
+      resultSnapshot,
+      sortState,
+      stockFilterQuery,
+    ],
   );
   const visibleRows = useMemo(() => {
     if (!resultSnapshot) {
@@ -282,9 +306,12 @@ export function ScreeningStudioClient() {
   const filterMetricOptions = useMemo(
     () =>
       Array.from(
-        new Set(visibleLatestRows.flatMap((row) => Object.keys(row.metrics))),
+        new Set([
+          ...(resultSnapshot?.indicatorMeta.map((meta) => meta.id) ?? []),
+          ...appliedFilterRules.map((rule) => rule.metricId),
+        ]),
       ),
-    [visibleLatestRows],
+    [appliedFilterRules, resultSnapshot],
   );
 
   const createWorkspaceMutation = api.screening.createWorkspace.useMutation({
@@ -384,6 +411,9 @@ export function ScreeningStudioClient() {
     setSortState(null);
     setResultSnapshot(null);
     setLastFetchedAt(undefined);
+    setStockFilterQuery("");
+    setMissingValueMode("keep");
+    setColumnQuickFilterDraft(null);
   }
 
   useEffect(() => {
@@ -522,13 +552,53 @@ export function ScreeningStudioClient() {
     setFilterRules((current) => [...current, emptyFilterRule()]);
   }
 
+  function resolveFilterValueType(
+    metricId: string,
+  ): WorkspaceFilterRule["valueType"] {
+    const resultMeta = resultSnapshot?.indicatorMeta.find(
+      (meta) => meta.id === metricId,
+    );
+    if (resultMeta?.valueType === "TEXT") {
+      return "TEXT";
+    }
+
+    const catalogItem = catalogItems.find((item) => item.id === metricId);
+    if (catalogItem?.valueType === "TEXT") {
+      return "TEXT";
+    }
+
+    return "NUMBER";
+  }
+
   function updateFilterRule(
     index: number,
     patch: Partial<WorkspaceFilterRule>,
   ) {
     setFilterRules((current) =>
       current.map((rule, ruleIndex) =>
-        ruleIndex === index ? { ...rule, ...patch } : rule,
+        ruleIndex === index
+          ? (() => {
+              const nextMetricId =
+                typeof patch.metricId === "string"
+                  ? patch.metricId
+                  : rule.metricId;
+              const nextValueType = nextMetricId
+                ? resolveFilterValueType(nextMetricId)
+                : (patch.valueType ?? rule.valueType);
+
+              return {
+                ...rule,
+                ...patch,
+                valueType: nextValueType,
+                operator:
+                  patch.metricId && patch.metricId !== rule.metricId
+                    ? nextValueType === "TEXT"
+                      ? "="
+                      : ">="
+                    : (patch.operator ?? rule.operator),
+              };
+            })()
+          : rule,
       ),
     );
   }
@@ -537,6 +607,81 @@ export function ScreeningStudioClient() {
     setFilterRules((current) =>
       current.filter((_rule, ruleIndex) => ruleIndex !== index),
     );
+  }
+
+  function clearMetricFilter(metricId: string) {
+    setFilterRules((current) =>
+      current.filter((rule) => rule.metricId !== metricId),
+    );
+  }
+
+  function clearAllFilters() {
+    setStockFilterQuery("");
+    setMissingValueMode("keep");
+    setFilterRules([]);
+    setColumnQuickFilterDraft(null);
+  }
+
+  function toggleSortForMetric(metricId: string) {
+    setSortState((current) => {
+      if (!current || current.metricId !== metricId) {
+        return { metricId, direction: "desc" };
+      }
+      if (current.direction === "desc") {
+        return { metricId, direction: "asc" };
+      }
+      return null;
+    });
+  }
+
+  function openColumnQuickFilter(metricId: string) {
+    const existingRule = filterRules.find((rule) => rule.metricId === metricId);
+    const valueType = resolveFilterValueType(metricId);
+    setColumnQuickFilterDraft({
+      metricId,
+      operator: existingRule?.operator ?? (valueType === "TEXT" ? "=" : ">="),
+      value: existingRule ? String(existingRule.value) : "",
+      valueType,
+    });
+  }
+
+  function applyColumnQuickFilter() {
+    if (!columnQuickFilterDraft) {
+      return;
+    }
+
+    const nextValue = columnQuickFilterDraft.value.trim();
+    const nextRule = nextValue
+      ? {
+          clientId: crypto.randomUUID(),
+          metricId: columnQuickFilterDraft.metricId,
+          operator: columnQuickFilterDraft.operator,
+          value:
+            columnQuickFilterDraft.valueType === "NUMBER"
+              ? Number(nextValue)
+              : nextValue,
+          valueType: columnQuickFilterDraft.valueType,
+          applyScope: "LATEST_DEFAULT" as const,
+        }
+      : null;
+
+    setFilterRules((current) => {
+      const existingIndex = current.findIndex(
+        (rule) => rule.metricId === columnQuickFilterDraft.metricId,
+      );
+
+      if (existingIndex === -1) {
+        return nextRule ? [...current, nextRule] : current;
+      }
+
+      if (!nextRule) {
+        return current.filter((_rule, index) => index !== existingIndex);
+      }
+
+      return current.map((rule, index) =>
+        index === existingIndex ? nextRule : rule,
+      );
+    });
   }
 
   function insertMetricIntoFormula(name: string) {
@@ -566,7 +711,9 @@ export function ScreeningStudioClient() {
       indicatorIds: selectedIndicatorIds,
       formulaIds: selectedFormulaIds,
       timeConfig,
-      filterRules: filterRules.map(({ clientId: _clientId, ...rule }) => rule),
+      filterRules: appliedFilterRules.map(
+        ({ clientId: _clientId, ...rule }) => rule,
+      ),
       sortState,
       columnState,
       resultSnapshot: resultSnapshot ?? undefined,
@@ -1257,11 +1404,7 @@ export function ScreeningStudioClient() {
         <SectionCard
           title="本地筛选与排序"
           description="默认始终基于每只股票最新可用一期的值，不触发任何网络请求。"
-          className={
-            activeTabId === "filters"
-              ? `xl:col-span-12 ${stageCanvasClassName}`
-              : "hidden"
-          }
+          className="hidden"
         >
           <div className="grid gap-3">
             <div className="flex flex-wrap gap-2">
@@ -1422,6 +1565,314 @@ export function ScreeningStudioClient() {
                   tone="neutral"
                 />
               </div>
+              <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusPill
+                    label={`最近获取 ${formatDateTime(lastFetchedAt)}`}
+                    tone="info"
+                  />
+                  {sortState ? (
+                    <StatusPill
+                      label={`排序 ${metricNameMap.get(sortState.metricId) ?? sortState.metricId} ${sortState.direction === "desc" ? "降序" : "升序"}`}
+                      tone="neutral"
+                    />
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="app-button"
+                    disabled={
+                      !stockFilterQuery.trim() &&
+                      missingValueMode === "keep" &&
+                      appliedFilterRules.length === 0 &&
+                      !columnQuickFilterDraft
+                    }
+                  >
+                    清空筛选
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortState(null)}
+                    className="app-button"
+                    disabled={!sortState}
+                  >
+                    清空排序
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                <input
+                  value={stockFilterQuery}
+                  onChange={(event) => setStockFilterQuery(event.target.value)}
+                  placeholder="按股票名称或代码筛选当前结果"
+                  className="app-input"
+                />
+                <select
+                  value={missingValueMode}
+                  onChange={(event) =>
+                    setMissingValueMode(
+                      event.target.value as ResultMissingValueMode,
+                    )
+                  }
+                  className="app-input"
+                >
+                  <option value="keep">保留缺失值行</option>
+                  <option value="hide">隐藏缺失值行</option>
+                </select>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {stockFilterQuery.trim() ? (
+                  <StatusPill
+                    label={`股票筛选 ${stockFilterQuery.trim()}`}
+                    tone="info"
+                  />
+                ) : null}
+                {missingValueMode === "hide" ? (
+                  <StatusPill label="已隐藏缺失值行" tone="warning" />
+                ) : null}
+                {appliedFilterRules.map((rule) => (
+                  <StatusPill
+                    key={`${rule.clientId}-${rule.metricId}`}
+                    label={`${metricNameMap.get(rule.metricId) ?? rule.metricId} ${rule.operator} ${String(rule.value)}`}
+                    tone="success"
+                  />
+                ))}
+              </div>
+              <details
+                className="mt-4 rounded-[12px] border border-[var(--app-border-soft)] p-4"
+                open={
+                  appliedFilterRules.length > 0 ||
+                  Boolean(columnQuickFilterDraft)
+                }
+              >
+                <summary className="cursor-pointer text-sm font-medium text-[var(--app-text-strong)]">
+                  高级筛选与排序
+                </summary>
+                <div className="mt-4 grid gap-4">
+                  {columnQuickFilterDraft ? (
+                    <div className="grid gap-3 rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-inset)] p-3">
+                      <div className="text-sm text-[var(--app-text-muted)]">
+                        列头快筛：
+                        {metricNameMap.get(columnQuickFilterDraft.metricId) ??
+                          columnQuickFilterDraft.metricId}
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-[120px_minmax(0,1fr)_auto_auto]">
+                        <select
+                          value={columnQuickFilterDraft.operator}
+                          onChange={(event) =>
+                            setColumnQuickFilterDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    operator: event.target
+                                      .value as WorkspaceFilterRule["operator"],
+                                  }
+                                : current,
+                            )
+                          }
+                          className="app-input"
+                        >
+                          {columnQuickFilterDraft.valueType === "TEXT" ? (
+                            <>
+                              <option value="=">{"="}</option>
+                              <option value="!=">{"!="}</option>
+                            </>
+                          ) : (
+                            <>
+                              <option value=">=">{">="}</option>
+                              <option value=">">{">"}</option>
+                              <option value="<=">{"<="}</option>
+                              <option value="<">{"<"}</option>
+                              <option value="=">{"="}</option>
+                              <option value="!=">{"!="}</option>
+                            </>
+                          )}
+                        </select>
+                        <input
+                          value={columnQuickFilterDraft.value}
+                          onChange={(event) =>
+                            setColumnQuickFilterDraft((current) =>
+                              current
+                                ? { ...current, value: event.target.value }
+                                : current,
+                            )
+                          }
+                          placeholder={
+                            columnQuickFilterDraft.valueType === "TEXT"
+                              ? "输入文本值"
+                              : "输入数值"
+                          }
+                          className="app-input"
+                        />
+                        <button
+                          type="button"
+                          onClick={applyColumnQuickFilter}
+                          className="app-button app-button-primary"
+                        >
+                          应用快筛
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearMetricFilter(columnQuickFilterDraft.metricId);
+                            setColumnQuickFilterDraft(null);
+                          }}
+                          className="app-button"
+                        >
+                          清除
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={addFilterRule}
+                      className="app-button"
+                    >
+                      添加规则
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterRules([])}
+                      className="app-button"
+                      disabled={appliedFilterRules.length === 0}
+                    >
+                      清空规则
+                    </button>
+                  </div>
+                  {filterRules.length === 0 ? (
+                    <div className="text-sm text-[var(--app-text-muted)]">
+                      还没有本地筛选规则。
+                    </div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {filterRules.map((rule, index) => (
+                        <div
+                          key={rule.clientId}
+                          className="grid gap-2 rounded-[12px] border border-[var(--app-border-soft)] p-3"
+                        >
+                          <select
+                            value={rule.metricId}
+                            onChange={(event) =>
+                              updateFilterRule(index, {
+                                metricId: event.target.value,
+                              })
+                            }
+                            className="app-input"
+                          >
+                            <option value="">选择指标</option>
+                            {filterMetricOptions.map((metricId) => (
+                              <option key={metricId} value={metricId}>
+                                {metricNameMap.get(metricId) ?? metricId}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="grid gap-2 md:grid-cols-[120px_minmax(0,1fr)_120px]">
+                            <select
+                              value={rule.operator}
+                              onChange={(event) =>
+                                updateFilterRule(index, {
+                                  operator: event.target
+                                    .value as WorkspaceFilterRule["operator"],
+                                })
+                              }
+                              className="app-input"
+                            >
+                              {rule.valueType === "TEXT" ? (
+                                <>
+                                  <option value="=">{"="}</option>
+                                  <option value="!=">{"!="}</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value=">=">{">="}</option>
+                                  <option value=">">{">"}</option>
+                                  <option value="<=">{"<="}</option>
+                                  <option value="<">{"<"}</option>
+                                  <option value="=">{"="}</option>
+                                  <option value="!=">{"!="}</option>
+                                </>
+                              )}
+                            </select>
+                            <input
+                              value={String(rule.value)}
+                              onChange={(event) =>
+                                updateFilterRule(index, {
+                                  value: event.target.value,
+                                })
+                              }
+                              placeholder={
+                                rule.valueType === "TEXT"
+                                  ? "输入文本值"
+                                  : "输入数值"
+                              }
+                              className="app-input"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeFilterRule(index)}
+                              className="app-button"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="rounded-[12px] border border-[var(--app-border-soft)] p-3">
+                    <div className="text-xs text-[var(--app-text-subtle)]">
+                      排序
+                    </div>
+                    <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_140px]">
+                      <select
+                        value={sortState?.metricId ?? ""}
+                        onChange={(event) =>
+                          setSortState(
+                            event.target.value
+                              ? {
+                                  metricId: event.target.value,
+                                  direction: sortState?.direction ?? "desc",
+                                }
+                              : null,
+                          )
+                        }
+                        className="app-input"
+                      >
+                        <option value="">不排序</option>
+                        {filterMetricOptions.map((metricId) => (
+                          <option key={metricId} value={metricId}>
+                            {metricNameMap.get(metricId) ?? metricId}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={sortState?.direction ?? "desc"}
+                        onChange={(event) =>
+                          setSortState((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  direction: event.target.value as
+                                    | "asc"
+                                    | "desc",
+                                }
+                              : null,
+                          )
+                        }
+                        className="app-input"
+                        disabled={!sortState}
+                      >
+                        <option value="desc">降序</option>
+                        <option value="asc">升序</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </details>
               {resultSnapshot.warnings.length > 0 ? (
                 <div className="mt-3 grid gap-2">
                   {resultSnapshot.warnings.map((warning) => (
@@ -1433,45 +1884,116 @@ export function ScreeningStudioClient() {
                   ))}
                 </div>
               ) : null}
-              <div className="mt-4 overflow-auto rounded-[12px] border border-[var(--app-border-soft)]">
-                <table className="app-table min-w-[980px]">
-                  <thead>
-                    <tr>
-                      <th>股票</th>
-                      <th>代码</th>
-                      {resultColumns.map((column) => (
-                        <th key={column.key}>{column.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleRows.map((row) => (
-                      <tr key={row.stockCode}>
-                        <td>{row.stockName}</td>
-                        <td>{row.stockCode}</td>
-                        {resultColumns.map((column) => {
-                          const seriesMetric = row.metrics[column.metricId];
-                          const latestValue = getLatestMetricValue(
-                            resultSnapshot,
-                            row.stockCode,
-                            column.metricId,
+              {visibleRows.length === 0 ? (
+                <EmptyState
+                  className="mt-4"
+                  title="当前筛选没有命中结果"
+                  description="可以清空筛选、切换缺失值处理方式，或从表头重新发起快筛。"
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="app-button app-button-primary"
+                      >
+                        清空筛选
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortState(null)}
+                        className="app-button"
+                      >
+                        清空排序
+                      </button>
+                    </>
+                  }
+                />
+              ) : (
+                <div className="mt-4 overflow-auto rounded-[12px] border border-[var(--app-border-soft)]">
+                  <table className="app-table min-w-[980px]">
+                    <thead>
+                      <tr>
+                        <th>股票</th>
+                        <th>代码</th>
+                        {resultColumns.map((column, columnIndex) => {
+                          const firstMetricColumn =
+                            resultColumns.findIndex(
+                              (item) => item.metricId === column.metricId,
+                            ) === columnIndex;
+                          const metricSorted =
+                            sortState?.metricId === column.metricId;
+                          const metricFiltered = appliedFilterRules.some(
+                            (rule) => rule.metricId === column.metricId,
                           );
-                          const cellValue =
-                            column.period === null
-                              ? latestValue
-                              : (seriesMetric?.byPeriod[column.period] ?? null);
 
                           return (
-                            <td key={`${row.stockCode}-${column.key}`}>
-                              {cellValue ?? "-"}
-                            </td>
+                            <th key={column.key}>
+                              <div className="grid gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleSortForMetric(column.metricId)
+                                  }
+                                  className="text-left text-[inherit]"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span>{column.label}</span>
+                                    <span className="text-[10px] text-[var(--app-text-subtle)]">
+                                      {metricSorted
+                                        ? sortState?.direction === "desc"
+                                          ? "↓"
+                                          : "↑"
+                                        : "↕"}
+                                    </span>
+                                  </div>
+                                </button>
+                                {firstMetricColumn ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openColumnQuickFilter(column.metricId)
+                                    }
+                                    className="text-left text-[10px] tracking-[0.06em] text-[var(--app-text-subtle)] hover:text-[var(--app-text-strong)]"
+                                  >
+                                    {metricFiltered ? "修改快筛" : "快筛"}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </th>
                           );
                         })}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {visibleRows.map((row) => (
+                        <tr key={row.stockCode}>
+                          <td>{row.stockName}</td>
+                          <td>{row.stockCode}</td>
+                          {resultColumns.map((column) => {
+                            const seriesMetric = row.metrics[column.metricId];
+                            const latestValue = getLatestMetricValue(
+                              resultSnapshot,
+                              row.stockCode,
+                              column.metricId,
+                            );
+                            const cellValue =
+                              column.period === null
+                                ? latestValue
+                                : (seriesMetric?.byPeriod[column.period] ??
+                                  null);
+
+                            return (
+                              <td key={`${row.stockCode}-${column.key}`}>
+                                {cellValue ?? "-"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </SectionCard>
