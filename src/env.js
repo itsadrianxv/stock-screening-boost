@@ -140,8 +140,7 @@ export const env = createEnv({
       DEFAULT_DEEPSEEK_TIMEOUT_MS,
     ),
     TAVILY_API_KEY: process.env.TAVILY_API_KEY,
-    TAVILY_BASE_URL:
-      process.env.TAVILY_BASE_URL ?? "https://api.tavily.com",
+    TAVILY_BASE_URL: process.env.TAVILY_BASE_URL ?? "https://api.tavily.com",
     TAVILY_TIMEOUT_MS: readPositiveNumberEnv(
       process.env.TAVILY_TIMEOUT_MS,
       15_000,
