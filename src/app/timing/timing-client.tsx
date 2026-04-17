@@ -526,6 +526,22 @@ export function TimingClient() {
     sourceMode,
     watchListId,
   ]);
+  const resultActionErrorMessage = useMemo(() => {
+    if (sourceMode === "single") {
+      return startSingleMutation.error?.message ?? null;
+    }
+
+    return (
+      startWatchlistTimingMutation.error?.message ??
+      startWatchlistCardsMutation.error?.message ??
+      null
+    );
+  }, [
+    sourceMode,
+    startSingleMutation.error?.message,
+    startWatchlistCardsMutation.error?.message,
+    startWatchlistTimingMutation.error?.message,
+  ]);
 
   async function handleStartSingle() {
     if (!singleStock) {
@@ -1572,6 +1588,12 @@ export function TimingClient() {
               <InlineNotice
                 tone="warning"
                 description={resultActionDisabledReason}
+              />
+            ) : null}
+            {resultActionErrorMessage ? (
+              <InlineNotice
+                tone="danger"
+                description={resultActionErrorMessage}
               />
             ) : null}
 
