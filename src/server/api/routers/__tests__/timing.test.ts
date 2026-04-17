@@ -98,3 +98,35 @@ describe("timingRouter.getTimingReport", () => {
     } satisfies Partial<TRPCError>);
   });
 });
+
+describe("timingRouter watchlist inputs", () => {
+  it("accepts UUID watchlist ids for timing queries", async () => {
+    const { timingRouter } = await import("~/server/api/routers/timing");
+    const listTimingCardsProcedure =
+      timingRouter.listTimingCards as unknown as {
+        schema: {
+          safeParse(input: unknown): { success: boolean };
+        };
+      };
+    const listRecommendationsProcedure =
+      timingRouter.listRecommendations as unknown as {
+        schema: {
+          safeParse(input: unknown): { success: boolean };
+        };
+      };
+    const watchListId = "550e8400-e29b-41d4-a716-446655440000";
+
+    expect(
+      listTimingCardsProcedure.schema.safeParse({
+        limit: 24,
+        watchListId,
+      }).success,
+    ).toBe(true);
+    expect(
+      listRecommendationsProcedure.schema.safeParse({
+        limit: 24,
+        watchListId,
+      }).success,
+    ).toBe(true);
+  });
+});

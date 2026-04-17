@@ -64,7 +64,7 @@ const listTimingCardsInput = z.object({
     .regex(/^\d{6}$/)
     .optional(),
   sourceType: z.enum(["single", "watchlist", "screening"]).optional(),
-  watchListId: z.string().cuid().optional(),
+  watchListId: z.string().uuid().optional(),
 });
 
 const getTimingCardInput = z.object({
@@ -87,7 +87,7 @@ const updatePortfolioSnapshotInput = z
 
 const listRecommendationsInput = z.object({
   limit: z.number().int().min(1).max(100).default(24),
-  watchListId: z.string().cuid().optional(),
+  watchListId: z.string().uuid().optional(),
   portfolioSnapshotId: z.string().cuid().optional(),
   workflowRunId: z.string().cuid().optional(),
 });

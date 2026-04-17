@@ -180,7 +180,7 @@ const startTimingSignalPipelineInput = z.object({
 });
 
 const startWatchlistTimingCardsPipelineInput = z.object({
-  watchListId: z.string().cuid(),
+  watchListId: z.string().uuid(),
   asOfDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -194,7 +194,7 @@ const startWatchlistTimingCardsPipelineInput = z.object({
 });
 
 const startWatchlistTimingPipelineInput = z.object({
-  watchListId: z.string().cuid(),
+  watchListId: z.string().uuid(),
   portfolioSnapshotId: z.string().cuid(),
   asOfDate: z
     .string()

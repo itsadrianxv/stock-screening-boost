@@ -34,3 +34,34 @@ describe("workflowRouter.startTimingSignalPipeline", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("workflowRouter watchlist timing inputs", () => {
+  it("accepts UUID watchlist ids for watchlist timing workflows", async () => {
+    const { workflowRouter } = await import("~/server/api/routers/workflow");
+    const startWatchlistTimingCardsProcedure =
+      workflowRouter.startWatchlistTimingCardsPipeline as unknown as {
+        schema: {
+          safeParse(input: unknown): { success: boolean };
+        };
+      };
+    const startWatchlistTimingProcedure =
+      workflowRouter.startWatchlistTimingPipeline as unknown as {
+        schema: {
+          safeParse(input: unknown): { success: boolean };
+        };
+      };
+    const watchListId = "550e8400-e29b-41d4-a716-446655440000";
+
+    expect(
+      startWatchlistTimingCardsProcedure.schema.safeParse({
+        watchListId,
+      }).success,
+    ).toBe(true);
+    expect(
+      startWatchlistTimingProcedure.schema.safeParse({
+        watchListId,
+        portfolioSnapshotId: "ck12345678901234567890123",
+      }).success,
+    ).toBe(true);
+  });
+});
