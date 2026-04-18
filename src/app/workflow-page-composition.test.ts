@@ -114,6 +114,22 @@ describe("workflow page composition", () => {
     expect(companyResearchHistorySource).not.toContain("headerActions");
   });
 
+  it("injects the shared market context entrypoint into every core workflow page", () => {
+    const screeningSource = readSource(
+      "./screening/screening-studio-client.tsx",
+    );
+    const workflowsSource = readSource("./workflows/workflows-client.tsx");
+    const companyResearchSource = readSource(
+      "./company-research/company-research-client.tsx",
+    );
+    const timingSource = readSource("./timing/timing-client.tsx");
+
+    expect(screeningSource).toContain("MarketContextSection");
+    expect(workflowsSource).toContain("MarketContextSection");
+    expect(companyResearchSource).toContain("MarketContextSection");
+    expect(timingSource).toContain("MarketContextSection");
+  });
+
   it("uses a dedicated document-style quick research detail component", () => {
     const investorDetailSource = readSource(
       "./workflows/[runId]/run-investor-client.tsx",

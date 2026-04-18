@@ -6,7 +6,18 @@ const WORKFLOW_ERROR_MESSAGE = "组合建议生成失败：工作流模板不可
 const WORKFLOW_STARTED_MESSAGE =
   "组合建议流程已启动，结果区会自动刷新约 3 分钟。";
 
-function createIdleMutation() {
+type TimingWorkflowMutationState = {
+  data: {
+    runId: string;
+    status: string;
+    createdAt: Date;
+  } | null;
+  error: Error | null;
+  isPending: boolean;
+  mutateAsync: ReturnType<typeof vi.fn>;
+};
+
+function createIdleMutation(): TimingWorkflowMutationState {
   return {
     data: null,
     error: null,
@@ -63,7 +74,9 @@ vi.mock("~/app/_components/ui", () => ({
         className: props.className,
       },
       props.title ? React.createElement("h2", null, props.title) : null,
-      props.description ? React.createElement("p", null, props.description) : null,
+      props.description
+        ? React.createElement("p", null, props.description)
+        : null,
       props.actions ?? null,
       props.children,
     ),
@@ -74,13 +87,17 @@ vi.mock("~/app/_components/ui", () => ({
 }));
 
 vi.mock("~/app/_components/workflow-stage-switcher", () => ({
-  WorkflowStageSwitcher: (props: {
-    panels: Record<string, React.ReactNode>;
-  }) => React.createElement("div", null, props.panels.results),
+  WorkflowStageSwitcher: (props: { panels: Record<string, React.ReactNode> }) =>
+    React.createElement("div", null, props.panels.results),
 }));
 
 vi.mock("~/app/_components/workspace-history", () => ({
   buildTimingReportHistoryItems: () => [],
+}));
+
+vi.mock("~/app/_components/market-context-section", () => ({
+  MarketContextSection: () =>
+    React.createElement("div", null, "market-context"),
 }));
 
 vi.mock("~/app/timing/timing-signal-card-list", () => ({
@@ -113,6 +130,12 @@ vi.mock("~/trpc/react", () => {
         list: {
           useQuery: () => ({
             data: [],
+            isLoading: false,
+          }),
+        },
+        getDetail: {
+          useQuery: () => ({
+            data: null,
             isLoading: false,
           }),
         },

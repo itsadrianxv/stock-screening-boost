@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { MarketContextSection } from "~/app/_components/market-context-section";
 import { StockSearchPicker } from "~/app/_components/stock-search-picker";
 import {
   cn,
@@ -175,6 +176,13 @@ export function TimingClient() {
     sortBy: "updatedAt",
     sortDirection: "desc",
   });
+  const activeWatchListDetailQuery = api.watchlist.getDetail.useQuery(
+    { id: watchListId || "" },
+    {
+      enabled: sourceMode === "watchlist" && Boolean(watchListId),
+      refetchOnWindowFocus: false,
+    },
+  );
   const portfolioSnapshotsQuery = api.timing.listPortfolioSnapshots.useQuery();
   const cardsQuery = api.timing.listTimingCards.useQuery(
     {
@@ -788,6 +796,20 @@ export function TimingClient() {
         </>
       }
     >
+      <MarketContextSection
+        section="timing"
+        currentStockCodes={
+          sourceMode === "single"
+            ? singleStock?.stockCode
+              ? [singleStock.stockCode]
+              : []
+            : (
+                (activeWatchListDetailQuery.data?.stocks ?? []) as Array<{
+                  stockCode: string;
+                }>
+              ).map((item) => item.stockCode)
+        }
+      />
       <WorkflowStageSwitcher
         tabs={timingStageTabs}
         activeTabId={activeTabId}

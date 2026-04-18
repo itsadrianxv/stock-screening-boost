@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-
+import { MarketContextSection } from "~/app/_components/market-context-section";
 import {
   InlineNotice,
   Panel,
@@ -378,6 +378,10 @@ export function CompanyResearchClient() {
         </>
       }
     >
+      <MarketContextSection
+        section="companyResearch"
+        currentStockCodes={stockCode.trim() ? [stockCode.trim()] : []}
+      />
       <WorkflowStageSwitcher
         tabs={companyResearchStageTabs}
         activeTabId={activeTabId}

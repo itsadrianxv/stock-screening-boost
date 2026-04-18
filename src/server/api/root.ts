@@ -1,4 +1,5 @@
 import { intelligenceRouter } from "~/server/api/routers/intelligence";
+import { marketContextRouter } from "~/server/api/routers/market-context";
 import { postRouter } from "~/server/api/routers/post";
 import { screeningRouter } from "~/server/api/routers/screening";
 import { spaceRouter } from "~/server/api/routers/space";
@@ -14,6 +15,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  */
 export const appRouter = createTRPCRouter({
   intelligence: intelligenceRouter,
+  marketContext: marketContextRouter,
   post: postRouter,
   screening: screeningRouter,
   space: spaceRouter,
