@@ -6,6 +6,11 @@ import type { TimingReviewSchedulingService } from "~/server/application/timing/
 import type { WatchlistPortfolioManagerService } from "~/server/application/timing/watchlist-portfolio-manager-service";
 import type { WatchlistRiskManagerService } from "~/server/application/timing/watchlist-risk-manager-service";
 import { resolveTimingPresetConfig } from "~/server/domain/timing/preset";
+import type { MarketContextAnalysis } from "~/server/domain/timing/types";
+import {
+  isWorkflowDomainError,
+  WORKFLOW_ERROR_CODES,
+} from "~/server/domain/workflow/errors";
 import type {
   WatchlistTimingPipelineGraphState,
   WatchlistTimingPipelineInput,
@@ -86,6 +91,84 @@ const WorkflowState = Annotation.Root({
 type NodeExecutor = (
   state: WatchlistTimingPipelineGraphState,
 ) => Promise<Partial<WatchlistTimingPipelineGraphState>>;
+
+function resolveFallbackMarketContextAsOfDate(
+  state: WatchlistTimingPipelineGraphState,
+) {
+  return (
+    state.timingInput.asOfDate ??
+    state.signalSnapshots[0]?.asOfDate ??
+    new Date().toISOString().slice(0, 10)
+  );
+}
+
+function buildFallbackMarketContext(params: {
+  asOfDate: string;
+  errorMessage: string;
+}): MarketContextAnalysis {
+  return {
+    state: "NEUTRAL",
+    transition: "STABLE",
+    regimeConfidence: 45,
+    persistenceDays: 0,
+    summary:
+      "市场环境快照暂不可用，组合建议已使用中性降级策略继续生成，待市场广度与波动数据恢复后再补齐。",
+    constraints: [
+      `未能获取 ${params.asOfDate} 的 market context：${params.errorMessage}`,
+      "在广度与波动数据恢复前，优先控制仓位扩张并等待二次确认。",
+    ],
+    breadthTrend: "STALLING",
+    volatilityTrend: "STABLE",
+    leadership: {
+      leaderCode: "",
+      leaderName: "N/A",
+      switched: false,
+      previousLeaderCode: null,
+    },
+    snapshot: {
+      asOfDate: params.asOfDate,
+      indexes: [],
+      latestBreadth: {
+        asOfDate: params.asOfDate,
+        totalCount: 0,
+        advancingCount: 0,
+        decliningCount: 0,
+        flatCount: 0,
+        positiveRatio: 0,
+        aboveThreePctRatio: 0,
+        belowThreePctRatio: 0,
+        medianChangePct: 0,
+        averageTurnoverRate: null,
+      },
+      latestVolatility: {
+        asOfDate: params.asOfDate,
+        highVolatilityCount: 0,
+        highVolatilityRatio: 0,
+        limitDownLikeCount: 0,
+        indexAtrRatio: 0,
+      },
+      latestLeadership: {
+        asOfDate: params.asOfDate,
+        leaderCode: "",
+        leaderName: "N/A",
+        ranking5d: [],
+        ranking10d: [],
+        switched: false,
+        previousLeaderCode: null,
+      },
+      breadthSeries: [],
+      volatilitySeries: [],
+      leadershipSeries: [],
+      features: {
+        benchmarkStrength: 0,
+        breadthScore: 0,
+        riskScore: 0,
+        stateScore: 0,
+      },
+    },
+    stateScore: 0,
+  };
+}
 
 export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
   WatchlistTimingPipelineGraphState,
@@ -215,28 +298,50 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
             }
           }
 
-          const marketContextSnapshot =
-            await deps.timingDataClient.getMarketContext({
-              asOfDate: state.timingInput.asOfDate,
+          try {
+            const marketContextSnapshot =
+              await deps.timingDataClient.getMarketContext({
+                asOfDate: state.timingInput.asOfDate,
+              });
+            const history =
+              await deps.marketContextSnapshotRepository.listRecent(20);
+            const marketContextAnalysis = deps.marketRegimeService.analyze(
+              marketContextSnapshot,
+              history.filter(
+                (item) => item.asOfDate !== marketContextSnapshot.asOfDate,
+              ),
+            );
+            await deps.marketContextSnapshotRepository.upsert({
+              asOfDate: marketContextSnapshot.asOfDate,
+              snapshot: marketContextSnapshot,
+              analysis: marketContextAnalysis,
             });
-          const history =
-            await deps.marketContextSnapshotRepository.listRecent(20);
-          const marketContextAnalysis = deps.marketRegimeService.analyze(
-            marketContextSnapshot,
-            history.filter(
-              (item) => item.asOfDate !== marketContextSnapshot.asOfDate,
-            ),
-          );
-          await deps.marketContextSnapshotRepository.upsert({
-            asOfDate: marketContextSnapshot.asOfDate,
-            snapshot: marketContextSnapshot,
-            analysis: marketContextAnalysis,
-          });
 
-          return {
-            marketContextSnapshot,
-            marketContextAnalysis,
-          };
+            return {
+              marketContextSnapshot,
+              marketContextAnalysis,
+            };
+          } catch (error) {
+            if (
+              !isWorkflowDomainError(error) ||
+              error.code !== WORKFLOW_ERROR_CODES.TIMING_DATA_UNAVAILABLE
+            ) {
+              throw error;
+            }
+
+            const fallbackAnalysis = buildFallbackMarketContext({
+              asOfDate: resolveFallbackMarketContextAsOfDate(state),
+              errorMessage: error.message,
+            });
+
+            return {
+              marketContextSnapshot: fallbackAnalysis.snapshot,
+              marketContextAnalysis: fallbackAnalysis,
+              errors: [
+                `market_regime_fallback:${fallbackAnalysis.snapshot.asOfDate}:${error.message}`,
+              ],
+            };
+          }
         },
         watchlist_risk_manager: async (state) => {
           if (!state.portfolioSnapshot || !state.marketContextAnalysis) {
