@@ -61,6 +61,11 @@ function createSandbox(options?: {
       "FROM python:3.11-slim\n",
       "utf8",
     );
+    writeFileSync(
+      path.join(deployMainPythonDir, "Dockerfile"),
+      "FROM python:3.11-slim\n",
+      "utf8",
+    );
   }
 
   if (options?.includeEnv ?? true) {
@@ -84,6 +89,10 @@ function createSandbox(options?: {
       '$joined = $args -join " "',
       'if ($joined -match "^build " -and $joined -match "python-voice-base") {',
       '  Write-Output "python-voice-base built"',
+      "  exit 0",
+      "}",
+      'if ($joined -match "^build " -and $joined -match "python-service") {',
+      '  Write-Output "python-service built"',
       "  exit 0",
       "}",
       'if ($joined -match "^image inspect " -and $joined -match "python-voice-base") {',
@@ -252,7 +261,9 @@ describe("deploy-main.ps1", () => {
     expect(log).toContain(
       path.join("deploy", "python", "Dockerfile.voice-base"),
     );
-    expect(log).toContain("up -d --build python-service");
+    expect(log).toContain(path.join("deploy", "python", "Dockerfile"));
+    expect(log).toContain("python-service");
+    expect(log).toContain("up -d --no-build python-service");
     expect(baseBuildIndex).toBeGreaterThanOrEqual(0);
     expect(composeUpIndex).toBeGreaterThan(baseBuildIndex);
   }, 15_000);
