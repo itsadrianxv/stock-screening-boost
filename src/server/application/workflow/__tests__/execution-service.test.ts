@@ -4,9 +4,19 @@ import {
   WorkflowRunStatus,
 } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { WorkflowCommandService } from "~/server/application/workflow/command-service";
 import { WorkflowExecutionService } from "~/server/application/workflow/execution-service";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
+import {
+  buildFlow,
+  makeEdge,
+  makeNode,
+  makeNodeResult,
+  makeStage,
+  type NodeResult,
+  type NodeResultStatus,
+} from "~/server/domain/workflow/flow-spec";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
   QUICK_RESEARCH_TEMPLATE_CODE,
@@ -32,9 +42,58 @@ type ReviewPauseState = WorkflowGraphState & {
   archived: boolean;
 };
 
+const anyRecord = z.record(z.string(), z.unknown());
+
+function buildTestFlow(params: {
+  templateCode: string;
+  templateVersion?: number;
+  nodeKeys: string[];
+  pauseNodes?: string[];
+}) {
+  const pauseNodes = new Set(params.pauseNodes ?? []);
+
+  return buildFlow({
+    templateCode: params.templateCode,
+    templateVersion: params.templateVersion,
+    name: params.templateCode,
+    stages: [
+      makeStage({ key: "scope", name: "Scope" }),
+      makeStage({ key: "run", name: "Run" }),
+    ],
+    nodes: params.nodeKeys.map((nodeKey, index) =>
+      makeNode({
+        key: nodeKey,
+        kind: pauseNodes.has(nodeKey) ? "gate" : "agent",
+        name: nodeKey,
+        goal: nodeKey,
+        tools: [],
+        in: anyRecord,
+        out: anyRecord,
+        routes: pauseNodes.has(nodeKey) ? ["ok", "pause"] : ["ok"],
+        view: {
+          stage: index === 0 ? "scope" : "run",
+          show: true,
+        },
+      }),
+    ),
+    edges: params.nodeKeys.slice(0, -1).map((nodeKey, index) =>
+      makeEdge({
+        from: nodeKey,
+        to: params.nodeKeys[index + 1] ?? nodeKey,
+        when: "ok",
+      }),
+    ),
+  });
+}
+
 class RecoverableGraph implements WorkflowGraphRunner {
   readonly templateCode = "recoverable_graph";
   readonly templateVersion = 1;
+  readonly spec = buildTestFlow({
+    templateCode: this.templateCode,
+    templateVersion: this.templateVersion,
+    nodeKeys: ["archive_insights", "schedule_review_reminders"],
+  });
   readonly startedNodes: string[] = [];
 
   getNodeOrder() {
@@ -72,14 +131,36 @@ class RecoverableGraph implements WorkflowGraphRunner {
     return {};
   }
 
-  mergeNodeOutput(
+  buildNodeResult(
+    nodeKey: string,
+    state: WorkflowGraphState,
+    params?: {
+      status?: NodeResultStatus;
+      route?: { key: string; reason: string };
+    },
+  ) {
+    const status = params?.status ?? "ok";
+    return makeNodeResult({
+      status,
+      data: this.getNodeOutput(nodeKey, state),
+      route:
+        params?.route ??
+        (status === "skip"
+          ? { key: "skip", reason: `${nodeKey}_skipped` }
+          : { key: "ok", reason: `${nodeKey}_done` }),
+      stats: this.getNodeEventPayload(),
+      note: `${nodeKey}:${status}`,
+    });
+  }
+
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: string,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
@@ -132,6 +213,12 @@ class RecoverableGraph implements WorkflowGraphRunner {
 class ReviewPauseGraph implements WorkflowGraphRunner {
   readonly templateCode = SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE;
   readonly templateVersion = 1;
+  readonly spec = buildTestFlow({
+    templateCode: this.templateCode,
+    templateVersion: this.templateVersion,
+    nodeKeys: ["validate_insights", "review_gate", "archive_insights"],
+    pauseNodes: ["review_gate"],
+  });
 
   getNodeOrder() {
     return ["validate_insights", "review_gate", "archive_insights"];
@@ -182,14 +269,37 @@ class ReviewPauseGraph implements WorkflowGraphRunner {
     };
   }
 
-  mergeNodeOutput(
+  buildNodeResult(
+    nodeKey: string,
+    state: WorkflowGraphState,
+    params?: {
+      status?: NodeResultStatus;
+      route?: { key: string; reason: string };
+      note?: string;
+    },
+  ) {
+    const status = params?.status ?? "ok";
+    return makeNodeResult({
+      status,
+      data: this.getNodeOutput(nodeKey, state),
+      route:
+        params?.route ??
+        (status === "pause"
+          ? { key: "pause", reason: "review_required" }
+          : { key: "ok", reason: `${nodeKey}_done` }),
+      stats: this.getNodeEventPayload(nodeKey, state),
+      note: params?.note ?? `${nodeKey}:${status}`,
+    });
+  }
+
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: string,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
@@ -278,6 +388,12 @@ class ReviewPauseGraph implements WorkflowGraphRunner {
 class ClarificationPauseGraph implements WorkflowGraphRunner {
   readonly templateCode = QUICK_RESEARCH_TEMPLATE_CODE;
   readonly templateVersion = 2;
+  readonly spec = buildTestFlow({
+    templateCode: this.templateCode,
+    templateVersion: this.templateVersion,
+    nodeKeys: ["agent0_clarify_scope", "agent1_write_research_brief"],
+    pauseNodes: ["agent0_clarify_scope"],
+  });
 
   getNodeOrder() {
     return ["agent0_clarify_scope", "agent1_write_research_brief"];
@@ -321,14 +437,37 @@ class ClarificationPauseGraph implements WorkflowGraphRunner {
     };
   }
 
-  mergeNodeOutput(
+  buildNodeResult(
+    nodeKey: string,
+    state: WorkflowGraphState,
+    params?: {
+      status?: NodeResultStatus;
+      route?: { key: string; reason: string };
+      note?: string;
+    },
+  ) {
+    const status = params?.status ?? "ok";
+    return makeNodeResult({
+      status,
+      data: this.getNodeOutput(),
+      route:
+        params?.route ??
+        (status === "pause"
+          ? { key: "pause", reason: "clarification_required" }
+          : { key: "ok", reason: `${nodeKey}_done` }),
+      stats: this.getNodeEventPayload(nodeKey, state),
+      note: params?.note ?? `${nodeKey}:${status}`,
+    });
+  }
+
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: string,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
@@ -362,6 +501,11 @@ class ClarificationPauseGraph implements WorkflowGraphRunner {
 class FailingActiveNodeGraph implements WorkflowGraphRunner {
   readonly templateCode = "failing_active_node_graph";
   readonly templateVersion = 1;
+  readonly spec = buildTestFlow({
+    templateCode: this.templateCode,
+    templateVersion: this.templateVersion,
+    nodeKeys: ["first_node", "second_node"],
+  });
 
   getNodeOrder() {
     return ["first_node", "second_node"];
@@ -393,14 +537,36 @@ class FailingActiveNodeGraph implements WorkflowGraphRunner {
     return {};
   }
 
-  mergeNodeOutput(
+  buildNodeResult(
+    nodeKey: string,
+    _state: WorkflowGraphState,
+    params?: {
+      status?: NodeResultStatus;
+      route?: { key: string; reason: string };
+    },
+  ) {
+    const status = params?.status ?? "ok";
+    return makeNodeResult({
+      status,
+      data: this.getNodeOutput(nodeKey),
+      route:
+        params?.route ??
+        (status === "skip"
+          ? { key: "skip", reason: `${nodeKey}_skipped` }
+          : { key: "ok", reason: `${nodeKey}_done` }),
+      stats: this.getNodeEventPayload(),
+      note: `${nodeKey}:${status}`,
+    });
+  }
+
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: string,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };

@@ -17,6 +17,7 @@ import {
   buildTimingReportHistoryItems,
   buildWorkflowRunHistoryItems,
 } from "~/app/_components/workspace-history";
+import { FlowGraph } from "~/app/workflows/flow-graph";
 import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";
 import { getTemplateLabel } from "~/app/workflows/research-view-models";
 import { resolveWorkflowShellContext } from "~/app/workflows/workflow-shell-context";
@@ -1200,6 +1201,15 @@ export function RunDetailClient({ runId }: RunDetailClientProps) {
           ) : null}
 
           <ResearchOpsPanels result={run.result} />
+
+          {run.runView ? (
+            <Panel
+              title="执行图"
+              description="调试图保留真实节点、分支和内部步骤，用于核对这次运行的实际轨迹。"
+            >
+              <FlowGraph graph={run.runView.debug} mode="debug" />
+            </Panel>
+          ) : null}
 
           <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
             <Panel

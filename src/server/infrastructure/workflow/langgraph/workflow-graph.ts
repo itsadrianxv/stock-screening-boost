@@ -1,4 +1,11 @@
 import type {
+  FlowSpec,
+  NodeError,
+  NodeResult,
+  NodeResultStatus,
+  NodeRoute,
+} from "~/server/domain/workflow/flow-spec";
+import type {
   WorkflowGraphState,
   WorkflowNodeKey,
 } from "~/server/domain/workflow/types";
@@ -29,25 +36,30 @@ export type WorkflowGraphBuildInitialStateParams = {
   templateGraphConfig?: unknown;
 };
 
+export type BuildNodeResultParams = {
+  status?: NodeResultStatus;
+  route?: NodeRoute;
+  error?: NodeError | null;
+  note?: string;
+};
+
 export interface WorkflowGraphRunner {
   readonly templateCode: string;
   readonly templateVersion?: number;
+  readonly spec: FlowSpec;
   getNodeOrder(): string[];
   buildInitialState(
     params: WorkflowGraphBuildInitialStateParams,
   ): WorkflowGraphState;
-  getNodeOutput(
+  buildNodeResult(
     nodeKey: WorkflowNodeKey,
     state: WorkflowGraphState,
-  ): Record<string, unknown>;
-  getNodeEventPayload(
-    nodeKey: WorkflowNodeKey,
-    state: WorkflowGraphState,
-  ): Record<string, unknown>;
-  mergeNodeOutput(
+    params?: BuildNodeResultParams,
+  ): NodeResult;
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ): WorkflowGraphState;
   getRunResult(state: WorkflowGraphState): Record<string, unknown>;
   execute(params: {

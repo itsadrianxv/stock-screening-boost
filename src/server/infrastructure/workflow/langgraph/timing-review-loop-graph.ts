@@ -1,6 +1,7 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
 import type { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
 import type { TimingReviewPolicy } from "~/server/domain/timing/services/timing-review-policy";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type {
   TimingReviewLoopGraphState,
   TimingReviewLoopInput,
@@ -263,6 +264,7 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
     super({
       graph: graphBuilder.compile(),
       nodeOrder: TIMING_REVIEW_LOOP_NODE_KEYS,
+      spec: getFlowSpec(TIMING_REVIEW_LOOP_TEMPLATE_CODE, 1),
     });
   }
 
@@ -327,14 +329,14 @@ export class TimingReviewLoopLangGraph extends BaseWorkflowLangGraph<
     return {};
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };

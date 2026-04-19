@@ -1,6 +1,7 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
 import type { TimingAnalysisService } from "~/server/application/timing/timing-analysis-service";
 import { resolveTimingPresetConfig } from "~/server/domain/timing/preset";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type {
   TimingSignalPipelineGraphState,
   TimingSignalPipelineInput,
@@ -168,6 +169,7 @@ export class TimingSignalPipelineLangGraph extends BaseWorkflowLangGraph<
     super({
       graph: graphBuilder.compile(),
       nodeOrder: TIMING_SIGNAL_PIPELINE_NODE_KEYS,
+      spec: getFlowSpec(TIMING_SIGNAL_PIPELINE_TEMPLATE_CODE, 1),
     });
   }
 
@@ -234,14 +236,14 @@ export class TimingSignalPipelineLangGraph extends BaseWorkflowLangGraph<
     return {};
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
