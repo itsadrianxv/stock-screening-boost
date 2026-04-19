@@ -31,4 +31,26 @@ describe("env defaults", () => {
     expect(env.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com");
     expect(env.DEEPSEEK_TIMEOUT_MS).toBe(45_000);
   });
+
+  it("preserves voice defaults when env validation is skipped", async () => {
+    process.env.SKIP_ENV_VALIDATION = "1";
+    delete process.env.VOICE_MAX_DURATION_SECONDS;
+    delete process.env.VOICE_MAX_UPLOAD_BYTES;
+    delete process.env.VOICE_TRANSCRIBE_TIMEOUT_MS;
+    delete process.env.VOICE_PRIMARY_ONLY_CONFIDENCE;
+    delete process.env.VOICE_FIELD_AUTOFILL_CONFIDENCE;
+    delete process.env.VOICE_COMPANY_AUTOFILL_CONFIDENCE;
+    delete process.env.VOICE_HOTWORD_LIMIT;
+
+    vi.resetModules();
+    const { env } = await import("~/env");
+
+    expect(env.VOICE_MAX_DURATION_SECONDS).toBe(90);
+    expect(env.VOICE_MAX_UPLOAD_BYTES).toBe(10_485_760);
+    expect(env.VOICE_TRANSCRIBE_TIMEOUT_MS).toBe(60_000);
+    expect(env.VOICE_PRIMARY_ONLY_CONFIDENCE).toBe(0.75);
+    expect(env.VOICE_FIELD_AUTOFILL_CONFIDENCE).toBe(0.85);
+    expect(env.VOICE_COMPANY_AUTOFILL_CONFIDENCE).toBe(0.9);
+    expect(env.VOICE_HOTWORD_LIMIT).toBe(128);
+  });
 });

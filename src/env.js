@@ -2,6 +2,13 @@ import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
 const DEFAULT_DEEPSEEK_TIMEOUT_MS = 45_000;
+const DEFAULT_VOICE_MAX_DURATION_SECONDS = 90;
+const DEFAULT_VOICE_MAX_UPLOAD_BYTES = 10_485_760;
+const DEFAULT_VOICE_TRANSCRIBE_TIMEOUT_MS = 60_000;
+const DEFAULT_VOICE_PRIMARY_ONLY_CONFIDENCE = 0.75;
+const DEFAULT_VOICE_FIELD_AUTOFILL_CONFIDENCE = 0.85;
+const DEFAULT_VOICE_COMPANY_AUTOFILL_CONFIDENCE = 0.9;
+const DEFAULT_VOICE_HOTWORD_LIMIT = 128;
 
 /**
  * Keep fallback behavior consistent even when env validation is skipped.
@@ -15,6 +22,21 @@ function readPositiveNumberEnv(value, fallback) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * @param {string | number | undefined} value
+ * @param {number} fallback
+ */
+function readProbabilityEnv(value, fallback) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
+    ? parsed
+    : fallback;
 }
 
 export const env = createEnv({
@@ -66,6 +88,41 @@ export const env = createEnv({
       .int()
       .positive()
       .default(DEFAULT_DEEPSEEK_TIMEOUT_MS),
+    VOICE_MAX_DURATION_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_VOICE_MAX_DURATION_SECONDS),
+    VOICE_MAX_UPLOAD_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_VOICE_MAX_UPLOAD_BYTES),
+    VOICE_TRANSCRIBE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_VOICE_TRANSCRIBE_TIMEOUT_MS),
+    VOICE_PRIMARY_ONLY_CONFIDENCE: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .default(DEFAULT_VOICE_PRIMARY_ONLY_CONFIDENCE),
+    VOICE_FIELD_AUTOFILL_CONFIDENCE: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .default(DEFAULT_VOICE_FIELD_AUTOFILL_CONFIDENCE),
+    VOICE_COMPANY_AUTOFILL_CONFIDENCE: z.coerce
+      .number()
+      .min(0)
+      .max(1)
+      .default(DEFAULT_VOICE_COMPANY_AUTOFILL_CONFIDENCE),
+    VOICE_HOTWORD_LIMIT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_VOICE_HOTWORD_LIMIT),
     TAVILY_API_KEY: z.string().optional(),
     TAVILY_BASE_URL: z.string().url().default("https://api.tavily.com"),
     TAVILY_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
@@ -143,6 +200,34 @@ export const env = createEnv({
     DEEPSEEK_TIMEOUT_MS: readPositiveNumberEnv(
       process.env.DEEPSEEK_TIMEOUT_MS,
       DEFAULT_DEEPSEEK_TIMEOUT_MS,
+    ),
+    VOICE_MAX_DURATION_SECONDS: readPositiveNumberEnv(
+      process.env.VOICE_MAX_DURATION_SECONDS,
+      DEFAULT_VOICE_MAX_DURATION_SECONDS,
+    ),
+    VOICE_MAX_UPLOAD_BYTES: readPositiveNumberEnv(
+      process.env.VOICE_MAX_UPLOAD_BYTES,
+      DEFAULT_VOICE_MAX_UPLOAD_BYTES,
+    ),
+    VOICE_TRANSCRIBE_TIMEOUT_MS: readPositiveNumberEnv(
+      process.env.VOICE_TRANSCRIBE_TIMEOUT_MS,
+      DEFAULT_VOICE_TRANSCRIBE_TIMEOUT_MS,
+    ),
+    VOICE_PRIMARY_ONLY_CONFIDENCE: readProbabilityEnv(
+      process.env.VOICE_PRIMARY_ONLY_CONFIDENCE,
+      DEFAULT_VOICE_PRIMARY_ONLY_CONFIDENCE,
+    ),
+    VOICE_FIELD_AUTOFILL_CONFIDENCE: readProbabilityEnv(
+      process.env.VOICE_FIELD_AUTOFILL_CONFIDENCE,
+      DEFAULT_VOICE_FIELD_AUTOFILL_CONFIDENCE,
+    ),
+    VOICE_COMPANY_AUTOFILL_CONFIDENCE: readProbabilityEnv(
+      process.env.VOICE_COMPANY_AUTOFILL_CONFIDENCE,
+      DEFAULT_VOICE_COMPANY_AUTOFILL_CONFIDENCE,
+    ),
+    VOICE_HOTWORD_LIMIT: readPositiveNumberEnv(
+      process.env.VOICE_HOTWORD_LIMIT,
+      DEFAULT_VOICE_HOTWORD_LIMIT,
     ),
     TAVILY_API_KEY: process.env.TAVILY_API_KEY,
     TAVILY_BASE_URL: process.env.TAVILY_BASE_URL ?? "https://api.tavily.com",
