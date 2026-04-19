@@ -1,8 +1,10 @@
 import type { WorkflowRunStatus } from "@prisma/client";
+import { buildRunView } from "~/server/application/workflow/run-view";
 import {
   WORKFLOW_ERROR_CODES,
   WorkflowDomainError,
 } from "~/server/domain/workflow/errors";
+import { buildFlowMap, getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type { PrismaWorkflowRunRepository } from "~/server/infrastructure/workflow/prisma/workflow-run-repository";
 
 export class WorkflowQueryService {
@@ -18,6 +20,31 @@ export class WorkflowQueryService {
       );
     }
 
+    const flow = getFlowSpec(run.template.code, run.template.version);
+    const runView = buildRunView({
+      flow,
+      run: {
+        id: run.id,
+        status: run.status,
+        progressPercent: run.progressPercent,
+        currentNodeKey: run.currentNodeKey,
+        result: run.result,
+      },
+      nodeRuns: run.nodeRuns.map((nodeRun) => ({
+        id: nodeRun.id,
+        nodeKey: nodeRun.nodeKey,
+        status: nodeRun.status,
+        output: nodeRun.output,
+      })),
+      events: run.events.map((event) => ({
+        id: event.id,
+        sequence: event.sequence,
+        eventType: event.eventType,
+        payload: event.payload,
+        occurredAt: event.occurredAt,
+      })),
+    });
+
     return {
       id: run.id,
       query: run.query,
@@ -28,6 +55,13 @@ export class WorkflowQueryService {
       errorCode: run.errorCode,
       errorMessage: run.errorMessage,
       result: run.result,
+      flow: {
+        templateCode: flow.templateCode,
+        templateVersion: flow.templateVersion,
+        name: flow.name,
+      },
+      flowMap: buildFlowMap(flow, "user"),
+      runView,
       template: {
         code: run.template.code,
         version: run.template.version,
@@ -71,6 +105,7 @@ export class WorkflowQueryService {
 
     return {
       items: records.items.map((run) => ({
+        flowName: getFlowSpec(run.template.code, run.template.version).name,
         id: run.id,
         query: run.query,
         status: run.status,

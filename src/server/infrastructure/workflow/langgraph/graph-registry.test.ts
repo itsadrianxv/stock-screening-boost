@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { WorkflowDomainError } from "~/server/domain/workflow/errors";
+import {
+  buildFlow,
+  makeEdge,
+  makeNode,
+  makeNodeResult,
+  makeStage,
+} from "~/server/domain/workflow/flow-spec";
 import { WorkflowGraphRegistry } from "~/server/infrastructure/workflow/langgraph/graph-registry";
 import type { WorkflowGraphRunner } from "~/server/infrastructure/workflow/langgraph/workflow-graph";
 
@@ -7,9 +15,31 @@ function createGraph(
   templateCode: string,
   templateVersion?: number,
 ): WorkflowGraphRunner {
+  const spec = buildFlow({
+    templateCode,
+    templateVersion,
+    name: templateCode,
+    stages: [makeStage({ key: "run", name: "Run" })],
+    nodes: [
+      makeNode({
+        key: "node_1",
+        kind: "agent",
+        name: "Node",
+        goal: "Node",
+        tools: [],
+        in: z.record(z.string(), z.unknown()),
+        out: z.record(z.string(), z.unknown()),
+        routes: ["ok"],
+        view: { stage: "run", show: true },
+      }),
+    ],
+    edges: [makeEdge({ from: "node_1", to: "node_1", when: "ok" })],
+  });
+
   return {
     templateCode,
     templateVersion,
+    spec,
     getNodeOrder: () => [],
     buildInitialState: () =>
       ({
@@ -19,9 +49,8 @@ function createGraph(
         progressPercent: 0,
         errors: [],
       }) as never,
-    getNodeOutput: () => ({}),
-    getNodeEventPayload: () => ({}),
-    mergeNodeOutput: (state) => state,
+    buildNodeResult: () => makeNodeResult(),
+    mergeNodeResult: (state: { runId: string }) => state as never,
     getRunResult: () => ({}),
     execute: async ({ initialState }) => initialState,
   };

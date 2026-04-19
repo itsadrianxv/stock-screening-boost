@@ -1,5 +1,6 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
 import type { QuickResearchWorkflowService } from "~/server/application/intelligence/quick-research-workflow-service";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type { ResearchPreferenceInput } from "~/server/domain/workflow/research";
 import { parseResearchTaskContract } from "~/server/domain/workflow/research";
 import type {
@@ -197,14 +198,14 @@ abstract class QuickResearchLangGraphBase extends BaseWorkflowLangGraph<
     };
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
@@ -523,6 +524,7 @@ export class QuickResearchLangGraph extends QuickResearchLangGraphBase {
     super({
       graph: graphBuilder.compile(),
       nodeOrder: QUICK_RESEARCH_NODE_KEYS,
+      spec: getFlowSpec(QUICK_RESEARCH_TEMPLATE_CODE, 3),
     });
   }
 

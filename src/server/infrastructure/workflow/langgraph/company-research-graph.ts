@@ -2,6 +2,7 @@ import { Annotation, END, StateGraph } from "@langchain/langgraph";
 import type { CompanyResearchAgentService } from "~/server/application/intelligence/company-research-agent-service";
 import type { CompanyResearchWorkflowService } from "~/server/application/intelligence/company-research-workflow-service";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import { parseResearchTaskContract } from "~/server/domain/workflow/research";
 import type {
   CompanyResearchCollectionSummary,
@@ -321,14 +322,14 @@ abstract class CompanyResearchLangGraphBase<
     };
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };
@@ -440,6 +441,7 @@ export class LegacyCompanyResearchLangGraph extends CompanyResearchLangGraphBase
     super({
       graph: graphBuilder.compile(),
       nodeOrder: COMPANY_RESEARCH_V1_NODE_KEYS,
+      spec: getFlowSpec(COMPANY_RESEARCH_TEMPLATE_CODE, 1),
     });
   }
 
@@ -670,6 +672,7 @@ export class CompanyResearchLangGraph extends CompanyResearchLangGraphBase<V2Nod
     super({
       graph: graphBuilder.compile(),
       nodeOrder: COMPANY_RESEARCH_NODE_KEYS,
+      spec: getFlowSpec(COMPANY_RESEARCH_TEMPLATE_CODE, 2),
     });
   }
 
@@ -926,6 +929,7 @@ export class ODRCompanyResearchLangGraph extends CompanyResearchLangGraphBase<V3
     super({
       graph: graphBuilder.compile(),
       nodeOrder: COMPANY_RESEARCH_V3_NODE_KEYS,
+      spec: getFlowSpec(COMPANY_RESEARCH_TEMPLATE_CODE, 3),
     });
   }
 
@@ -1304,6 +1308,7 @@ export class CompanyResearchContractLangGraph extends CompanyResearchLangGraphBa
     super({
       graph: graphBuilder.compile(),
       nodeOrder: COMPANY_RESEARCH_V4_NODE_KEYS,
+      spec: getFlowSpec(COMPANY_RESEARCH_TEMPLATE_CODE, 4),
     });
   }
 

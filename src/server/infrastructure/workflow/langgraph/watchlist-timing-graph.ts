@@ -11,6 +11,7 @@ import {
   isWorkflowDomainError,
   WORKFLOW_ERROR_CODES,
 } from "~/server/domain/workflow/errors";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type {
   WatchlistTimingPipelineGraphState,
   WatchlistTimingPipelineInput,
@@ -433,6 +434,7 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
     super({
       graph: graphBuilder.compile(),
       nodeOrder: WATCHLIST_TIMING_PIPELINE_NODE_KEYS,
+      spec: getFlowSpec(WATCHLIST_TIMING_PIPELINE_TEMPLATE_CODE, 1),
     });
   }
 
@@ -536,14 +538,14 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
     return {};
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ) {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };

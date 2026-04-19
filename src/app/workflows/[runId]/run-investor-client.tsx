@@ -31,6 +31,7 @@ import {
   formatSourceTypeLabel,
   formatWorkflowNodeLabel,
 } from "~/app/workflows/detail-labels";
+import { FlowGraph } from "~/app/workflows/flow-graph";
 import { ResearchOpsPanels } from "~/app/workflows/research-ops-panels";
 import {
   buildResearchDigest,
@@ -388,6 +389,15 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
                 </>
               }
             />
+          ) : null}
+
+          {run.runView ? (
+            <Panel
+              title="流程路线图"
+              description="这张图展示这套研究流程应该怎么走，以及这次运行实际走到了哪一步。"
+            >
+              <FlowGraph graph={run.runView.user} mode="user" />
+            </Panel>
           ) : null}
 
           {timingReportCardIds.length > 0 ? (

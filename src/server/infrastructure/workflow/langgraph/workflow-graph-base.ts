@@ -1,10 +1,18 @@
 import type { CompiledStateGraph } from "@langchain/langgraph";
 import { WorkflowPauseError } from "~/server/domain/workflow/errors";
+import {
+  type FlowSpec,
+  makeNodeResult,
+  type NodeResult,
+  type NodeResultStatus,
+  type NodeRoute,
+} from "~/server/domain/workflow/flow-spec";
 import type {
   WorkflowGraphState,
   WorkflowNodeKey,
 } from "~/server/domain/workflow/types";
 import type {
+  BuildNodeResultParams,
   WorkflowGraphBuildInitialStateParams,
   WorkflowGraphExecutionHooks,
   WorkflowGraphRunner,
@@ -66,6 +74,7 @@ export abstract class BaseWorkflowLangGraph<
 > implements WorkflowGraphRunner
 {
   abstract readonly templateCode: string;
+  readonly spec: FlowSpec;
 
   protected readonly graph: CompiledStateGraph<unknown, unknown, string>;
   protected readonly nodeOrder: readonly NodeKey[];
@@ -75,9 +84,11 @@ export abstract class BaseWorkflowLangGraph<
   protected constructor(params: {
     graph: CompiledStateGraph<unknown, unknown, string>;
     nodeOrder: readonly NodeKey[];
+    spec: FlowSpec;
   }) {
     this.graph = params.graph;
     this.nodeOrder = params.nodeOrder;
+    this.spec = params.spec;
     this.nodeIndex = new Map(
       params.nodeOrder.map((nodeKey, index) => [nodeKey, index]),
     );
@@ -95,12 +106,72 @@ export abstract class BaseWorkflowLangGraph<
     nodeKey: WorkflowNodeKey,
     state: WorkflowGraphState,
   ): Record<string, unknown>;
-  abstract mergeNodeOutput(
+  abstract getRunResult(state: WorkflowGraphState): Record<string, unknown>;
+
+  protected getNodeRoute(
+    nodeKey: WorkflowNodeKey,
+    _state: WorkflowGraphState,
+    status: NodeResultStatus,
+  ): NodeRoute {
+    if (status === "pause") {
+      return { key: "pause", reason: `${nodeKey}_paused` };
+    }
+
+    if (status === "skip") {
+      return { key: "skip", reason: `${nodeKey}_skipped` };
+    }
+
+    if (status === "fail") {
+      return { key: "fail", reason: `${nodeKey}_failed` };
+    }
+
+    return { key: "ok", reason: `${nodeKey}_done` };
+  }
+
+  protected getNodeNote(
+    nodeKey: WorkflowNodeKey,
+    _state: WorkflowGraphState,
+    status: NodeResultStatus,
+  ) {
+    return `${nodeKey}:${status}`;
+  }
+
+  buildNodeResult(
+    nodeKey: WorkflowNodeKey,
+    state: WorkflowGraphState,
+    params?: BuildNodeResultParams,
+  ): NodeResult {
+    const nodeSpec = this.spec.nodes.find((node) => node.key === nodeKey);
+    const status = params?.status ?? "ok";
+    const data = this.getNodeOutput(nodeKey, state);
+    const parsedData = nodeSpec?.out.safeParse(data);
+
+    const route = params?.route ?? this.getNodeRoute(nodeKey, state, status);
+
+    if (
+      nodeSpec &&
+      route.key !== "skip" &&
+      route.key !== "fail" &&
+      !nodeSpec.routes.includes(route.key)
+    ) {
+      throw new Error(`Route ${route.key} is not declared for ${nodeKey}`);
+    }
+
+    return makeNodeResult({
+      status,
+      data: parsedData?.success ? parsedData.data : data,
+      route,
+      note: params?.note ?? this.getNodeNote(nodeKey, state, status),
+      stats: this.getNodeEventPayload(nodeKey, state),
+      error: params?.error ?? null,
+    });
+  }
+
+  abstract mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: NodeResult,
   ): WorkflowGraphState;
-  abstract getRunResult(state: WorkflowGraphState): Record<string, unknown>;
 
   getNodeOrder(): string[] {
     return [...this.nodeOrder];
@@ -186,7 +257,10 @@ export abstract class BaseWorkflowLangGraph<
 
       await params.hooks?.onNodeSkipped?.(skip.nodeKey, state, {
         reason: skip.reason,
-        ...this.getNodeEventPayload(skip.nodeKey, state),
+        ...this.buildNodeResult(skip.nodeKey, state, {
+          status: "skip",
+          route: { key: "skip", reason: skip.reason },
+        }).stats,
         ...(skip.payload ?? {}),
       });
     };

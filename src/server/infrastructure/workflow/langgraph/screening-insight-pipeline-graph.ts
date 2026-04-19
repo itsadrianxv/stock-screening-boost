@@ -29,6 +29,7 @@ import {
   WorkflowDomainError,
   WorkflowPauseError,
 } from "~/server/domain/workflow/errors";
+import { getFlowSpec } from "~/server/domain/workflow/flow-specs";
 import type {
   ScreeningInsightPipelineGraphState,
   ScreeningInsightPipelineInsightCard,
@@ -533,7 +534,27 @@ export class ScreeningInsightPipelineLangGraph extends BaseWorkflowLangGraph<
     super({
       graph: graphBuilder.compile(),
       nodeOrder: SCREENING_INSIGHT_PIPELINE_NODE_KEYS,
+      spec: getFlowSpec(SCREENING_INSIGHT_PIPELINE_TEMPLATE_CODE, 1),
     });
+  }
+
+  protected getNodeRoute(
+    nodeKey: WorkflowNodeKey,
+    state: WorkflowGraphState,
+    status: import("~/server/domain/workflow/flow-spec").NodeResultStatus,
+  ) {
+    if (nodeKey === "screen_candidates" && status === "ok") {
+      const screeningState = state as ScreeningInsightPipelineGraphState;
+      return screeningState.candidateUniverse.length > 0
+        ? { key: "ok", reason: "candidates_found" }
+        : { key: "empty", reason: "no_candidates" };
+    }
+
+    if (nodeKey === "review_gate" && status === "pause") {
+      return { key: "pause", reason: "review_required" };
+    }
+
+    return super.getNodeRoute(nodeKey, state, status);
   }
 
   buildInitialState(
@@ -671,14 +692,14 @@ export class ScreeningInsightPipelineLangGraph extends BaseWorkflowLangGraph<
     }
   }
 
-  mergeNodeOutput(
+  mergeNodeResult(
     state: WorkflowGraphState,
     nodeKey: WorkflowNodeKey,
-    output: Record<string, unknown>,
+    result: import("~/server/domain/workflow/flow-spec").NodeResult,
   ): WorkflowGraphState {
     return {
       ...state,
-      ...output,
+      ...result.data,
       currentNodeKey: nodeKey,
       lastCompletedNodeKey: nodeKey,
     };

@@ -14,6 +14,10 @@ import {
   WorkflowDomainError,
   WorkflowPauseError,
 } from "~/server/domain/workflow/errors";
+import {
+  parseNodeResult,
+  toNodeEventPayload,
+} from "~/server/domain/workflow/flow-spec";
 import type {
   WorkflowEventStreamType,
   WorkflowGraphState,
@@ -347,14 +351,22 @@ export class WorkflowExecutionService {
               );
             }
 
+            const nodeResult = graph.buildNodeResult(nodeKey, updatedState, {
+              status: "skip",
+              route: {
+                key: "skip",
+                reason: String(payload.reason ?? "skipped"),
+              },
+            });
+
             await this.repository.markNodeSkipped({
               runId,
               nodeRunId,
               nodeKey,
-              output: graph.getNodeOutput(nodeKey, updatedState),
+              output: nodeResult,
               durationMs: 0,
               reason: String(payload.reason ?? "skipped"),
-              eventPayload: payload,
+              eventPayload: toNodeEventPayload(nodeResult, payload),
             });
 
             await this.repository.updateRunProgress({
@@ -388,13 +400,15 @@ export class WorkflowExecutionService {
               );
             }
 
+            const nodeResult = graph.buildNodeResult(nodeKey, updatedState);
+
             await this.repository.markNodeSucceeded({
               runId,
               nodeRunId,
               nodeKey,
-              output: graph.getNodeOutput(nodeKey, updatedState),
+              output: nodeResult,
               durationMs,
-              eventPayload: graph.getNodeEventPayload(nodeKey, updatedState),
+              eventPayload: toNodeEventPayload(nodeResult),
             });
 
             await this.repository.updateRunProgress({
@@ -471,7 +485,16 @@ export class WorkflowExecutionService {
           progressPercent: pausedState.progressPercent,
           reason: error.reason,
           eventPayload: pausedNodeKey
-            ? graph.getNodeEventPayload(pausedNodeKey, pausedState)
+            ? toNodeEventPayload(
+                graph.buildNodeResult(pausedNodeKey, pausedState, {
+                  status: "pause",
+                  route: {
+                    key: "pause",
+                    reason: error.reason,
+                  },
+                  note: error.message,
+                }),
+              )
             : {},
         });
         await this.publishLatestEvent(
@@ -561,11 +584,14 @@ export class WorkflowExecutionService {
         continue;
       }
 
-      state = graph.mergeNodeOutput(
-        state,
-        nodeRun.nodeKey,
-        isRecord(nodeRun.output) ? nodeRun.output : {},
-      );
+      const nodeResult =
+        parseNodeResult(nodeRun.output) ??
+        graph.buildNodeResult(nodeRun.nodeKey, state, {
+          status:
+            nodeRun.status === WorkflowNodeRunStatus.SKIPPED ? "skip" : "ok",
+        });
+
+      state = graph.mergeNodeResult(state, nodeRun.nodeKey, nodeResult);
       state = {
         ...state,
         currentNodeKey: nodeRun.nodeKey,
