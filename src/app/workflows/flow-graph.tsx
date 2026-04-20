@@ -20,12 +20,12 @@ const stateToneMap: Record<
 };
 
 const stateLabelMap: Record<GraphView["nodes"][number]["state"], string> = {
-  idle: "Idle",
-  active: "Active",
-  paused: "Paused",
-  done: "Done",
-  failed: "Failed",
-  skipped: "Skipped",
+  idle: "未开始",
+  active: "进行中",
+  paused: "已暂停",
+  done: "已完成",
+  failed: "失败",
+  skipped: "已跳过",
 };
 
 function formatStatValue(value: unknown) {
@@ -38,7 +38,7 @@ function formatStatValue(value: unknown) {
   }
 
   if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
+    return value ? "是" : "否";
   }
 
   return JSON.stringify(value);
@@ -72,7 +72,7 @@ export function FlowGraph(props: { graph: GraphView; mode: "user" | "debug" }) {
                   </h3>
                 </div>
                 <StatusPill
-                  label={`${nodes.length} step${nodes.length > 1 ? "s" : ""}`}
+                  label={`${nodes.length} 个步骤`}
                   tone="neutral"
                 />
               </div>
@@ -143,7 +143,7 @@ export function FlowGraph(props: { graph: GraphView; mode: "user" | "debug" }) {
       {graph.edges.length > 0 ? (
         <div className="rounded-[14px] border border-[var(--app-border)] bg-[var(--app-panel)] p-4">
           <p className="text-xs uppercase tracking-[0.16em] text-[var(--app-text-soft)]">
-            Paths
+            路径
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--app-text-muted)]">
             {graph.edges.map((edge) => (

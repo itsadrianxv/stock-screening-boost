@@ -67,11 +67,11 @@ describe("flow specs", () => {
     expect(
       flowMap.nodes.some((node) => node.key === "collector_official_sources"),
     ).toBe(false);
-    expect(flowMap.stages.map((stage) => stage.key)).toEqual([
-      "scope",
-      "collect",
-      "review",
-      "report",
+    expect(flowMap.stages.map((stage) => stage.name)).toEqual([
+      "范围澄清",
+      "资料收集",
+      "评审校验",
+      "结果输出",
     ]);
   });
 
