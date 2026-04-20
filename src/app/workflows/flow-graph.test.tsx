@@ -11,30 +11,30 @@ describe("FlowGraph", () => {
         mode="user"
         graph={{
           stages: [
-            { key: "scope", name: "Scope" },
-            { key: "report", name: "Report" },
+            { key: "scope", name: "范围澄清" },
+            { key: "report", name: "结果输出" },
           ],
           nodes: [
             {
               key: "clarify",
-              name: "Clarify",
+              name: "澄清需求",
               kind: "agent",
-              goal: "Clarify the request",
+              goal: "澄清研究目标与输入范围",
               stage: "scope",
               state: "done",
               result: null,
-              note: "Scope locked",
+              note: "范围已锁定",
               stats: { ready: true },
             },
             {
               key: "report",
-              name: "Report",
+              name: "生成报告",
               kind: "agent",
-              goal: "Write the report",
+              goal: "生成最终研究结论",
               stage: "report",
               state: "active",
               result: null,
-              note: "Writing now",
+              note: "正在生成",
               stats: { draft: 1 },
             },
           ],
@@ -45,10 +45,11 @@ describe("FlowGraph", () => {
       />,
     );
 
-    expect(markup).toContain("Scope");
-    expect(markup).toContain("Report");
-    expect(markup).toContain("Scope locked");
-    expect(markup).toContain("Active");
+    expect(markup).toContain("范围澄清");
+    expect(markup).toContain("结果输出");
+    expect(markup).toContain("范围已锁定");
+    expect(markup).toContain("进行中");
+    expect(markup).toContain("路径");
     expect(markup).toContain("clarify → report");
   });
 });
