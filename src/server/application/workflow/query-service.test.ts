@@ -76,7 +76,7 @@ describe("WorkflowQueryService", () => {
     expect(run.flow).toMatchObject({
       templateCode: COMPANY_RESEARCH_TEMPLATE_CODE,
       templateVersion: 4,
-      name: "Company Research",
+      name: "公司研究",
     });
     expect(
       run.flowMap.nodes.some((node) => node.key === "agent0_clarify_scope"),

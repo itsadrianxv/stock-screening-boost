@@ -1,4 +1,3 @@
-/* biome-ignore lint/correctness/noUnusedImports: React is required for server-side JSX rendering in this test. */
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +39,11 @@ vi.mock("~/app/_components/ui", () => ({
       props.description ?? "",
     ),
   LoadingSkeleton: () =>
-    React.createElement("div", { "data-testid": "loading-skeleton" }, "loading"),
+    React.createElement(
+      "div",
+      { "data-testid": "loading-skeleton" },
+      "loading",
+    ),
 }));
 
 vi.mock("~/app/_components/workspace-history", () => ({
@@ -49,7 +52,11 @@ vi.mock("~/app/_components/workspace-history", () => ({
 
 vi.mock("~/app/timing/reports/[cardId]/timing-report-view", () => ({
   TimingReportView: () =>
-    React.createElement("div", { "data-testid": "timing-report-view" }, "report"),
+    React.createElement(
+      "div",
+      { "data-testid": "timing-report-view" },
+      "report",
+    ),
 }));
 
 vi.mock("~/app/workflows/workflow-visualization-panel", () => ({

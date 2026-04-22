@@ -1,4 +1,3 @@
-/* biome-ignore lint/correctness/noUnusedImports: React is required for server-side JSX rendering in this test. */
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,7 +52,9 @@ vi.mock("~/app/_components/ui", () => ({
       "section",
       null,
       props.title ? React.createElement("h2", null, props.title) : null,
-      props.description ? React.createElement("p", null, props.description) : null,
+      props.description
+        ? React.createElement("p", null, props.description)
+        : null,
       props.actions ?? null,
       props.children,
     ),
@@ -61,22 +62,21 @@ vi.mock("~/app/_components/ui", () => ({
     React.createElement("div", null, props.children),
 }));
 
-vi.mock("~/app/_components/workflow-stage-switcher", () => ({
-  WorkflowStageSwitcher: (props: { panels: Record<string, React.ReactNode> }) =>
-    React.createElement("div", null, Object.values(props.panels)),
-}));
-
 vi.mock("~/app/_components/workspace-history", () => ({
   buildWorkflowRunHistoryItems: () => [],
 }));
 
 vi.mock("~/app/workflows/workflow-visualization-panel", () => ({
-  WorkflowVisualizationPanel: (props: { runId?: string }) =>
+  WorkflowVisualizationPanel: (props: {
+    runId?: string;
+    templateCode?: string;
+  }) =>
     React.createElement(
       "div",
       {
         "data-testid": "workflow-visualization-panel",
         "data-run-id": props.runId ?? "",
+        "data-template-code": props.templateCode ?? "",
       },
       "workflow visualization",
     ),
@@ -84,14 +84,6 @@ vi.mock("~/app/workflows/workflow-visualization-panel", () => ({
 
 vi.mock("~/app/workflows/quick-research-form", () => ({
   buildQuickResearchStartInput: (value: unknown) => value,
-}));
-
-vi.mock("~/app/workflows/workflows-stage-tabs", () => ({
-  workflowsStageTabs: [
-    { id: "question", label: "Question", summary: "Question summary" },
-    { id: "constraints", label: "Constraints", summary: "Constraint summary" },
-    { id: "launch", label: "Launch", summary: "Launch summary" },
-  ],
 }));
 
 vi.mock("~/app/workflows/workflows-voice-adapter", () => ({
@@ -138,7 +130,7 @@ describe("WorkflowsClient", () => {
     });
   });
 
-  it("renders the recent workflow visualization panel for the latest run", async () => {
+  it("renders the static workflow diagram preview for quick research", async () => {
     listRunsUseQueryMock.mockReturnValue({
       data: {
         items: [
@@ -152,18 +144,24 @@ describe("WorkflowsClient", () => {
       isLoading: false,
     });
 
-    const { WorkflowsClient } = await import("~/app/workflows/workflows-client");
-    const markup = renderToStaticMarkup(React.createElement(WorkflowsClient));
-
-    expect(markup).toContain("workflow-visualization-panel");
-    expect(markup).toContain('data-run-id="run_1"');
-  });
-
-  it("still renders the recent workflow visualization panel when there is no latest run", async () => {
-    const { WorkflowsClient } = await import("~/app/workflows/workflows-client");
+    const { WorkflowsClient } = await import(
+      "~/app/workflows/workflows-client"
+    );
     const markup = renderToStaticMarkup(React.createElement(WorkflowsClient));
 
     expect(markup).toContain("workflow-visualization-panel");
     expect(markup).toContain('data-run-id=""');
+    expect(markup).toContain('data-template-code="quick_industry_research"');
+  });
+
+  it("still renders the static workflow diagram preview when there is no latest run", async () => {
+    const { WorkflowsClient } = await import(
+      "~/app/workflows/workflows-client"
+    );
+    const markup = renderToStaticMarkup(React.createElement(WorkflowsClient));
+
+    expect(markup).toContain("workflow-visualization-panel");
+    expect(markup).toContain('data-run-id=""');
+    expect(markup).toContain('data-template-code="quick_industry_research"');
   });
 });

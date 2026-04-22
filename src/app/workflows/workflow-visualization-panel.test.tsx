@@ -2,7 +2,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RunView } from "~/server/application/workflow/run-view";
+import type { WorkflowDiagramRunDetail } from "~/app/workflows/workflow-diagram-runtime";
 
 const getRunUseQueryMock = vi.fn();
 
@@ -16,67 +16,55 @@ vi.mock("~/trpc/react", () => ({
   },
 }));
 
-vi.mock("~/app/workflows/flow-graph", () => ({
-  FlowGraph: (props: { mode: "user" | "debug" }) =>
-    React.createElement(
-      "div",
-      {
-        "data-testid": "workflow-visualization-graph",
-        "data-mode": props.mode,
-      },
-      "graph",
-    ),
-}));
-
-function buildRunViewFixture(): RunView {
+function buildRunFixture(
+  overrides: Partial<WorkflowDiagramRunDetail> = {},
+): WorkflowDiagramRunDetail {
   return {
-    flow: {
-      templateCode: "quick_industry_research",
-      templateVersion: 1,
-      name: "Quick Research",
-    },
-    user: {
-      stages: [{ key: "scope", name: "Scope" }],
-      nodes: [
-        {
-          key: "clarify",
-          name: "Clarify",
-          kind: "agent",
-          goal: "Clarify the request",
-          stage: "scope",
-          state: "done",
-          result: null,
-          note: "Scope locked",
-          stats: {},
-        },
-      ],
-      edges: [],
-      activePath: ["clarify"],
-      current: null,
-    },
-    debug: {
-      stages: [{ key: "scope", name: "Scope" }],
-      nodes: [
-        {
-          key: "clarify",
-          name: "Clarify",
-          kind: "agent",
-          goal: "Clarify the request",
-          stage: "scope",
-          state: "done",
-          result: null,
-          note: "Scope locked",
-          stats: {},
-        },
-      ],
-      edges: [],
-      activePath: ["clarify"],
-      current: null,
-      events: [],
-    },
-    status: "SUCCEEDED",
-    progressPercent: 100,
+    id: "run_1",
+    query: "AI infrastructure",
+    status: "RUNNING",
+    progressPercent: 43,
+    currentNodeKey: "agent1_extract_research_spec",
+    input: {},
+    errorCode: null,
+    errorMessage: null,
     result: {},
+    template: {
+      code: "quick_industry_research",
+      version: 3,
+    },
+    createdAt: new Date("2026-04-22T08:00:00.000Z"),
+    startedAt: new Date("2026-04-22T08:00:05.000Z"),
+    completedAt: null,
+    nodes: [
+      {
+        id: "node_1",
+        nodeKey: "agent0_clarify_scope",
+        agentName: "agent0_clarify_scope",
+        attempt: 1,
+        status: "SUCCEEDED",
+        errorCode: null,
+        errorMessage: null,
+        durationMs: 800,
+        startedAt: new Date("2026-04-22T08:00:05.000Z"),
+        completedAt: new Date("2026-04-22T08:00:05.800Z"),
+        output: {
+          summary: "scope",
+        },
+      },
+    ],
+    events: [
+      {
+        id: "event_1",
+        sequence: 1,
+        eventType: "NODE_SUCCEEDED",
+        payload: {
+          nodeKey: "agent0_clarify_scope",
+        },
+        occurredAt: new Date("2026-04-22T08:00:05.800Z"),
+      },
+    ],
+    ...overrides,
   };
 }
 
@@ -90,31 +78,29 @@ describe("WorkflowVisualizationPanel", () => {
     });
   });
 
-  it("renders the graph directly from an existing runView", async () => {
+  it("renders a static topology preview from template code and version", async () => {
     const { WorkflowVisualizationPanel } = await import(
       "~/app/workflows/workflow-visualization-panel"
     );
 
     const markup = renderToStaticMarkup(
       <WorkflowVisualizationPanel
-        title="Latest Flow"
-        description="Latest workflow graph"
-        runView={buildRunViewFixture()}
+        title="Launch Flow"
+        description="Static preview"
+        templateCode="quick_industry_research"
+        templateVersion={3}
       />,
     );
 
-    expect(markup).toContain("Latest Flow");
-    expect(markup).toContain("Latest workflow graph");
-    expect(markup).toContain("workflow-visualization-graph");
-    expect(markup).toContain('data-mode="user"');
+    expect(markup).toContain("Launch Flow");
+    expect(markup).toContain("data-workflow-state-diagram");
+    expect(markup).toContain("agent6_reflection");
+    expect(markup).toContain("Node inspector");
   });
 
-  it("loads the run by runId and renders the graph when runView is available", async () => {
+  it("loads the run by runId and renders the active runtime diagram", async () => {
     getRunUseQueryMock.mockReturnValue({
-      data: {
-        id: "run_1",
-        runView: buildRunViewFixture(),
-      },
+      data: buildRunFixture(),
       error: null,
       isLoading: false,
     });
@@ -130,11 +116,13 @@ describe("WorkflowVisualizationPanel", () => {
       />,
     );
 
-    expect(markup).toContain("workflow-visualization-graph");
+    expect(markup).toContain("data-workflow-state-diagram");
+    expect(markup).toContain("agent1_extract_research_spec");
+    expect(markup).toContain('data-node-status="active"');
     expect(markup).toContain("/workflows/run_1");
   });
 
-  it("renders an empty state when neither runView nor runId can provide graph data", async () => {
+  it("renders an empty state when no run and no template preview are provided", async () => {
     const { WorkflowVisualizationPanel } = await import(
       "~/app/workflows/workflow-visualization-panel"
     );
@@ -143,11 +131,50 @@ describe("WorkflowVisualizationPanel", () => {
     );
 
     expect(markup).toContain("Recent Run");
-    expect(markup).toContain("当前记录没有可视化流程数据");
-    expect(markup).not.toContain("workflow-visualization-graph");
+    expect(markup).toContain("No workflow diagram data");
+    expect(markup).not.toContain("data-workflow-state-diagram");
   });
 
-  it("renders an error notice when loading the workflow visualization fails", async () => {
+  it("renders a degraded ordered-node diagram for unknown template versions", async () => {
+    getRunUseQueryMock.mockReturnValue({
+      data: buildRunFixture({
+        template: {
+          code: "unknown_template",
+          version: 99,
+        },
+        currentNodeKey: "custom_step",
+        nodes: [
+          {
+            id: "node_custom",
+            nodeKey: "custom_step",
+            agentName: "custom_step",
+            attempt: 1,
+            status: "RUNNING",
+            errorCode: null,
+            errorMessage: null,
+            durationMs: null,
+            startedAt: new Date("2026-04-22T08:00:05.000Z"),
+            completedAt: null,
+            output: {},
+          },
+        ],
+      }),
+      error: null,
+      isLoading: false,
+    });
+
+    const { WorkflowVisualizationPanel } = await import(
+      "~/app/workflows/workflow-visualization-panel"
+    );
+    const markup = renderToStaticMarkup(
+      <WorkflowVisualizationPanel runId="run_unknown" />,
+    );
+
+    expect(markup).toContain("unknown_template");
+    expect(markup).toContain("custom_step");
+  });
+
+  it("renders an error notice when loading the workflow diagram fails", async () => {
     getRunUseQueryMock.mockReturnValue({
       data: undefined,
       error: {
@@ -164,6 +191,6 @@ describe("WorkflowVisualizationPanel", () => {
     );
 
     expect(markup).toContain("workflow failed");
-    expect(markup).not.toContain("workflow-visualization-graph");
+    expect(markup).not.toContain("data-workflow-state-diagram");
   });
 });

@@ -1,8 +1,6 @@
 /* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
-import React, { useState } from "react";
+import React from "react";
 import { EmptyState, Panel, StatusPill } from "~/app/_components/ui";
-import type { WorkflowStageTab } from "~/app/_components/workflow-stage-config";
-import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher";
 import { TimingReportChart } from "~/app/timing/reports/[cardId]/timing-report-chart";
 import {
   formatTimingActionLabel,
@@ -53,37 +51,6 @@ const evidenceOrder: TimingSignalEngineKey[] = [
   "gapVolumeQuality",
 ];
 
-export type TimingReportStageId =
-  | "summary"
-  | "evidence"
-  | "execution"
-  | "review";
-
-export const timingReportStageTabs: Array<
-  WorkflowStageTab & { id: TimingReportStageId }
-> = [
-  {
-    id: "summary",
-    label: "当前结论",
-    summary: "先看操作倾向、图表与关键快照，快速判断现在该怎么做。",
-  },
-  {
-    id: "evidence",
-    label: "结构证据",
-    summary: "拆开结构解释与六大证据引擎，回答为什么当前偏这个方向。",
-  },
-  {
-    id: "execution",
-    label: "执行风控",
-    summary: "集中查看触发条件、失效条件、市场环境与风险标签。",
-  },
-  {
-    id: "review",
-    label: "复盘跟踪",
-    summary: "回看后续验证结果，确认这次择时结论是否兑现。",
-  },
-];
-
 function formatDate(value?: Date | null) {
   if (!value) {
     return "-";
@@ -104,54 +71,7 @@ function formatPct(value?: number | null) {
   return `${value.toFixed(2)}%`;
 }
 
-function _BackgroundStrip(props: { report: TimingReportPayload }) {
-  const { report } = props;
-  const items = [
-    {
-      label: "股票名称/代码",
-      value: `${report.card.stockName} / ${report.card.stockCode}`,
-    },
-    {
-      label: "报告日期",
-      value:
-        report.card.asOfDate ?? report.card.signalSnapshot?.asOfDate ?? "-",
-    },
-    {
-      label: "操作倾向",
-      value: formatTimingActionLabel(report.card.actionBias),
-    },
-    {
-      label: "置信度",
-      value: String(report.card.confidence),
-    },
-    {
-      label: "市场状态",
-      value: formatTimingMarketStateLabel(report.marketContext.state),
-    },
-  ];
-
-  return (
-    <Panel surface="inset" density="compact">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {items.map((item) => (
-          <div
-            key={item.label}
-            className="rounded-[12px] border border-[var(--app-border-soft)] bg-[var(--app-bg-floating)] px-4 py-3"
-          >
-            <div className="text-xs text-[var(--app-text-soft)]">
-              {item.label}
-            </div>
-            <div className="mt-2 text-sm leading-6 text-[var(--app-text)]">
-              {item.value}
-            </div>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function SummaryTab(props: { report: TimingReportPayload }) {
+function SummarySection(props: { report: TimingReportPayload }) {
   const { report } = props;
   const signalContext = report.card.reasoning.signalContext;
   const signalSnapshot = report.card.signalSnapshot;
@@ -160,8 +80,8 @@ function SummaryTab(props: { report: TimingReportPayload }) {
   return (
     <div className="grid gap-6">
       <Panel
-        title="当前结论"
-        description="先看摘要、行动理由和关键快照，再结合首屏价格结构图判断现在该怎么做。"
+        title="褰撳墠缁撹"
+        description="鍏堢湅鎽樿銆佽鍔ㄧ悊鐢卞拰鍏抽敭蹇収锛屽啀缁撳悎棣栧睆浠锋牸缁撴瀯鍥惧垽鏂幇鍦ㄨ鎬庝箞鍋氥€?"
         surface="inset"
       >
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -172,10 +92,10 @@ function SummaryTab(props: { report: TimingReportPayload }) {
                 tone={actionToneMap[report.card.actionBias] ?? "neutral"}
               />
               <StatusPill
-                label={`置信度 ${report.card.confidence}`}
+                label={`缃俊搴?${report.card.confidence}`}
                 tone="info"
               />
-              <StatusPill label={`报告日期 ${asOfDate}`} />
+              <StatusPill label={`鎶ュ憡鏃ユ湡 ${asOfDate}`} />
             </div>
             <p className="max-w-4xl text-base leading-7 text-[var(--app-text)]">
               {report.card.summary}
@@ -188,7 +108,7 @@ function SummaryTab(props: { report: TimingReportPayload }) {
             <div className="grid gap-2 sm:grid-cols-3">
               <div>
                 <div className="text-xs text-[var(--app-text-soft)]">
-                  收盘价
+                  鏀剁洏浠?
                 </div>
                 <div className="mt-2 text-2xl text-[var(--app-text)]">
                   {signalSnapshot?.indicators.close.toFixed(2) ?? "-"}
@@ -202,7 +122,7 @@ function SummaryTab(props: { report: TimingReportPayload }) {
               </div>
               <div>
                 <div className="text-xs text-[var(--app-text-soft)]">
-                  量比 20D
+                  閲忔瘮 20D
                 </div>
                 <div className="mt-2 text-2xl text-[var(--app-text)]">
                   {signalSnapshot?.indicators.volumeRatio20.toFixed(2) ?? "-"}
@@ -217,8 +137,8 @@ function SummaryTab(props: { report: TimingReportPayload }) {
       </Panel>
 
       <Panel
-        title="价格结构"
-        description="首屏保留完整价格结构图，用趋势、均线与量能确认当前交易背景。"
+        title="浠锋牸缁撴瀯"
+        description="棣栧睆淇濈暀瀹屾暣浠锋牸缁撴瀯鍥撅紝鐢ㄨ秼鍔裤€佸潎绾夸笌閲忚兘纭褰撳墠浜ゆ槗鑳屾櫙銆?"
       >
         <TimingReportChart
           bars={report.bars}
@@ -229,14 +149,14 @@ function SummaryTab(props: { report: TimingReportPayload }) {
   );
 }
 
-function EvidenceTab(props: { report: TimingReportPayload }) {
+function EvidenceSection(props: { report: TimingReportPayload }) {
   const { report } = props;
 
   return (
     <div className="grid gap-6">
       <Panel
-        title="价格结构"
-        description="在结构证据里复用同一套价格结构图，方便把图表与证据引擎对照阅读。"
+        title="缁撴瀯璇佹嵁"
+        description="鎷嗗紑浠锋牸缁撴瀯鍜屽叚澶ц瘉鎹紩鎿庯紝鍥炵瓟褰撳墠涓轰粈涔堝亸杩欎釜鏂瑰悜銆?"
       >
         <TimingReportChart
           bars={report.bars}
@@ -244,7 +164,7 @@ function EvidenceTab(props: { report: TimingReportPayload }) {
         />
       </Panel>
 
-      <Panel title="六大证据引擎">
+      <Panel title="鍏ぇ璇佹嵁寮曟搸">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {evidenceOrder.map((key) => {
             const evidence = report.evidence[key];
@@ -259,7 +179,7 @@ function EvidenceTab(props: { report: TimingReportPayload }) {
                     {formatTimingEngineLabel(evidence.key)}
                   </div>
                   <StatusPill
-                    label={`${formatTimingDirectionLabel(evidence.direction)} · ${evidence.score}`}
+                    label={`${formatTimingDirectionLabel(evidence.direction)} 路 ${evidence.score}`}
                     tone={
                       evidence.direction === "bullish"
                         ? "success"
@@ -274,11 +194,11 @@ function EvidenceTab(props: { report: TimingReportPayload }) {
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <StatusPill
-                    label={`置信度 ${(evidence.confidence * 100).toFixed(0)}%`}
+                    label={`缃俊搴?${(evidence.confidence * 100).toFixed(0)}%`}
                     tone="info"
                   />
                   <StatusPill
-                    label={`权重 ${(evidence.weight * 100).toFixed(0)}%`}
+                    label={`鏉冮噸 ${(evidence.weight * 100).toFixed(0)}%`}
                   />
                 </div>
                 {evidence.warnings.length > 0 ? (
@@ -318,14 +238,14 @@ function EvidenceTab(props: { report: TimingReportPayload }) {
   );
 }
 
-function ExecutionTab(props: { report: TimingReportPayload }) {
+function ExecutionSection(props: { report: TimingReportPayload }) {
   const { report } = props;
   const signalContext = report.card.reasoning.signalContext;
 
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 xl:grid-cols-2">
-        <Panel title="触发条件" surface="inset">
+        <Panel title="瑙﹀彂鏉′欢" surface="inset">
           {signalContext.triggerNotes.length > 0 ? (
             <ul className="grid gap-2 text-sm leading-6 text-[var(--app-text-muted)]">
               {signalContext.triggerNotes.map((item) => (
@@ -338,11 +258,11 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
               ))}
             </ul>
           ) : (
-            <EmptyState title="暂无触发条件" />
+            <EmptyState title="鏆傛棤瑙﹀彂鏉′欢" />
           )}
         </Panel>
 
-        <Panel title="失效条件" surface="inset">
+        <Panel title="澶辨晥鏉′欢" surface="inset">
           {signalContext.invalidationNotes.length > 0 ? (
             <ul className="grid gap-2 text-sm leading-6 text-[var(--app-text-muted)]">
               {signalContext.invalidationNotes.map((item) => (
@@ -355,13 +275,13 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
               ))}
             </ul>
           ) : (
-            <EmptyState title="暂无失效条件" />
+            <EmptyState title="鏆傛棤澶辨晥鏉′欢" />
           )}
         </Panel>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <Panel title="市场环境">
+        <Panel title="甯傚満鐜">
           <div className="grid gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill
@@ -375,7 +295,7 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
                 tone="info"
               />
               <StatusPill
-                label={`持续 ${report.marketContext.persistenceDays} 天`}
+                label={`鎸佺画 ${report.marketContext.persistenceDays} 澶?`}
               />
               <StatusPill
                 label={formatTimingBreadthTrendLabel(
@@ -404,7 +324,7 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
           </div>
         </Panel>
 
-        <Panel title="风险标签" surface="inset">
+        <Panel title="椋庨櫓鏍囩" surface="inset">
           {report.card.riskFlags.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {report.card.riskFlags.map((flag) => (
@@ -416,7 +336,7 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
               ))}
             </div>
           ) : (
-            <EmptyState title="暂无风险标签" />
+            <EmptyState title="鏆傛棤椋庨櫓鏍囩" />
           )}
         </Panel>
       </div>
@@ -424,15 +344,15 @@ function ExecutionTab(props: { report: TimingReportPayload }) {
   );
 }
 
-function ReviewTab(props: { report: TimingReportPayload }) {
+function ReviewSection(props: { report: TimingReportPayload }) {
   const { report } = props;
 
   return (
-    <Panel title="轻量复盘时间线">
+    <Panel title="澶嶇洏璺熻釜">
       {report.reviewTimeline.length === 0 ? (
         <EmptyState
-          title="暂无已完成复盘记录"
-          description="这只股票的历史证明会在后续复盘写回后出现在这里。"
+          title="鏆傛棤宸插畬鎴愬鐩樿褰?"
+          description="杩欏彧鑲＄エ鐨勫巻鍙茶瘉鏄庝細鍦ㄥ悗缁鐩樺啓鍥炲悗鍑虹幇鍦ㄨ繖閲屻€?"
         />
       ) : (
         <div className="grid gap-3">
@@ -465,7 +385,7 @@ function ReviewTab(props: { report: TimingReportPayload }) {
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <div>
                   <div className="text-xs text-[var(--app-text-soft)]">
-                    区间收益
+                    鍖洪棿鏀剁泭
                   </div>
                   <div className="mt-1 text-base text-[var(--app-text)]">
                     {formatPct(item.actualReturnPct)}
@@ -473,7 +393,7 @@ function ReviewTab(props: { report: TimingReportPayload }) {
                 </div>
                 <div>
                   <div className="text-xs text-[var(--app-text-soft)]">
-                    最大顺行
+                    鏈€澶ч『琛?
                   </div>
                   <div className="mt-1 text-base text-[var(--app-text)]">
                     {formatPct(item.maxFavorableExcursionPct)}
@@ -481,7 +401,7 @@ function ReviewTab(props: { report: TimingReportPayload }) {
                 </div>
                 <div>
                   <div className="text-xs text-[var(--app-text-soft)]">
-                    最大逆行
+                    鏈€澶ч€嗚
                   </div>
                   <div className="mt-1 text-base text-[var(--app-text)]">
                     {formatPct(item.maxAdverseExcursionPct)}
@@ -501,40 +421,21 @@ function ReviewTab(props: { report: TimingReportPayload }) {
   );
 }
 
-export function TimingReportPanels(props: {
-  report: TimingReportPayload;
-  activeTabId?: TimingReportStageId;
-  onTabChange?: (tabId: TimingReportStageId) => void;
-}) {
-  const activeTabId =
-    props.activeTabId ?? timingReportStageTabs[0]?.id ?? "summary";
-
+export function TimingReportPanels(props: { report: TimingReportPayload }) {
   return (
-    <WorkflowStageSwitcher
-      tabs={timingReportStageTabs}
-      activeTabId={activeTabId}
-      onChange={(tabId) => props.onTabChange?.(tabId as TimingReportStageId)}
-      panels={{
-        summary: <SummaryTab report={props.report} />,
-        evidence: <EvidenceTab report={props.report} />,
-        execution: <ExecutionTab report={props.report} />,
-        review: <ReviewTab report={props.report} />,
-      }}
-    />
+    <div className="grid gap-6">
+      <SummarySection report={props.report} />
+      <EvidenceSection report={props.report} />
+      <ExecutionSection report={props.report} />
+      <ReviewSection report={props.report} />
+    </div>
   );
 }
 
 export function TimingReportView(props: { report: TimingReportPayload }) {
-  const [activeTabId, setActiveTabId] =
-    useState<TimingReportStageId>("summary");
-
   return (
     <div className="grid gap-6">
-      <TimingReportPanels
-        report={props.report}
-        activeTabId={activeTabId}
-        onTabChange={setActiveTabId}
-      />
+      <TimingReportPanels report={props.report} />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 /* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
 import React from "react";
-import Link from "next/link";
 import {
   EmptyState,
   InlineNotice,

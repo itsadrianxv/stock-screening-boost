@@ -39,8 +39,8 @@ import {
   getQuickResearchModePills,
   isCompanyResearchResult,
 } from "~/app/workflows/research-view-models";
-import { WorkflowVisualizationPanel } from "~/app/workflows/workflow-visualization-panel";
 import { resolveWorkflowShellContext } from "~/app/workflows/workflow-shell-context";
+import { WorkflowVisualizationPanel } from "~/app/workflows/workflow-visualization-panel";
 import {
   COMPANY_RESEARCH_TEMPLATE_CODE,
   QUICK_RESEARCH_TEMPLATE_CODE,
@@ -225,7 +225,7 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
           status: run.status,
           result: run.result,
           input: run.input,
-          currentNodeKey: run.currentNodeKey,
+          currentNodeKey: run.currentNodeKey ?? undefined,
         })
       : null;
   const showCompanyDetailExperience =
@@ -365,7 +365,15 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
           description="该任务可能已被删除，或当前账号没有访问权限。"
         />
       ) : showIndustryConclusion && industryConclusionModel ? (
-        <IndustryConclusionDetail model={industryConclusionModel} />
+        <div className="grid gap-6">
+          <WorkflowVisualizationPanel
+            runId={runId}
+            title="行业研究 Agent 状态图"
+            description="显示完整 Agent 拓扑、当前执行节点和本次运行已经走过的路径。"
+            detailHref={`/workflows/${runId}/debug`}
+          />
+          <IndustryConclusionDetail model={industryConclusionModel} />
+        </div>
       ) : (
         <>
           {showDigestBanner ? (
@@ -391,19 +399,12 @@ export function RunInvestorClient({ runId }: RunInvestorClientProps) {
             />
           ) : null}
 
-          {run.runView ? (
-            <Panel
-              title="流程路线图"
-              description="这张图展示这套研究流程应该怎么走，以及这次运行实际走到了哪一步。"
-            >
-              <WorkflowVisualizationPanel
-                runView={run.runView}
-                title="娴佺▼璺嚎鍥?"
-                description="杩欏紶鍥惧睍绀鸿繖濂楃爺绌舵祦绋嬪簲璇ユ€庝箞璧帮紝浠ュ強杩欐杩愯瀹為檯璧板埌浜嗗摢涓€姝ャ€?"
-                detailHref={`/workflows/${runId}/debug`}
-              />
-            </Panel>
-          ) : null}
+          <WorkflowVisualizationPanel
+            runId={runId}
+            title="Agent 状态图"
+            description="显示完整 Agent 拓扑、当前执行节点和本次运行已经走过的路径。"
+            detailHref={`/workflows/${runId}/debug`}
+          />
 
           {timingReportCardIds.length > 0 ? (
             <Panel

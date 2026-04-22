@@ -11,13 +11,12 @@ import {
   StatusPill,
   WorkspaceShell,
 } from "~/app/_components/ui";
-import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher";
 import { buildWorkflowRunHistoryItems } from "~/app/_components/workspace-history";
-import { companyResearchStageTabs } from "~/app/company-research/company-research-stage-tabs";
 import {
   applyCompanyResearchVoicePatch,
   buildCompanyResearchVoiceContext,
 } from "~/app/company-research/company-research-voice-adapter";
+import { WorkflowVisualizationPanel } from "~/app/workflows/workflow-visualization-panel";
 import { COMPANY_RESEARCH_TEMPLATE_CODE } from "~/server/domain/workflow/types";
 import { api } from "~/trpc/react";
 
@@ -75,9 +74,6 @@ export function CompanyResearchClient() {
   const [forbiddenEvidenceTypes, setForbiddenEvidenceTypes] = useState("");
   const [preferredSources, setPreferredSources] = useState("");
   const [freshnessWindowDays, setFreshnessWindowDays] = useState("180");
-  const [activeTabId, setActiveTabId] = useState(
-    companyResearchStageTabs[0]?.id ?? "target",
-  );
 
   useEffect(() => {
     const mappings = [
@@ -431,16 +427,16 @@ export function CompanyResearchClient() {
       }
     >
       <OpportunityIntelligenceSummary />
-      <WorkflowStageSwitcher
-        tabs={companyResearchStageTabs}
-        activeTabId={activeTabId}
-        onChange={setActiveTabId}
-        panels={{
-          target: targetPanel,
-          sources: sourcesPanel,
-          launch: launchPanel,
-        }}
+      <WorkflowVisualizationPanel
+        templateCode={COMPANY_RESEARCH_TEMPLATE_CODE}
+        title="公司判断 Agent 状态图"
+        description="发起前先查看完整公司研究拓扑；运行后结果页会实时高亮当前 Agent。"
       />
+      <div className="grid gap-6">
+        {targetPanel}
+        {sourcesPanel}
+        {launchPanel}
+      </div>
     </WorkspaceShell>
   );
 }

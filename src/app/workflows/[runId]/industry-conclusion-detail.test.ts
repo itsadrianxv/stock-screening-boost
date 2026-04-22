@@ -10,125 +10,108 @@ import {
 const model: IndustryConclusionViewModel = {
   query: "AI infra",
   generatedAtLabel: "2026/04/14 09:10",
-  headline: "AI 基建进入兑现窗口，优先跟进龙头链条。",
-  summary: "先看**结论**，再按板块展开证据和风险。",
-  verdictLabel: "高热度赛道",
+  headline: "AI infra is entering a validation window.",
+  summary:
+    "Read the **conclusion** first, then work through evidence and risk.",
+  verdictLabel: "High Conviction",
   verdictTone: "success",
   activeSectionId: "overview",
-  statusLabel: "已完成",
-  modePills: ["深度模式"],
+  statusLabel: "Complete",
+  modePills: ["Deep Mode"],
   metricStrip: [
-    { label: "可信度", value: "86" },
-    { label: "赛道热度", value: "82%" },
-    { label: "候选标的", value: "6" },
-    { label: "重点标的", value: "2" },
+    { label: "Confidence", value: "86" },
+    { label: "Heat", value: "82%" },
+    { label: "Candidates", value: "6" },
+    { label: "Top Picks", value: "2" },
   ],
   overviewPoints: [
-    "行业景气和产业事件正在形成共振。",
-    "更适合继续聚焦龙头，而不是均匀铺开。",
+    "Industry demand and event flow are resonating.",
+    "Concentrating into leaders is better than broad exposure.",
   ],
   overviewActions: [
     {
-      label: "继续看 中际旭创",
+      label: "Continue 中际旭创",
       href: "/company-research?companyName=%E4%B8%AD%E9%99%85%E6%97%AD%E5%88%9B",
       variant: "primary",
     },
-    { label: "加入研究空间", href: "/spaces?addRunId=run_quick_1" },
+    { label: "Add to Space", href: "/spaces?addRunId=run_quick_1" },
   ],
   notices: [
     {
-      title: "择时报告入口",
-      description: "若需要查看价格结构图，可进入对应报告。",
+      title: "Timing Report",
+      description: "Open the linked timing report for structure and follow-up.",
       tone: "info",
-      actions: [{ label: "查看单股报告", href: "/timing/reports/card_1" }],
+      actions: [{ label: "View Report", href: "/timing/reports/card_1" }],
     },
   ],
   sections: [
-    {
-      id: "overview",
-      label: "总览",
-      summary: "结论、摘要、动作",
-    },
-    {
-      id: "logic",
-      label: "核心逻辑",
-      summary: "行业驱动与重点标的",
-    },
-    {
-      id: "evidence",
-      label: "证据与可信度",
-      summary: "支持/不足/冲突",
-    },
-    {
-      id: "risks",
-      label: "风险与下一步",
-      summary: "缺口、反例和动作",
-    },
+    { id: "overview", label: "Overview", summary: "Conclusion and actions" },
+    { id: "logic", label: "Logic", summary: "Industry drivers and picks" },
+    { id: "evidence", label: "Evidence", summary: "Support and gaps" },
+    { id: "risks", label: "Risks", summary: "Open risks and next steps" },
   ],
   logic: {
-    industryDrivers: ["订单和扩产节奏同步强化"],
-    competitionSummary: "竞争格局仍向头部集中。",
+    industryDrivers: ["Orders and expansion cadence are aligned."],
+    competitionSummary: "Competition still favors leaders.",
     topPicks: [
       {
         stockCode: "300308",
         stockName: "中际旭创",
-        reason: "800G 放量延续。",
+        reason: "800G volume continues.",
         href: "/company-research?companyName=%E4%B8%AD%E9%99%85%E6%97%AD%E5%88%9B",
       },
     ],
   },
   evidence: {
     scoreLabel: "86",
-    levelLabel: "高",
+    levelLabel: "High",
     coverageLabel: "88%",
     tripletLabel: "1/1/0",
-    notes: ["一手信源覆盖偏少。"],
+    notes: ["First-party evidence is still thin."],
     qualityFlags: ["first_party_low"],
     missingRequirements: ["citation_coverage_below_target"],
     claims: [
       {
         claimId: "claim_1",
-        claimText: "龙头订单兑现更快。",
+        claimText: "Leader orders are monetizing faster.",
         label: "supported",
-        explanation: "公告和新闻交叉验证了**订单节奏**。",
+        explanation: "Announcements and news validate **order cadence**.",
       },
     ],
     researchPlan: [
       {
         id: "unit_theme",
-        title: "产业链景气跟踪",
+        title: "Theme tracking",
         capability: "theme_overview",
         status: "completed",
       },
     ],
   },
   risks: {
-    summary: "仍需补财报和公告交叉验证。",
-    missingAreas: ["财报披露滞后"],
-    riskSignals: ["估值和利润兑现仍需继续对表"],
-    unansweredQuestions: ["利润兑现是否足以支撑当前估值"],
-    nextActions: ["补充公告与财报验证", "转入公司判断：中际旭创"],
+    summary: "Still need cross-checks against filings and disclosures.",
+    missingAreas: ["Filings lag"],
+    riskSignals: ["Valuation still needs profit confirmation"],
+    unansweredQuestions: ["Can profits support the current multiple?"],
+    nextActions: ["Add filings check", "Transition to company research"],
   },
 };
 
 describe("IndustryConclusionDetail", () => {
-  it("renders the overview section by default", () => {
+  it("renders the full stacked conclusion document", () => {
     const markup = renderToStaticMarkup(
       React.createElement(IndustryConclusionDetail, { model }),
     );
 
     expect(markup).toContain('data-industry-conclusion-detail="true"');
-    expect(markup).toContain('data-active-section="overview"');
-    expect(markup).toContain("AI 基建进入兑现窗口，优先跟进龙头链条。");
-    expect(markup).toMatch(/<strong[^>]*>结论<\/strong>/);
-    expect(markup).toContain("查看单股报告");
-    expect(markup).toContain("加入研究空间");
-    expect(markup).toContain("行业景气和产业事件正在形成共振。");
-    expect(markup).not.toContain("公告和新闻交叉验证了订单节奏。");
-    expect(markup).not.toContain("财报披露滞后");
+    expect(markup).toContain("AI infra is entering a validation window.");
+    expect(markup).toContain("View Report");
+    expect(markup).toContain("Industry demand and event flow are resonating.");
+    expect(markup).toContain("Orders and expansion cadence are aligned.");
+    expect(markup).toContain("Leader orders are monetizing faster.");
+    expect(markup).toContain("Can profits support the current multiple?");
   });
 
-  it("renders only the requested section body when initialSectionId changes", () => {
+  it("ignores initialSectionId and keeps all sections visible in the stacked layout", () => {
     const markup = renderToStaticMarkup(
       React.createElement(IndustryConclusionDetail, {
         model,
@@ -136,12 +119,10 @@ describe("IndustryConclusionDetail", () => {
       }),
     );
 
-    expect(markup).toContain('data-active-section="evidence"');
-    expect(markup).toMatch(/<strong[^>]*>订单节奏<\/strong>/);
-    expect(markup).toContain("已支持");
-    expect(markup).toContain("引用覆盖未达到目标");
-    expect(markup).toContain("一手信源覆盖不足");
-    expect(markup).not.toContain("行业景气和产业事件正在形成共振。");
-    expect(markup).not.toContain("财报披露滞后");
+    expect(markup).toContain("鏈疆缁撹");
+    expect(markup).toContain("琛屼笟椹卞姩");
+    expect(markup).toContain("璇佹嵁鏍￠獙");
+    expect(markup).toContain("椋庨櫓鍒ゆ柇");
+    expect(markup).toContain("order cadence");
   });
 });

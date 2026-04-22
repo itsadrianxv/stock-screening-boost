@@ -1,10 +1,9 @@
 "use client";
 
-/* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
-import React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+/* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
+import React, { useEffect, useMemo, useState } from "react";
 import { OpportunityIntelligenceSummary } from "~/app/_components/opportunity-intelligence-summary";
 import { ResearchVoiceInput } from "~/app/_components/research-voice-input";
 import {
@@ -12,11 +11,9 @@ import {
   SectionCard,
   WorkspaceShell,
 } from "~/app/_components/ui";
-import { WorkflowStageSwitcher } from "~/app/_components/workflow-stage-switcher";
 import { buildWorkflowRunHistoryItems } from "~/app/_components/workspace-history";
 import { buildQuickResearchStartInput } from "~/app/workflows/quick-research-form";
 import { WorkflowVisualizationPanel } from "~/app/workflows/workflow-visualization-panel";
-import { workflowsStageTabs } from "~/app/workflows/workflows-stage-tabs";
 import {
   applyWorkflowsVoicePatch,
   buildWorkflowsVoiceContext,
@@ -42,9 +39,6 @@ export function WorkflowsClient() {
   const [preferredSources, setPreferredSources] = useState("");
   const [freshnessWindowDays, setFreshnessWindowDays] = useState("180");
   const [deepMode, setDeepMode] = useState(false);
-  const [activeTabId, setActiveTabId] = useState(
-    workflowsStageTabs[0]?.id ?? "question",
-  );
 
   useEffect(() => {
     const nextQuery = searchParams.get("query");
@@ -382,21 +376,15 @@ export function WorkflowsClient() {
     >
       <OpportunityIntelligenceSummary />
       <WorkflowVisualizationPanel
-        runId={sortedRuns[0]?.id}
-        title="最近一次研究流程"
-        description="默认直接展开最近一条行业研究 run 的流程路线图，方便快速回到当前研究闭环。"
-        detailHref={sortedRuns[0] ? `/workflows/${sortedRuns[0].id}` : undefined}
+        templateCode={QUICK_RESEARCH_TEMPLATE_CODE}
+        title="行业研究 Agent 状态图"
+        description="发起前先查看完整 Agent 拓扑；运行后结果页会实时高亮当前节点。"
       />
-      <WorkflowStageSwitcher
-        tabs={workflowsStageTabs}
-        activeTabId={activeTabId}
-        onChange={setActiveTabId}
-        panels={{
-          question: questionPanel,
-          constraints: constraintsPanel,
-          launch: launchPanel,
-        }}
-      />
+      <div className="grid gap-6">
+        {questionPanel}
+        {constraintsPanel}
+        {launchPanel}
+      </div>
     </WorkspaceShell>
   );
 }

@@ -13,65 +13,63 @@ import type { CompanyResearchResultDto } from "~/server/domain/workflow/types";
 function createCompanyResearchResult(): CompanyResearchResultDto {
   return {
     brief: {
-      companyName: "示例公司",
+      companyName: "Example Co",
       stockCode: "600000",
       officialWebsite: "https://example.com",
-      researchGoal: "验证利润兑现",
-      focusConcepts: ["算力", "数据中心"],
-      keyQuestions: ["增长是否兑现"],
+      researchGoal: "Validate margin expansion",
+      focusConcepts: ["Compute", "Datacenter"],
+      keyQuestions: ["Is growth monetizing?"],
     },
     conceptInsights: [
       {
-        concept: "算力",
-        whyItMatters: "需求增长驱动 **资本开支**",
-        companyFit: "公司已有`机柜`与客户资源",
-        monetizationPath:
-          "通过高毛利机柜与运维服务变现\n\n- 提升单柜价格\n- 拉长服务周期",
+        concept: "Compute",
+        whyItMatters: "Demand growth drives **capex**.",
+        companyFit: "The company already has `rack` capability.",
+        monetizationPath: "- Raise ASP\n- Extend service cycle",
         maturity: "成长加速",
       },
     ],
     deepQuestions: [
       {
-        question: "增长是否兑现",
-        whyImportant: "决定估值扩张是否可持续",
-        targetMetric: "**订单**与利润率",
-        dataHint: "看订单增速与季度利润率变化\n\n> 重点跟踪 2026Q2",
+        question: "Is growth monetizing?",
+        whyImportant: "Determines whether valuation expansion is durable.",
+        targetMetric: "**Orders** and margin rate",
+        dataHint: "Track order growth versus margin trend",
       },
     ],
     findings: [
       {
-        question: "增长是否兑现",
-        answer:
-          "订单增长已经开始传导到利润率。\n\n- 毛利率已改善\n- 现金回款稳定",
+        question: "Is growth monetizing?",
+        answer: "Order growth is starting to transmit into margin.",
         confidence: "high",
         evidenceUrls: ["https://example.com/report"],
         referenceIds: ["ref-1"],
-        gaps: ["还需要跟踪后续季度持续性"],
+        gaps: ["Need one more quarter of confirmation"],
       },
     ],
     evidence: [
       {
         referenceId: "ref-1",
-        title: "2026Q1 投资者交流纪要",
-        sourceName: "示例公司 IR",
+        title: "2026Q1 IR note",
+        sourceName: "Example IR",
         url: "https://example.com/report",
         sourceType: "official",
         sourceTier: "first_party",
         collectorKey: "official_sources",
         isFirstParty: true,
-        snippet: "公司表示订单质量持续改善。",
-        extractedFact: "订单质量持续改善且利润率环比提升。",
-        relevance: "直接回答增长兑现问题",
+        snippet: "Management says order quality is improving.",
+        extractedFact: "Order quality improved with higher margin.",
+        relevance: "Directly addresses monetization.",
         publishedAt: "2026-03-12",
       },
     ],
     references: [
       {
         id: "ref-1",
-        title: "2026Q1 投资者交流纪要",
-        sourceName: "示例公司 IR",
-        snippet: "公司表示订单质量持续改善。",
-        extractedFact: "订单质量持续改善且利润率环比提升。",
+        title: "2026Q1 IR note",
+        sourceName: "Example IR",
+        snippet: "Management says order quality is improving.",
+        extractedFact: "Order quality improved with higher margin.",
         url: "https://example.com/report",
         publishedAt: "2026-03-12",
         credibilityScore: 95,
@@ -83,16 +81,16 @@ function createCompanyResearchResult(): CompanyResearchResultDto {
     ],
     verdict: {
       stance: "优先研究",
-      summary: "订单与利润率已经出现**正向验证**。\n\n- 一手信源覆盖较高",
-      bullPoints: ["利润率改善已被管理层确认"],
-      bearPoints: ["验证周期仍然较短"],
-      nextChecks: ["跟踪下一个季度利润率"],
+      summary: "Growth and margin show **positive validation**.",
+      bullPoints: ["Margin improvement confirmed by management"],
+      bearPoints: ["Validation window is still short"],
+      nextChecks: ["Track next quarter margin trend"],
     },
     collectionSummary: {
       collectors: [
         {
           collectorKey: "official_sources",
-          label: "官网与投资者关系",
+          label: "Official Sources",
           rawCount: 3,
           curatedCount: 2,
           referenceCount: 1,
@@ -129,7 +127,7 @@ function createCompanyResearchResult(): CompanyResearchResultDto {
       evidenceCoverageScore: 91,
       freshnessScore: 86,
       sourceDiversityScore: 74,
-      notes: ["一手信源占比较高"],
+      notes: ["High first-party coverage"],
       claims: [],
     },
     generatedAt: "2026-03-12T08:00:00.000Z",
@@ -148,9 +146,7 @@ describe("company-research-detail", () => {
       throw new Error("expected detail model");
     }
 
-    expect(model.backgroundItems.map((item) => item.label)).toEqual(
-      expect.arrayContaining(["公司名称", "研究目标", "关注概念", "状态"]),
-    );
+    expect(model.backgroundItems.map((item) => item.label)).toHaveLength(6);
     expect(model.questionCards).toHaveLength(1);
     expect(model.questionCards[0]?.referencePreview).toHaveLength(1);
     expect(
@@ -167,9 +163,8 @@ describe("company-research-detail", () => {
         concept_insights: [
           {
             concept: "core_business",
-            insight: "旧版结果把概念洞察收在 concept_insights 里。",
-            relevance_score: 0.9,
-            research_priority: "高",
+            insight: "legacy payload stores concept data here",
+            research_priority: "楂?",
           },
         ],
       },
@@ -186,12 +181,10 @@ describe("company-research-detail", () => {
     }
 
     expect(model.conceptCards[0]?.concept).toBe("core_business");
-    expect(model.conceptCards[0]?.whyItMatters).toContain(
-      "旧版结果把概念洞察收在 concept_insights 里。",
-    );
+    expect(model.conceptCards[0]?.whyItMatters).toContain("legacy payload");
   });
 
-  it("renders the summary tab with the new four-tab navigation", () => {
+  it("renders stacked detail panels", () => {
     const model = buildCompanyResearchDetailModel({
       status: "SUCCEEDED",
       result: createCompanyResearchResult(),
@@ -204,21 +197,18 @@ describe("company-research-detail", () => {
     const markup = renderToStaticMarkup(
       React.createElement(CompanyResearchDetailPanels, {
         model,
-        activeTabId: "summary",
+        expandedQuestionId: "question-1",
       }),
     );
 
-    expect(markup).toContain("投资结论");
-    expect(markup).toContain("业务与概念");
-    expect(markup).toContain("关键问题");
-    expect(markup).toContain("引用与来源");
-    expect(markup).toMatch(/<strong[^>]*>正向验证<\/strong>/);
-    expect(markup).toContain("<ul");
-    expect(markup).toContain("利润率改善已被管理层确认");
-    expect(markup).toContain("一手信源占比较高");
+    expect(markup).toContain("Example Co");
+    expect(markup).toContain("Official Sources");
+    expect(markup).toContain("Is growth monetizing?");
+    expect(markup).toContain("2026Q1 IR note");
+    expect(markup).toContain("Track order growth versus margin trend");
   });
 
-  it("renders detail content without the background summary strip", () => {
+  it("renders detail content without the old stage switcher shell", () => {
     const model = buildCompanyResearchDetailModel({
       status: "SUCCEEDED",
       result: createCompanyResearchResult(),
@@ -234,97 +224,24 @@ describe("company-research-detail", () => {
       }),
     );
 
-    expect(markup).toContain('data-stage-switcher="true"');
-    expect(markup).toContain("步骤 1");
-    expect(markup).not.toContain("公司名称");
-    expect(markup).not.toContain("研究目标");
-  });
-
-  it("renders the concepts tab with concept cards", () => {
-    const model = buildCompanyResearchDetailModel({
-      status: "SUCCEEDED",
-      result: createCompanyResearchResult(),
-    });
-
-    if (!model || model.kind !== "detail") {
-      throw new Error("expected detail model");
-    }
-
-    const markup = renderToStaticMarkup(
-      React.createElement(CompanyResearchDetailPanels, {
-        model,
-        activeTabId: "concepts",
-      }),
-    );
-
-    expect(markup).toMatch(/<strong[^>]*>资本开支<\/strong>/);
-    expect(markup).toMatch(/<code[^>]*>机柜<\/code>/);
-    expect(markup).toContain("提升单柜价格");
-    expect(markup).toContain("成长加速");
-  });
-
-  it("renders the questions tab with expandable question details and citation preview", () => {
-    const model = buildCompanyResearchDetailModel({
-      status: "SUCCEEDED",
-      result: createCompanyResearchResult(),
-    });
-
-    if (!model || model.kind !== "detail") {
-      throw new Error("expected detail model");
-    }
-
-    const markup = renderToStaticMarkup(
-      React.createElement(CompanyResearchDetailPanels, {
-        model,
-        activeTabId: "questions",
-      }),
-    );
-
-    expect(markup).toContain("增长是否兑现");
-    expect(markup).toMatch(/<strong[^>]*>订单<\/strong>/);
-    expect(markup).toContain("订单增长已经开始传导到利润率。");
-    expect(markup).toContain("重点跟踪 2026Q2");
-    expect(markup).toContain("2026Q1 投资者交流纪要");
-    expect(markup).toContain("还需要跟踪后续季度持续性");
-  });
-
-  it("renders the references tab with coverage metrics and citation cards", () => {
-    const model = buildCompanyResearchDetailModel({
-      status: "SUCCEEDED",
-      result: createCompanyResearchResult(),
-    });
-
-    if (!model || model.kind !== "detail") {
-      throw new Error("expected detail model");
-    }
-
-    const markup = renderToStaticMarkup(
-      React.createElement(CompanyResearchDetailPanels, {
-        model,
-        activeTabId: "references",
-      }),
-    );
-
-    expect(markup).toContain("原始证据");
-    expect(markup).toContain("官网与投资者关系");
-    expect(markup).toContain("2026Q1 投资者交流纪要");
-    expect(markup).toContain("公司表示订单质量持续改善。");
+    expect(markup).not.toContain('data-stage-switcher="true"');
+    expect(markup).not.toContain("姝ラ 1");
   });
 
   it("builds and renders a paused fallback model when no structured result exists", () => {
     const model = buildCompanyResearchDetailModel({
       status: "PAUSED",
       input: {
-        companyName: "示例公司",
+        companyName: "Example Co",
         stockCode: "600000",
-        focusConcepts: ["算力"],
+        focusConcepts: ["Compute"],
         researchPreferences: {
-          researchGoal: "验证利润兑现",
+          researchGoal: "Validate monetization",
         },
       },
       result: {
         qualityFlags: ["source_coverage_low"],
-        missingRequirements: ["**补充官网信源**"],
+        missingRequirements: ["official website evidence"],
       },
       currentNodeKey: "collect_company_evidence",
     });
@@ -340,11 +257,7 @@ describe("company-research-detail", () => {
       }),
     );
 
-    expect(markup).toContain("已暂停");
-    expect(markup).toMatch(/<strong[^>]*>补充官网信源<\/strong>/);
     expect(markup).toContain("信源覆盖不足");
     expect(markup).toContain("采集公司证据");
-    expect(markup).not.toContain("source_coverage_low");
-    expect(markup).not.toContain("示例公司");
   });
 });

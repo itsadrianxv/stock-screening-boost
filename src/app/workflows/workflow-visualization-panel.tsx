@@ -1,49 +1,110 @@
 "use client";
 
-/* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
-import React from "react";
 import Link from "next/link";
+/* biome-ignore lint/correctness/noUnusedImports: React is required by the current JSX transform in tests. */
+import React, { useEffect } from "react";
 import {
   EmptyState,
   InlineNotice,
   LoadingSkeleton,
   Panel,
 } from "~/app/_components/ui";
-import { FlowGraph } from "~/app/workflows/flow-graph";
-import type { RunView } from "~/server/application/workflow/run-view";
+import { buildWorkflowDiagramRuntimeState } from "~/app/workflows/workflow-diagram-runtime";
+import {
+  getLatestWorkflowDiagramSpec,
+  getWorkflowDiagramSpec,
+} from "~/app/workflows/workflow-diagram-specs";
+import { WorkflowStateDiagram } from "~/app/workflows/workflow-state-diagram";
 import { api } from "~/trpc/react";
 
 type WorkflowVisualizationPanelProps = {
   runId?: string;
-  runView?: RunView | null;
+  templateCode?: string;
+  templateVersion?: number;
   title?: string;
   description?: string;
   detailHref?: string;
-  mode?: "user" | "debug";
 };
+
+function shouldStream(status?: string) {
+  return status === "PENDING" || status === "RUNNING" || status === "PAUSED";
+}
 
 export function WorkflowVisualizationPanel(
   props: WorkflowVisualizationPanelProps,
 ) {
   const {
     runId,
-    runView,
-    title = "流程可视化",
-    description = "展示这次工作流应该如何推进，以及当前记录实际走到了哪一步。",
+    templateCode,
+    templateVersion,
+    title = "流程状态图",
+    description = "显示完整 Agent 拓扑、当前执行节点和本次运行已经走过的路径。",
     detailHref,
-    mode = "user",
   } = props;
 
-  const shouldQuery = Boolean(runId) && !runView;
+  const utils = api.useUtils?.();
   const runQuery = api.workflow.getRun.useQuery(
     { runId: runId ?? "" },
     {
-      enabled: shouldQuery,
+      enabled: Boolean(runId),
       refetchOnWindowFocus: false,
     },
   );
 
-  const resolvedRunView = runView ?? runQuery.data?.runView ?? null;
+  const run = runQuery.data ?? null;
+  const resolvedTemplateCode = run?.template.code ?? templateCode;
+  const resolvedTemplateVersion = run?.template.version ?? templateVersion;
+  const spec =
+    resolvedTemplateCode && typeof resolvedTemplateVersion === "number"
+      ? getWorkflowDiagramSpec(resolvedTemplateCode, resolvedTemplateVersion)
+      : resolvedTemplateCode
+        ? getLatestWorkflowDiagramSpec(resolvedTemplateCode)
+        : null;
+  const runtime = run
+    ? buildWorkflowDiagramRuntimeState({ spec, run })
+    : spec
+      ? buildWorkflowDiagramRuntimeState({
+          spec,
+          run: {
+            id: "static-preview",
+            query: "",
+            status: "PENDING",
+            progressPercent: 0,
+            currentNodeKey: null,
+            input: {},
+            errorCode: null,
+            errorMessage: null,
+            result: {},
+            template: {
+              code: spec.templateCode,
+              version: spec.templateVersion,
+            },
+            createdAt: new Date(0),
+            startedAt: null,
+            completedAt: null,
+            nodes: [],
+            events: [],
+          },
+        })
+      : null;
+
+  useEffect(() => {
+    if (!runId || !run || !shouldStream(run.status)) {
+      return;
+    }
+
+    const eventSource = new EventSource(`/api/workflows/runs/${runId}/events`);
+    eventSource.onmessage = () => {
+      void utils?.workflow?.getRun?.invalidate?.({ runId });
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [runId, run, utils]);
 
   return (
     <Panel
@@ -57,26 +118,21 @@ export function WorkflowVisualizationPanel(
         ) : undefined
       }
     >
-      {runQuery.isLoading && !runView ? <LoadingSkeleton rows={3} /> : null}
+      {runQuery.isLoading ? <LoadingSkeleton rows={3} /> : null}
       {runQuery.error ? (
         <InlineNotice
           tone="danger"
-          title="流程可视化加载失败"
+          title="Workflow diagram failed to load"
           description={runQuery.error.message}
         />
       ) : null}
-      {!runQuery.isLoading && !runQuery.error && !resolvedRunView ? (
+      {!runQuery.isLoading && !runQuery.error && !runtime ? (
         <EmptyState
-          title="当前记录没有可视化流程数据"
-          description="这条记录目前没有可用于渲染流程图的工作流视图。"
+          title="No workflow diagram data"
+          description="Provide a workflow run or template code to render the state diagram."
         />
       ) : null}
-      {resolvedRunView ? (
-        <FlowGraph
-          graph={mode === "debug" ? resolvedRunView.debug : resolvedRunView.user}
-          mode={mode}
-        />
-      ) : null}
+      {runtime ? <WorkflowStateDiagram spec={spec} runtime={runtime} /> : null}
     </Panel>
   );
 }

@@ -71,10 +71,7 @@ export function FlowGraph(props: { graph: GraphView; mode: "user" | "debug" }) {
                     {stage.name}
                   </h3>
                 </div>
-                <StatusPill
-                  label={`${nodes.length} 个步骤`}
-                  tone="neutral"
-                />
+                <StatusPill label={`${nodes.length} 个步骤`} tone="neutral" />
               </div>
 
               <div className="mt-4 grid gap-3">

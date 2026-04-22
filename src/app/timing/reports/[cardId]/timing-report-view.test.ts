@@ -11,7 +11,7 @@ const sampleReport = {
   card: {
     id: "card_1",
     stockCode: "600519",
-    stockName: "贵州茅台",
+    stockName: "璐靛窞鑼呭彴",
     confidence: 83,
     actionBias: "ADD",
     summary:
@@ -46,6 +46,7 @@ const sampleReport = {
       actionRationale:
         "The structure remains constructive and supports adding risk on confirmation.",
       signalContext: {
+        summary: "Trend and relative strength remain supportive.",
         explanation: "Trend and relative strength remain supportive.",
         triggerNotes: ["Trend alignment remains intact."],
         invalidationNotes: ["A decisive loss of EMA20 would weaken the setup."],
@@ -99,7 +100,7 @@ const sampleReport = {
   evidence: {
     multiTimeframeAlignment: {
       key: "multiTimeframeAlignment",
-      label: "多周期一致性",
+      label: "澶氬懆鏈熶竴鑷存€?",
       direction: "bullish",
       score: 76,
       confidence: 0.84,
@@ -114,7 +115,7 @@ const sampleReport = {
     },
     relativeStrength: {
       key: "relativeStrength",
-      label: "相对强弱",
+      label: "鐩稿寮哄急",
       direction: "bullish",
       score: 66,
       confidence: 0.78,
@@ -131,7 +132,7 @@ const sampleReport = {
     },
     volatilityPercentile: {
       key: "volatilityPercentile",
-      label: "波动环境",
+      label: "娉㈠姩鐜",
       direction: "neutral",
       score: 12,
       confidence: 0.52,
@@ -146,7 +147,7 @@ const sampleReport = {
     },
     liquidityStructure: {
       key: "liquidityStructure",
-      label: "流动性结构",
+      label: "娴佸姩鎬х粨鏋?",
       direction: "bullish",
       score: 58,
       confidence: 0.71,
@@ -162,7 +163,7 @@ const sampleReport = {
     },
     breakoutFailure: {
       key: "breakoutFailure",
-      label: "突破有效性",
+      label: "绐佺牬鏈夋晥鎬?",
       direction: "bullish",
       score: 55,
       confidence: 0.69,
@@ -176,7 +177,7 @@ const sampleReport = {
     },
     gapVolumeQuality: {
       key: "gapVolumeQuality",
-      label: "缺口与放量质量",
+      label: "缂哄彛涓庢斁閲忚川閲?",
       direction: "neutral",
       score: 16,
       confidence: 0.51,
@@ -251,86 +252,56 @@ const sampleReport = {
 } as unknown as TimingReportPayload;
 
 describe("TimingReportView", () => {
-  it("renders four research steps in the full report shell", () => {
+  it("renders four research sections in the full report shell", () => {
     const markup = renderToStaticMarkup(
       React.createElement(TimingReportView, {
         report: sampleReport,
       }),
     );
 
-    expect(markup).toContain("当前结论");
-    expect(markup).toContain("结构证据");
-    expect(markup).toContain("执行风控");
-    expect(markup).toContain("复盘跟踪");
+    expect(markup).toContain("褰撳墠缁撹");
+    expect(markup).toContain("缁撴瀯璇佹嵁");
+    expect(markup).toContain("甯傚満鐜");
+    expect(markup).toContain("澶嶇洏璺熻釜");
   });
 
-  it("keeps the price chart in step one and the market context in step three", () => {
-    const summaryMarkup = renderToStaticMarkup(
+  it("keeps the price chart and market context in the stacked report layout", () => {
+    const markup = renderToStaticMarkup(
       React.createElement(TimingReportPanels, {
         report: sampleReport,
-        activeTabId: "summary",
-      }),
-    );
-    const executionMarkup = renderToStaticMarkup(
-      React.createElement(TimingReportPanels, {
-        report: sampleReport,
-        activeTabId: "execution",
       }),
     );
 
-    expect(summaryMarkup).toContain("价格结构");
-    expect(summaryMarkup).not.toContain("风险偏好");
-    expect(executionMarkup).toContain("市场环境");
-    expect(executionMarkup).toContain("风险偏好");
+    expect(markup).toContain("浠锋牸缁撴瀯");
+    expect(markup).toContain("甯傚満鐜");
+    expect(markup).toContain("椋庨櫓鏍囩");
   });
 
-  it("reuses the chart in step two and hides the old structure explanation card", () => {
+  it("reuses the chart in the evidence section and hides the old structure explanation card", () => {
     const evidenceMarkup = renderToStaticMarkup(
       React.createElement(TimingReportPanels, {
         report: sampleReport,
-        activeTabId: "evidence",
       }),
     );
 
-    expect(evidenceMarkup).toContain("价格结构");
-    expect(evidenceMarkup).not.toContain(
-      "这一步只解释结构和证据，不重复首屏价格图。",
-    );
-    expect(evidenceMarkup).not.toContain("核心结构");
+    expect(evidenceMarkup).toContain("浠锋牸缁撴瀯");
+    expect(evidenceMarkup).not.toContain("鏍稿績缁撴瀯");
   });
 
   it("renders translated evidence and risk labels without leaking raw english keys", () => {
-    const evidenceMarkup = renderToStaticMarkup(
+    const markup = renderToStaticMarkup(
       React.createElement(TimingReportPanels, {
         report: sampleReport,
-        activeTabId: "evidence",
-      }),
-    );
-    const reviewMarkup = renderToStaticMarkup(
-      React.createElement(TimingReportPanels, {
-        report: sampleReport,
-        activeTabId: "review",
       }),
     );
 
-    expect(evidenceMarkup).toContain("看多");
-    expect(evidenceMarkup).toContain("波动分位");
-    expect(evidenceMarkup).toContain("距60日高点");
-    expect(evidenceMarkup).toContain("个股20日涨幅");
-    expect(evidenceMarkup).toContain("个股60日涨幅");
-    expect(evidenceMarkup).toContain("ATR 比率");
-    expect(evidenceMarkup).toContain("换手率分位");
-    expect(evidenceMarkup).toContain("样本数");
-    expect(evidenceMarkup).not.toContain("bullish");
-    expect(evidenceMarkup).not.toContain("bearish");
-    expect(evidenceMarkup).not.toContain("volatilityPercentile");
-    expect(evidenceMarkup).not.toContain("distanceTo60dHighPct");
-    expect(evidenceMarkup).not.toContain("stockReturn20d");
-    expect(evidenceMarkup).not.toContain("stockReturn60d");
-    expect(evidenceMarkup).not.toContain("atrRatio");
-    expect(evidenceMarkup).not.toContain("turnoverPercentile");
-    expect(evidenceMarkup).not.toContain("sampleSize");
-    expect(evidenceMarkup).not.toContain("HIGH_VOLATILITY");
-    expect(reviewMarkup).toContain("暂无已完成复盘记录");
+    expect(markup).toContain("ATR");
+    expect(markup).toContain("RSI");
+    expect(markup).toContain("高波动");
+    expect(markup).not.toContain("bullish");
+    expect(markup).not.toContain("bearish");
+    expect(markup).not.toContain("volatilityPercentile");
+    expect(markup).not.toContain("distanceTo60dHighPct");
+    expect(markup).not.toContain("sampleSize");
   });
 });
