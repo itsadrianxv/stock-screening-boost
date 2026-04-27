@@ -12,6 +12,7 @@ import { ResearchToolRegistry } from "~/server/application/intelligence/research
 import { MarketRegimeService } from "~/server/application/timing/market-regime-service";
 import { TimingAnalysisService } from "~/server/application/timing/timing-analysis-service";
 import { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
+import { KronosForecastWorkflowService } from "~/server/application/timing/kronos-forecast-workflow-service";
 import { PositionContextService } from "~/server/application/timing/position-context-service";
 import { TimingReviewSchedulingService } from "~/server/application/timing/timing-review-scheduling-service";
 import { WatchlistPortfolioManagerService } from "~/server/application/timing/watchlist-portfolio-manager-service";
@@ -34,6 +35,8 @@ import { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastruc
 import { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
 import { PrismaTimingPresetAdjustmentSuggestionRepository } from "~/server/infrastructure/timing/prisma-timing-preset-adjustment-suggestion-repository";
 import { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
+import { KronosForecastClient } from "~/server/infrastructure/timing/kronos-forecast-client";
+import { PrismaTimingKronosForecastSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-kronos-forecast-snapshot-repository";
 import { PythonTimingDataClient } from "~/server/infrastructure/timing/python-timing-data-client";
 import { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
 import { PrismaTimingRecommendationRepository } from "~/server/infrastructure/timing/prisma-timing-recommendation-repository";
@@ -99,6 +102,8 @@ const timingSignalSnapshotRepository =
 const timingAnalysisCardRepository = new PrismaTimingAnalysisCardRepository(db);
 const timingRecommendationRepository =
   new PrismaTimingRecommendationRepository(db);
+const kronosForecastSnapshotRepository =
+  new PrismaTimingKronosForecastSnapshotRepository(db);
 const reminderSchedulingService = new ReminderSchedulingService({
   reminderRepository,
 });
@@ -121,6 +126,10 @@ const watchlistPortfolioManagerService = new WatchlistPortfolioManagerService({
   positionContextService: new PositionContextService(),
 });
 const pythonTimingDataClient = new PythonTimingDataClient();
+const kronosForecastWorkflowService = new KronosForecastWorkflowService({
+  client: new KronosForecastClient(),
+  snapshotRepository: kronosForecastSnapshotRepository,
+});
 const timingReviewSchedulingService = new TimingReviewSchedulingService({
   reviewRecordRepository: timingReviewRecordRepository,
   reminderSchedulingService,
@@ -162,6 +171,7 @@ const executionService = new WorkflowExecutionService({
       portfolioManagerService: watchlistPortfolioManagerService,
       recommendationRepository: timingRecommendationRepository,
       reviewSchedulingService: timingReviewSchedulingService,
+      kronosForecastWorkflowService,
     }),
     new TimingReviewLoopLangGraph({
       timingDataClient: pythonTimingDataClient,

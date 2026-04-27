@@ -8,6 +8,7 @@ import type {
   TimingAction,
   TimingCardDraft,
   TimingFeedbackContext,
+  TimingKronosForecastSummary,
   TimingPositionContext,
   TimingPresetConfig,
   TimingRecommendationDraft,
@@ -24,6 +25,66 @@ function round(value: number) {
 
 function unique<T>(values: T[]) {
   return [...new Set(values)];
+}
+
+function kronosConfidenceAdjustment(
+  forecast: TimingKronosForecastSummary | undefined,
+) {
+  if (!forecast) {
+    return 0;
+  }
+  if (
+    forecast.direction === "bullish" &&
+    forecast.expectedReturnPct >= 5 &&
+    forecast.maxDrawdownPct > -8
+  ) {
+    return Math.round(6 * forecast.confidence);
+  }
+  if (
+    forecast.direction === "bearish" ||
+    forecast.expectedReturnPct <= -3 ||
+    forecast.maxDrawdownPct <= -10
+  ) {
+    return -Math.round(10 * forecast.confidence);
+  }
+  return 0;
+}
+
+function kronosScoreAdjustment(
+  forecast: TimingKronosForecastSummary | undefined,
+) {
+  if (!forecast) {
+    return 0;
+  }
+  if (
+    forecast.direction === "bullish" &&
+    forecast.expectedReturnPct >= 5 &&
+    forecast.maxDrawdownPct > -8
+  ) {
+    return 8 * forecast.confidence;
+  }
+  if (
+    forecast.direction === "bearish" ||
+    forecast.expectedReturnPct <= -3 ||
+    forecast.maxDrawdownPct <= -10
+  ) {
+    return -12 * forecast.confidence;
+  }
+  return 0;
+}
+
+function buildKronosRationale(
+  forecast: TimingKronosForecastSummary | undefined,
+) {
+  if (!forecast) {
+    return "Kronos forecast unavailable; auxiliary weight treated as 0.";
+  }
+
+  return `Kronos forecast is ${forecast.direction}: expected return ${round(
+    forecast.expectedReturnPct,
+  )}%, max drawdown ${round(forecast.maxDrawdownPct)}%, confidence ${round(
+    forecast.confidence * 100,
+  )}%.`;
 }
 
 type Candidate = {
@@ -131,6 +192,7 @@ export class WatchlistPortfolioManagerService {
             positionNormalizedAction,
             params.marketContextAnalysis,
             positionContext,
+            card.reasoning.kronosForecast,
           ),
           minPct: range.minPct,
           maxPct: range.maxPct,
@@ -143,6 +205,7 @@ export class WatchlistPortfolioManagerService {
             positionContext,
             params.feedbackContext,
             resolvedPresetConfig,
+            card.reasoning.kronosForecast,
           ),
           riskFlags: unique(riskFlags),
         } satisfies Candidate;
@@ -228,6 +291,15 @@ export class WatchlistPortfolioManagerService {
             params.marketContextAnalysis,
             positionContext,
           ),
+          kronosForecast: candidate.card.reasoning.kronosForecast,
+          kronosWarnings: candidate.card.reasoning.kronosForecast
+            ? candidate.card.reasoning.kronosWarnings
+            : [
+                ...new Set([
+                  ...(candidate.card.reasoning.kronosWarnings ?? []),
+                  "Kronos forecast unavailable; auxiliary weight treated as 0.",
+                ]),
+              ],
         },
       };
     });
@@ -389,6 +461,7 @@ export class WatchlistPortfolioManagerService {
     normalizedAction: TimingAction,
     marketContextAnalysis: MarketContextAnalysis,
     positionContext: TimingPositionContext,
+    kronosForecast?: TimingKronosForecastSummary,
   ) {
     let next = confidence;
     if (
@@ -409,6 +482,7 @@ export class WatchlistPortfolioManagerService {
     ) {
       next += 4;
     }
+    next += kronosConfidenceAdjustment(kronosForecast);
     return clamp(Math.round(next), 25, 95);
   }
 
@@ -419,6 +493,7 @@ export class WatchlistPortfolioManagerService {
     positionContext: TimingPositionContext,
     feedbackContext: TimingFeedbackContext | undefined,
     presetConfig: TimingPresetConfig,
+    kronosForecast?: TimingKronosForecastSummary,
   ) {
     const contextWeights = presetConfig.contextWeights ?? {};
     const positionAdjustment =
@@ -457,7 +532,8 @@ export class WatchlistPortfolioManagerService {
       (marketScore + transitionScore) * (contextWeights.marketContext ?? 0.9) +
       positionAdjustment * (contextWeights.positionContext ?? 0.8) +
       feedbackScore * (contextWeights.feedbackContext ?? 0.6) +
-      card.reasoning.signalContext.signalStrength * 0.35
+      card.reasoning.signalContext.signalStrength * 0.35 +
+      kronosScoreAdjustment(kronosForecast)
     );
   }
 
@@ -495,6 +571,6 @@ export class WatchlistPortfolioManagerService {
         ? "失效位未设置。"
         : `失效风险 ${positionContext.invalidationRisk}，距失效位 ${positionContext.distanceToInvalidationPct ?? "-"}%。`;
 
-    return `${candidate.card.reasoning.actionRationale} ${heldText} ${invalidationText} ${marketContextAnalysis.summary}`;
+    return `${candidate.card.reasoning.actionRationale} ${heldText} ${invalidationText} ${marketContextAnalysis.summary} ${buildKronosRationale(candidate.card.reasoning.kronosForecast)}`;
   }
 }

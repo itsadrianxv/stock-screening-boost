@@ -96,6 +96,7 @@ function createSandbox(options?: {
       'if ($joined -match "(^| )compose " -and $joined -match " exec -T") {',
       '  Write-Output "AUTH_SECRET=test-secret"',
       '  Write-Output "NEXTAUTH_URL=http://localhost:3000"',
+      '  Write-Output "KRONOS_SERVICE_URL=http://kronos-service:8010"',
       "  exit 0",
       "}",
       'Write-Error "Unexpected docker invocation: $joined"',
@@ -169,42 +170,36 @@ describe("deploy-main.ps1", () => {
     );
   });
 
-  it(
-    "uses the deploy-main compose paths and validates required env vars",
-    () => {
-      const { root, binDir, dockerLog } = createSandbox();
-      sandboxes.push(root);
+  it("uses the deploy-main compose paths and validates required env vars", () => {
+    const { root, binDir, dockerLog } = createSandbox();
+    sandboxes.push(root);
 
-      const result = runDeployScript(root, binDir, [
-        "-Services",
-        "web",
-        "-RequiredEnv",
-        "AUTH_SECRET,NEXTAUTH_URL",
-      ]);
+    const result = runDeployScript(root, binDir, [
+      "-Services",
+      "web",
+      "-RequiredEnv",
+      "AUTH_SECRET,NEXTAUTH_URL,KRONOS_SERVICE_URL",
+    ]);
 
-      expect(result.status).toBe(0);
+    expect(result.status).toBe(0);
 
-      const log = readFileSync(dockerLog, "utf8");
-      expect(log).toContain(
-        path.join(
-          root,
-          ".worktrees",
-          "deploy-main",
-          "deploy",
-          "docker-compose.yml",
-        ),
-      );
-      expect(log).toContain(
-        path.join(root, ".worktrees", "deploy-main", ".env"),
-      );
-      expect(log).toContain(
-        path.join(root, ".worktrees", "deploy-main", "deploy"),
-      );
-      expect(log).toContain("up -d --build web");
-      expect(log).toContain("exec -T web");
-    },
-    15_000,
-  );
+    const log = readFileSync(dockerLog, "utf8");
+    expect(log).toContain(
+      path.join(
+        root,
+        ".worktrees",
+        "deploy-main",
+        "deploy",
+        "docker-compose.yml",
+      ),
+    );
+    expect(log).toContain(path.join(root, ".worktrees", "deploy-main", ".env"));
+    expect(log).toContain(
+      path.join(root, ".worktrees", "deploy-main", "deploy"),
+    );
+    expect(log).toContain("up -d --build web");
+    expect(log).toContain("exec -T web");
+  }, 15_000);
 
   it("accepts comma-separated services even when required env validation is omitted", () => {
     const { root, binDir, dockerLog } = createSandbox();

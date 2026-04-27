@@ -7,6 +7,7 @@ import type {
   TimingBar,
   TimingChartLevels,
   TimingChartLinePoint,
+  TimingKronosForecast,
 } from "~/server/domain/timing/types";
 
 type MovingAverageVisibility = {
@@ -35,6 +36,10 @@ export type TimingReportChartInput = {
   showBollinger: boolean;
   showVolume: boolean;
   showMovingAverages: MovingAverageVisibility;
+  forecast?: Pick<
+    TimingKronosForecast,
+    "points" | "summary" | "warnings" | "modelName" | "predictionLength"
+  >;
 };
 
 function calculateSimpleMovingAverage(values: number[], windowSize: number) {
@@ -67,7 +72,6 @@ function lineSeriesData(
   dates: string[],
 ): Array<number | null> {
   const valueByDate = new Map(line.map((item) => [item.tradeDate, item.value]));
-
   return dates.map((date) => valueByDate.get(date) ?? null);
 }
 
@@ -93,8 +97,15 @@ function buildHorizontalLine(
   };
 }
 
+function nulls(length: number) {
+  return Array.from({ length }, () => null);
+}
+
 export function buildTimingReportChartOption(input: TimingReportChartInput) {
   const dates = input.bars.map((bar) => bar.tradeDate);
+  const forecastDates =
+    input.forecast?.points.map((point) => point.tradeDate) ?? [];
+  const allDates = [...dates, ...forecastDates];
   const closeValues = input.bars.map((bar) => bar.close);
   const bollingerMiddle = calculateSimpleMovingAverage(closeValues, 20);
   const bollingerStd = calculateStandardDeviation(closeValues, 20);
@@ -111,7 +122,10 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
     {
       name: "价格",
       type: "candlestick",
-      data: input.bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]),
+      data: allDates.map((date) => {
+        const bar = input.bars.find((item) => item.tradeDate === date);
+        return bar ? [bar.open, bar.close, bar.low, bar.high] : null;
+      }),
       itemStyle: {
         color: "#11ff99",
         color0: "#ff2047",
@@ -126,7 +140,11 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "成交量",
             type: "bar",
-            data: input.bars.map((bar) => bar.volume),
+            data: allDates.map(
+              (date) =>
+                input.bars.find((bar) => bar.tradeDate === date)?.volume ??
+                null,
+            ),
             xAxisIndex: 1,
             yAxisIndex: 1,
             itemStyle: {
@@ -141,7 +159,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "EMA 5",
             type: "line",
-            data: lineSeriesData(input.chartLevels.ema5, dates),
+            data: lineSeriesData(input.chartLevels.ema5, allDates),
             symbol: "none",
             lineStyle: { color: "#ffc53d", width: 1.5 },
           },
@@ -152,7 +170,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "EMA 20",
             type: "line",
-            data: lineSeriesData(input.chartLevels.ema20, dates),
+            data: lineSeriesData(input.chartLevels.ema20, allDates),
             symbol: "none",
             lineStyle: { color: "#3b9eff", width: 1.5 },
           },
@@ -163,7 +181,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "EMA 60",
             type: "line",
-            data: lineSeriesData(input.chartLevels.ema60, dates),
+            data: lineSeriesData(input.chartLevels.ema60, allDates),
             symbol: "none",
             lineStyle: { color: "#9a77ff", width: 1.2 },
           },
@@ -174,7 +192,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "EMA 120",
             type: "line",
-            data: lineSeriesData(input.chartLevels.ema120, dates),
+            data: lineSeriesData(input.chartLevels.ema120, allDates),
             symbol: "none",
             lineStyle: { color: "#ffffff", width: 1.2, opacity: 0.72 },
           },
@@ -185,21 +203,21 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
           {
             name: "BOLL 上轨",
             type: "line",
-            data: bollingerUpper,
+            data: [...bollingerUpper, ...nulls(forecastDates.length)],
             symbol: "none",
             lineStyle: { color: "rgba(255,255,255,0.34)", width: 1 },
           },
           {
             name: "BOLL 中轨",
             type: "line",
-            data: bollingerMiddle,
+            data: [...bollingerMiddle, ...nulls(forecastDates.length)],
             symbol: "none",
             lineStyle: { color: "rgba(255,255,255,0.24)", width: 1 },
           },
           {
             name: "BOLL 下轨",
             type: "line",
-            data: bollingerLower,
+            data: [...bollingerLower, ...nulls(forecastDates.length)],
             symbol: "none",
             lineStyle: { color: "rgba(255,255,255,0.34)", width: 1 },
           },
@@ -208,15 +226,69 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
     buildHorizontalLine(
       "60日高点",
       input.chartLevels.recentHigh60d,
-      input.bars.length,
+      allDates.length,
       "rgba(255, 197, 61, 0.78)",
     ),
     buildHorizontalLine(
       "20日低点",
       input.chartLevels.recentLow20d,
-      input.bars.length,
+      allDates.length,
       "rgba(255, 32, 71, 0.76)",
     ),
+    ...(input.forecast
+      ? [
+          {
+            name: "Kronos 风险区间",
+            type: "line",
+            data: allDates.map((date) => {
+              const point = input.forecast?.points.find(
+                (item) => item.tradeDate === date,
+              );
+              return point ? point.low : null;
+            }),
+            symbol: "none",
+            lineStyle: { opacity: 0 },
+            areaStyle: {
+              color: "rgba(20, 184, 166, 0.16)",
+              origin: "end",
+            },
+            stack: "kronos-band",
+          },
+          {
+            name: "Kronos 预测 high",
+            type: "line",
+            data: allDates.map((date) => {
+              const point = input.forecast?.points.find(
+                (item) => item.tradeDate === date,
+              );
+              return point ? point.high - point.low : null;
+            }),
+            symbol: "none",
+            lineStyle: { opacity: 0 },
+            areaStyle: {
+              color: "rgba(20, 184, 166, 0.16)",
+              origin: "start",
+            },
+            stack: "kronos-band",
+          },
+          {
+            name: "Kronos 预测 close",
+            type: "line",
+            data: allDates.map((date) => {
+              const point = input.forecast?.points.find(
+                (item) => item.tradeDate === date,
+              );
+              return point ? point.close : null;
+            }),
+            symbol: "none",
+            lineStyle: {
+              color: "#14b8a6",
+              width: 1.8,
+              type: "dashed",
+            },
+          },
+        ]
+      : []),
   ];
 
   return {
@@ -257,7 +329,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
     xAxis: [
       {
         type: "category",
-        data: dates,
+        data: allDates,
         boundaryGap: true,
         axisLine: {
           lineStyle: {
@@ -271,7 +343,7 @@ export function buildTimingReportChartOption(input: TimingReportChartInput) {
       },
       {
         type: "category",
-        data: dates,
+        data: allDates,
         boundaryGap: true,
         gridIndex: 1,
         axisLine: {
@@ -363,8 +435,9 @@ export function syncTimingReportChart(params: {
 export function TimingReportChart(props: {
   bars: TimingBar[];
   chartLevels: TimingChartLevels;
+  forecast?: TimingReportChartInput["forecast"];
 }) {
-  const { bars, chartLevels } = props;
+  const { bars, chartLevels, forecast } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showBollinger, setShowBollinger] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
@@ -410,6 +483,7 @@ export function TimingReportChart(props: {
           showBollinger,
           showVolume,
           showMovingAverages,
+          forecast,
         },
       });
     }
@@ -419,7 +493,14 @@ export function TimingReportChart(props: {
     return () => {
       cleanup?.();
     };
-  }, [bars, chartLevels, showBollinger, showMovingAverages, showVolume]);
+  }, [
+    bars,
+    chartLevels,
+    forecast,
+    showBollinger,
+    showMovingAverages,
+    showVolume,
+  ]);
 
   return (
     <div className="grid gap-4">
@@ -459,7 +540,7 @@ export function TimingReportChart(props: {
 
       <div
         ref={containerRef}
-        className="h-[420px] w-full rounded-[14px] border border-[var(--app-border-soft)] bg-[var(--app-panel-soft)]"
+        className="h-[420px] w-full rounded-[8px] border border-[var(--app-border-soft)] bg-[var(--app-panel-soft)]"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -474,6 +555,14 @@ export function TimingReportChart(props: {
         <StatusPill
           label={`放量日期 ${chartLevels.volumeSpikeDates.length}`}
           tone="warning"
+        />
+        <StatusPill
+          label={
+            forecast
+              ? `Kronos 预测 ${forecast.modelName} / ${forecast.predictionLength}日`
+              : "Kronos 预测不可用"
+          }
+          tone={forecast ? "info" : "warning"}
         />
       </div>
     </div>

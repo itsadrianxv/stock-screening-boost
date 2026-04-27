@@ -6,6 +6,7 @@ import { applyTimingPresetPatch } from "~/server/application/timing/timing-feedb
 import { TimingReportService } from "~/server/application/timing/timing-report-service";
 import { PrismaPortfolioSnapshotRepository } from "~/server/infrastructure/timing/prisma-portfolio-snapshot-repository";
 import { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
+import { PrismaTimingKronosForecastSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-kronos-forecast-snapshot-repository";
 import { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-market-context-snapshot-repository";
 import { PrismaTimingPresetAdjustmentSuggestionRepository } from "~/server/infrastructure/timing/prisma-timing-preset-adjustment-suggestion-repository";
 import { PrismaTimingPresetRepository } from "~/server/infrastructure/timing/prisma-timing-preset-repository";
@@ -232,6 +233,8 @@ export const timingRouter = createTRPCRouter({
         reviewRecordRepository: new PrismaTimingReviewRecordRepository(ctx.db),
         marketContextSnapshotRepository:
           new PrismaTimingMarketContextSnapshotRepository(ctx.db),
+        kronosForecastSnapshotRepository:
+          new PrismaTimingKronosForecastSnapshotRepository(ctx.db),
         timingDataClient: new PythonTimingDataClient(),
         marketRegimeService: new MarketRegimeService(),
       });

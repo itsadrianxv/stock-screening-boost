@@ -11,6 +11,7 @@ import type {
   TimingSignalEngineResult,
 } from "~/server/domain/timing/types";
 import type { PrismaTimingAnalysisCardRepository } from "~/server/infrastructure/timing/prisma-timing-analysis-card-repository";
+import type { PrismaTimingKronosForecastSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-kronos-forecast-snapshot-repository";
 import type { PrismaTimingMarketContextSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-market-context-snapshot-repository";
 import type { PrismaTimingReviewRecordRepository } from "~/server/infrastructure/timing/prisma-timing-review-record-repository";
 import type { PrismaTimingSignalSnapshotRepository } from "~/server/infrastructure/timing/prisma-timing-signal-snapshot-repository";
@@ -219,6 +220,10 @@ export class TimingReportService {
         PrismaTimingMarketContextSnapshotRepository,
         "getByAsOfDate" | "listRecent" | "upsert"
       >;
+      kronosForecastSnapshotRepository?: Pick<
+        PrismaTimingKronosForecastSnapshotRepository,
+        "getLatestForStock"
+      >;
       timingDataClient: Pick<
         PythonTimingDataClient,
         "getBars" | "getMarketContext"
@@ -245,32 +250,38 @@ export class TimingReportService {
       return null;
     }
 
-    const [bars, reviewTimeline, marketSnapshot] = await Promise.all([
-      hasFrozenBars(card.signalSnapshot?.bars)
-        ? Promise.resolve(card.signalSnapshot?.bars ?? [])
-        : this.deps.timingDataClient
-            .getBars({
-              stockCode: card.stockCode,
-              end: asOfDate,
-            })
-            .then(async (barsResponse) => {
-              if (card.signalSnapshotId) {
-                await this.deps.signalSnapshotRepository.updateFrozenBars({
-                  signalSnapshotId: card.signalSnapshotId,
-                  bars: barsResponse.bars,
-                });
-              }
+    const [bars, reviewTimeline, marketSnapshot, kronosForecastSnapshot] =
+      await Promise.all([
+        hasFrozenBars(card.signalSnapshot?.bars)
+          ? Promise.resolve(card.signalSnapshot?.bars ?? [])
+          : this.deps.timingDataClient
+              .getBars({
+                stockCode: card.stockCode,
+                end: asOfDate,
+              })
+              .then(async (barsResponse) => {
+                if (card.signalSnapshotId) {
+                  await this.deps.signalSnapshotRepository.updateFrozenBars({
+                    signalSnapshotId: card.signalSnapshotId,
+                    bars: barsResponse.bars,
+                  });
+                }
 
-              return barsResponse.bars;
-            }),
-      this.deps.reviewRecordRepository.listForUser({
-        userId: params.userId,
-        stockCode: card.stockCode,
-        limit: 5,
-        completedOnly: true,
-      }),
-      this.deps.marketContextSnapshotRepository.getByAsOfDate(asOfDate),
-    ]);
+                return barsResponse.bars;
+              }),
+        this.deps.reviewRecordRepository.listForUser({
+          userId: params.userId,
+          stockCode: card.stockCode,
+          limit: 5,
+          completedOnly: true,
+        }),
+        this.deps.marketContextSnapshotRepository.getByAsOfDate(asOfDate),
+        this.deps.kronosForecastSnapshotRepository?.getLatestForStock({
+          userId: params.userId,
+          stockCode: card.stockCode,
+          asOfDate,
+        }) ?? Promise.resolve(null),
+      ]);
 
     const marketContext =
       marketSnapshot?.analysis ??
@@ -286,6 +297,7 @@ export class TimingReportService {
       evidence: buildEvidence(card.signalSnapshot?.signalContext.engines ?? []),
       marketContext,
       reviewTimeline,
+      kronosForecast: kronosForecastSnapshot?.forecast,
     };
   }
 }

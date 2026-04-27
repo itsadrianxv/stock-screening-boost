@@ -223,6 +223,7 @@ function SummaryTab(props: { report: TimingReportPayload }) {
         <TimingReportChart
           bars={report.bars}
           chartLevels={report.chartLevels}
+          forecast={report.kronosForecast}
         />
       </Panel>
     </div>
@@ -241,6 +242,7 @@ function EvidenceTab(props: { report: TimingReportPayload }) {
         <TimingReportChart
           bars={report.bars}
           chartLevels={report.chartLevels}
+          forecast={report.kronosForecast}
         />
       </Panel>
 

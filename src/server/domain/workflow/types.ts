@@ -151,6 +151,7 @@ export const WATCHLIST_TIMING_PIPELINE_NODE_KEYS = [
   "fetch_signal_snapshots_batch",
   "technical_signal_agent",
   "timing_synthesis_agent",
+  "kronos_forecast_agent",
   "market_regime_agent",
   "watchlist_risk_manager",
   "watchlist_portfolio_manager",

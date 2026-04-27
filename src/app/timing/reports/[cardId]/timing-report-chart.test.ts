@@ -68,6 +68,50 @@ describe("timing report chart helpers", () => {
     );
   });
 
+  it("adds Kronos forecast close line and risk band when forecast is available", () => {
+    const option = buildTimingReportChartOption({
+      ...sampleInput,
+      forecast: {
+        modelName: "NeoQuasar/Kronos-base",
+        predictionLength: 60,
+        warnings: [],
+        summary: {
+          expectedReturnPct: 6,
+          maxDrawdownPct: -2.5,
+          upsidePct: 7.2,
+          volatilityProxy: 0.2,
+          direction: "bullish",
+          confidence: 0.7,
+        },
+        points: [
+          {
+            tradeDate: "2026-03-09",
+            open: 1682,
+            high: 1704,
+            low: 1672,
+            close: 1698,
+            volume: 2200,
+            amount: 3_700_000,
+          },
+        ],
+      },
+    });
+
+    expect(option.xAxis[0]?.data).toContain("2026-03-09");
+    expect(option.series).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Kronos 预测 close",
+          type: "line",
+        }),
+        expect.objectContaining({
+          name: "Kronos 风险区间",
+          type: "line",
+        }),
+      ]),
+    );
+  });
+
   it("applies chart updates and disposes cleanly through the imperative sync helper", () => {
     const setOption = vi.fn();
     const resize = vi.fn();

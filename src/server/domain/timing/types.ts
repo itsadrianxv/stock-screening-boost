@@ -58,6 +58,7 @@ export const TIMING_SIGNAL_ENGINE_KEYS = [
   "liquidityStructure",
   "breakoutFailure",
   "gapVolumeQuality",
+  "kronosForecast",
 ] as const;
 
 export const TIMING_COST_ZONES = [
@@ -180,6 +181,38 @@ export type TimingBar = {
   volume: number;
   amount?: number | null;
   turnoverRate?: number | null;
+};
+
+export type TimingKronosForecastSummary = {
+  expectedReturnPct: number;
+  maxDrawdownPct: number;
+  upsidePct: number;
+  volatilityProxy: number;
+  direction: TimingDirection;
+  confidence: number;
+};
+
+export type TimingKronosForecastPoint = {
+  tradeDate: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number | null;
+  amount?: number | null;
+};
+
+export type TimingKronosForecast = {
+  stockCode: string;
+  asOfDate: string;
+  modelName: string;
+  modelVersion: string;
+  lookbackDays: number;
+  predictionLength: number;
+  device: string;
+  points: TimingKronosForecastPoint[];
+  summary: TimingKronosForecastSummary;
+  warnings: string[];
 };
 
 export type TimingMacd = {
@@ -337,6 +370,8 @@ export type TimingCardReasoning = {
   signalContext: TimingSignalReasoningContext;
   actionRationale: string;
   indicators: TimingIndicators;
+  kronosForecast?: TimingKronosForecastSummary;
+  kronosWarnings?: string[];
 };
 
 export type TimingSignalSnapshotRecord = {
@@ -592,6 +627,8 @@ export type TimingRecommendationReasoning = {
   feedbackContext: TimingFeedbackContext;
   riskPlan: PortfolioRiskPlan;
   actionRationale: string;
+  kronosForecast?: TimingKronosForecastSummary;
+  kronosWarnings?: string[];
 };
 
 export type TimingRecommendationRecord = {
@@ -773,6 +810,7 @@ export type TimingReportPayload = {
   evidence: TimingReportEvidence;
   marketContext: MarketContextAnalysis;
   reviewTimeline: TimingReviewRecord[];
+  kronosForecast?: TimingKronosForecast;
 };
 
 export type TimingMarketRegime = TimingMarketState;

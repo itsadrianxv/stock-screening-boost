@@ -368,6 +368,9 @@ describe("TimingReportService", () => {
         listRecent: vi.fn().mockResolvedValue([]),
         upsert: vi.fn(),
       },
+      kronosForecastSnapshotRepository: {
+        getLatestForStock: vi.fn().mockResolvedValue(null),
+      },
       timingDataClient: {
         getBars,
         getMarketContext: vi.fn(),
@@ -421,6 +424,62 @@ describe("TimingReportService", () => {
         listRecent: vi.fn().mockResolvedValue([]),
         upsert: vi.fn(),
       },
+      kronosForecastSnapshotRepository: {
+        getLatestForStock: vi.fn().mockResolvedValue({
+          id: "kronos_1",
+          userId: "user_1",
+          workflowRunId: "run_1",
+          stockCode: "600519",
+          stockName: "璐靛窞鑼呭彴",
+          asOfDate: "2026-03-06",
+          sourceType: "single",
+          sourceId: "600519",
+          modelName: "NeoQuasar/Kronos-base",
+          modelVersion: "NeoQuasar/Kronos-base",
+          lookbackDays: 80,
+          predictionLength: 60,
+          inputBarsHash: "hash_1",
+          forecast: {
+            stockCode: "600519",
+            asOfDate: "2026-03-06",
+            modelName: "NeoQuasar/Kronos-base",
+            modelVersion: "NeoQuasar/Kronos-base",
+            lookbackDays: 80,
+            predictionLength: 60,
+            device: "cpu",
+            points: [
+              {
+                tradeDate: "2026-03-09",
+                open: 181,
+                high: 184,
+                low: 179,
+                close: 183,
+                volume: 6000,
+                amount: 1_000_000,
+              },
+            ],
+            summary: {
+              expectedReturnPct: 6,
+              maxDrawdownPct: -2.5,
+              upsidePct: 7.2,
+              volatilityProxy: 0.2,
+              direction: "bullish",
+              confidence: 0.7,
+            },
+            warnings: [],
+          },
+          summary: {
+            expectedReturnPct: 6,
+            maxDrawdownPct: -2.5,
+            upsidePct: 7.2,
+            volatilityProxy: 0.2,
+            direction: "bullish",
+            confidence: 0.7,
+          },
+          warnings: [],
+          createdAt: new Date(),
+        }),
+      },
       timingDataClient: {
         getBars: vi.fn().mockResolvedValue({
           stockCode: "600519",
@@ -455,6 +514,8 @@ describe("TimingReportService", () => {
     expect(report?.marketContext.state).toBe("RISK_ON");
     expect(report?.reviewTimeline).toHaveLength(5);
     expect(report?.reviewTimeline[0]?.completedAt).not.toBeNull();
+    expect(report?.kronosForecast?.modelName).toBe("NeoQuasar/Kronos-base");
+    expect(report?.kronosForecast?.points).toHaveLength(1);
   });
 
   it("builds a fallback market context when no aligned snapshot exists", async () => {
@@ -476,6 +537,9 @@ describe("TimingReportService", () => {
         getByAsOfDate: vi.fn().mockResolvedValue(null),
         listRecent: vi.fn().mockResolvedValue([]),
         upsert,
+      },
+      kronosForecastSnapshotRepository: {
+        getLatestForStock: vi.fn().mockResolvedValue(null),
       },
       timingDataClient: {
         getBars: vi.fn().mockResolvedValue({
@@ -534,6 +598,9 @@ describe("TimingReportService", () => {
         listRecent: vi.fn().mockResolvedValue([]),
         upsert: vi.fn(),
       },
+      kronosForecastSnapshotRepository: {
+        getLatestForStock: vi.fn().mockResolvedValue(null),
+      },
       timingDataClient: {
         getBars: vi.fn().mockResolvedValue({
           stockCode: "600519",
@@ -588,6 +655,9 @@ describe("TimingReportService", () => {
         getByAsOfDate: vi.fn().mockResolvedValue(null),
         listRecent: vi.fn().mockResolvedValue([]),
         upsert: vi.fn(),
+      },
+      kronosForecastSnapshotRepository: {
+        getLatestForStock: vi.fn().mockResolvedValue(null),
       },
       timingDataClient: {
         getBars: vi.fn(),

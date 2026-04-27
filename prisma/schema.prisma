@@ -68,6 +68,7 @@ model User {
     researchReminders                 ResearchReminder[]
     watchLists                        WatchList[]
     timingSignalSnapshots             TimingSignalSnapshot[]
+    timingKronosForecastSnapshots     TimingKronosForecastSnapshot[]
     timingAnalysisCards               TimingAnalysisCard[]
     portfolioSnapshots                PortfolioSnapshot[]
     timingRecommendations             TimingRecommendation[]
@@ -563,12 +564,41 @@ model WorkflowRun {
     timingSignalSnapshots   TimingSignalSnapshot[]
     timingAnalysisCards     TimingAnalysisCard[]
     timingRecommendations   TimingRecommendation[]
+    timingKronosForecastSnapshots TimingKronosForecastSnapshot[]
     spaceLinks              ResearchSpaceRunLink[]
 
     @@index([templateId])
     @@index([userId, createdAt])
     @@index([userId, idempotencyKey])
     @@index([status, createdAt])
+}
+
+model TimingKronosForecastSnapshot {
+    id               String   @id @default(cuid())
+    userId           String
+    workflowRunId    String?
+    stockCode        String
+    stockName        String
+    asOfDate         DateTime
+    sourceType       String
+    sourceId         String
+    modelName        String
+    modelVersion     String
+    lookbackDays     Int
+    predictionLength Int
+    inputBarsHash    String
+    forecastJson     Json
+    summaryJson      Json
+    warnings         String[]
+    createdAt        DateTime @default(now())
+
+    user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+    workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id], onDelete: SetNull)
+
+    @@index([userId, stockCode, asOfDate])
+    @@index([workflowRunId])
+    @@index([sourceType, sourceId])
+    @@unique([userId, stockCode, asOfDate, modelName, predictionLength, inputBarsHash])
 }
 
 model WorkflowNodeRun {

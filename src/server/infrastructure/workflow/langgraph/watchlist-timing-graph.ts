@@ -1,4 +1,5 @@
 import { Annotation, StateGraph } from "@langchain/langgraph";
+import type { KronosForecastWorkflowService } from "~/server/application/timing/kronos-forecast-workflow-service";
 import type { MarketRegimeService } from "~/server/application/timing/market-regime-service";
 import type { TimingAnalysisService } from "~/server/application/timing/timing-analysis-service";
 import type { TimingFeedbackService } from "~/server/application/timing/timing-feedback-service";
@@ -190,6 +191,7 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
     portfolioManagerService: WatchlistPortfolioManagerService;
     recommendationRepository: PrismaTimingRecommendationRepository;
     reviewSchedulingService: TimingReviewSchedulingService;
+    kronosForecastWorkflowService?: KronosForecastWorkflowService;
   }) {
     const nodeExecutors: Record<WatchlistTimingPipelineNodeKey, NodeExecutor> =
       {
@@ -275,6 +277,39 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
             hasPortfolioContext: true,
           }),
         }),
+        kronos_forecast_agent: async (state) => {
+          if (!deps.kronosForecastWorkflowService) {
+            return {
+              kronosForecasts: [],
+              cards: state.cards.map((card) => ({
+                ...card,
+                reasoning: {
+                  ...card.reasoning,
+                  kronosWarnings: [
+                    ...new Set([
+                      ...(card.reasoning.kronosWarnings ?? []),
+                      "Kronos forecast unavailable; auxiliary weight treated as 0.",
+                    ]),
+                  ],
+                },
+              })),
+            };
+          }
+
+          const result = await deps.kronosForecastWorkflowService.enrichCards({
+            userId: state.userId,
+            workflowRunId: state.runId,
+            sourceType: "watchlist",
+            sourceId: state.timingInput.watchListId,
+            cards: state.cards,
+            signalSnapshots: state.signalSnapshots,
+          });
+
+          return {
+            cards: result.cards,
+            errors: result.warnings.map((warning) => `kronos:${warning}`),
+          };
+        },
         market_regime_agent: async (state) => {
           if (state.timingInput.asOfDate) {
             const existing =
@@ -489,6 +524,8 @@ export class WatchlistTimingPipelineLangGraph extends BaseWorkflowLangGraph<
         return { technicalAssessments: timingState.technicalAssessments };
       case "timing_synthesis_agent":
         return { cards: timingState.cards };
+      case "kronos_forecast_agent":
+        return { cards: timingState.cards, errors: timingState.errors };
       case "market_regime_agent":
         return {
           marketContextSnapshot: timingState.marketContextSnapshot,

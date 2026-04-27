@@ -34,6 +34,7 @@ const timingSignalKeyLabelMap: Record<TimingSignalEngineKey, string> = {
   liquidityStructure: "流动性结构",
   breakoutFailure: "突破有效性",
   gapVolumeQuality: "缺口与放量质量",
+  kronosForecast: "Kronos 预测",
 };
 
 const timingMetricLabelMap: Record<string, string> = {

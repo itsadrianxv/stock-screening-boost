@@ -17,6 +17,7 @@ const DEFAULT_SIGNAL_ENGINE_WEIGHTS: Record<TimingSignalEngineKey, number> = {
   liquidityStructure: 0.14,
   breakoutFailure: 0.14,
   gapVolumeQuality: 0.14,
+  kronosForecast: 0,
 };
 
 export const DEFAULT_TIMING_PRESET_CONFIG: TimingPresetConfig = {

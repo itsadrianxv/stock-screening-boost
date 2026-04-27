@@ -54,6 +54,18 @@ export const env = createEnv({
       .int()
       .positive()
       .default(300_000),
+    KRONOS_SERVICE_URL: z.string().url().default("http://127.0.0.1:8010"),
+    KRONOS_SERVICE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(120_000),
+    KRONOS_FORECAST_ENABLED: z.coerce.boolean().default(false),
+    KRONOS_DEFAULT_PREDICTION_LENGTH: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60),
     IFIND_USERNAME: z.string().optional(),
     IFIND_PASSWORD: z.string().optional(),
     TUSHARE_TOKEN: z.string().optional(),
@@ -125,6 +137,19 @@ export const env = createEnv({
     PYTHON_INTELLIGENCE_SERVICE_TIMEOUT_MS: readPositiveNumberEnv(
       process.env.PYTHON_INTELLIGENCE_SERVICE_TIMEOUT_MS,
       300_000,
+    ),
+    KRONOS_SERVICE_URL:
+      process.env.KRONOS_SERVICE_URL ?? "http://127.0.0.1:8010",
+    KRONOS_SERVICE_TIMEOUT_MS: readPositiveNumberEnv(
+      process.env.KRONOS_SERVICE_TIMEOUT_MS,
+      120_000,
+    ),
+    KRONOS_FORECAST_ENABLED:
+      process.env.KRONOS_FORECAST_ENABLED === "true" ||
+      process.env.KRONOS_FORECAST_ENABLED === "1",
+    KRONOS_DEFAULT_PREDICTION_LENGTH: readPositiveNumberEnv(
+      process.env.KRONOS_DEFAULT_PREDICTION_LENGTH,
+      60,
     ),
     IFIND_USERNAME: process.env.IFIND_USERNAME,
     IFIND_PASSWORD: process.env.IFIND_PASSWORD,
